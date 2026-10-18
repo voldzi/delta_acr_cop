@@ -79,7 +79,7 @@ def capture_cop_pre_stop_health(host,plan):
   web=json.loads(host.command(['/usr/bin/docker','inspect','cop-cop-web-1']))[0];need(web['State']['Running']is True and web['Config']['Labels'].get('com.docker.compose.service')=='cop-web'and web['Config']['Labels'].get('com.docker.compose.project')=='cop')
   root_file(CONTROL/'web-source.json',encoded({'id':web['Id'],'image':web['Image'],'specSha256':digest(encoded({'Config':web['Config'],'HostConfig':web['HostConfig']}))}))
   operators={}
-  for leaf in ['scripts/cop-api-runtime.py','scripts/cop-health-gate.py','scripts/deploy-production.sh']:
+  for leaf in ['scripts/cop-api-runtime.py','scripts/cop-health-gate.py','scripts/cop-storage.py','scripts/deploy-production.sh']:
    f=BASE/leaf;info=f.lstat();need(stat.S_ISREG(info.st_mode)and not f.is_symlink()and info.st_uid==1000);operators[leaf]={'sha256':digest(f.read_bytes()),'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode)}
   root_file(CONTROL/'operator-source.json',encoded(operators))
   root_file(CONTROL/'pre-stop-health.json',encoded(value));return{'contractVersion':'cop-clean-pre-stop-result-v1','resetEpoch':plan['resetEpoch'],'baselineSha256':digest(encoded(value)),'attestationPath':att['attestationPath'],'actualImageProbes':True}
@@ -193,7 +193,7 @@ def persist_operator_runtime(host,plan):
     # Future ordinary deployments/recovery must understand the new guarded
     # binding. Preserve the user's deploy script and every other checkout file.
     before=json.loads(host.protected(CONTROL/'operator-source.json',mode=0o640))
-    for leaf in ['scripts/cop-api-runtime.py','scripts/cop-health-gate.py']:
+    for leaf in ['scripts/cop-api-runtime.py','scripts/cop-health-gate.py','scripts/cop-storage.py']:
         path=BASE/leaf;old=before[leaf];current=path.lstat();need(stat.S_ISREG(current.st_mode)and not path.is_symlink()and current.st_uid==old['uid']and current.st_gid==old['gid']and stat.S_IMODE(current.st_mode)==old['mode'])
         raw=source(host,plan,leaf);existing=path.read_bytes();need(digest(existing)in[old['sha256'],digest(raw)])
         if existing!=raw:

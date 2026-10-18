@@ -36,6 +36,24 @@ class StorageError(Exception):
     pass
 
 
+def application_directory(kind, root=X5_ROOT):
+    """Keep immutable Root release bundles outside the writable job namespace."""
+    app = root / kind / 'cop'
+    if kind == 'staging' and root == X5_ROOT and app.exists() and not app.is_symlink():
+        info = app.lstat()
+        if (stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and info.st_gid == 0
+                and stat.S_IMODE(info.st_mode) == 0o755):
+            return app / 'work'
+    return app
+
+
+def job_kind(path, root=X5_ROOT):
+    for kind in ('cache', 'staging'):
+        if path.parent in (root / kind / 'cop', application_directory(kind, root)):
+            return kind
+    return None
+
+
 def command(argv):
     result = subprocess.run(argv, capture_output=True, check=False)
     if result.returncode:
@@ -78,7 +96,17 @@ def preflight(run=command, stat_fn=os.stat, root=X5_ROOT, system_root=Path('/'))
             for path in (category, app):
                 if path.exists() and stat_fn(path).st_dev != x5_device:
                     raise StorageError('cop_storage_not_on_x5')
-            if app.exists() and not os.access(app, os.W_OK | os.X_OK):
+            workspace = application_directory(kind, root)
+            if workspace != app:
+                if (workspace.is_symlink() or not workspace.is_dir()
+                        or workspace.resolve() != workspace):
+                    raise StorageError('cop_staging_work_missing_or_unsafe')
+                info = workspace.lstat()
+                if (info.st_uid != 1000 or info.st_gid != 1000
+                        or stat.S_IMODE(info.st_mode) != 0o700
+                        or stat_fn(workspace).st_dev != x5_device):
+                    raise StorageError('cop_staging_work_custody')
+            if app.exists() and not os.access(workspace, os.W_OK | os.X_OK):
                 raise StorageError('cop_storage_permissions_insufficient')
         capacity = shutil.disk_usage(root)
         return {'ok': True, 'mount': str(root), 'uuid': EXPECTED_UUID,
@@ -145,7 +173,7 @@ def layout(guard=preflight, root=X5_ROOT):
             raise StorageError('category_symlink_forbidden')
         if not base.exists():
             base.mkdir(mode=0o700)
-        private_dir(base / 'cop', guard)
+        private_dir(application_directory(kind, root), guard)
 
 
 def digest(path):
@@ -453,10 +481,9 @@ def work_plan(root=X5_ROOT, now=None):
               'maxAgeDays': CACHE_DAYS, 'sizeLimitBytes': CACHE_BYTES}
     completed = []
     for kind in ('cache', 'staging'):
-        directory = root / kind / 'cop'
-        if not directory.exists():
-            continue
-        for path in directory.iterdir():
+        directories = {root / kind / 'cop', application_directory(kind, root)}
+        for path in (p for directory in sorted(directories) if directory.exists()
+                     for p in directory.iterdir()):
             marker = read_marker(path / '.cop-job.json') if path.is_dir() and not path.is_symlink() else None
             try:
                 if (not marker or not owned_job(path, marker, kind) or marker.get('state') != 'completed' or
@@ -485,7 +512,7 @@ def new_job(kind, guard=preflight, root=X5_ROOT):
         raise StorageError('invalid_job_kind')
     layout(guard, root)
     identifier = uuid.uuid4().hex
-    dest = root / kind / 'cop' / ('job-' + identifier)
+    dest = application_directory(kind, root) / ('job-' + identifier)
     private_dir(dest, guard)
     write_json(dest / '.cop-job.json', {'tool': TOOL, 'version': 1, 'kind': kind,
                'state': 'active', 'classification': 'rebuildable', 'toolOwned': True,
@@ -498,11 +525,12 @@ def new_job(kind, guard=preflight, root=X5_ROOT):
 
 def complete_job(value, guard=preflight, root=X5_ROOT):
     path = Path(value)
-    if path.parent not in [root / kind / 'cop' for kind in ('cache', 'staging')] or path.is_symlink():
+    kind = job_kind(path, root)
+    if kind is None or path.is_symlink():
         raise StorageError('job_outside_managed_scope')
     metadata = read_marker(path / '.cop-job.json')
     if (not metadata or metadata.get('state') != 'active' or
-            not owned_job(path, metadata, path.parent.parent.name)):
+            not owned_job(path, metadata, kind)):
         raise StorageError('job_not_owned_or_active')
     guard()
     with (path / '.job.lock').open('rb') as handle:
@@ -535,7 +563,7 @@ def cleanup(guard=preflight, root=X5_ROOT):
                 continue
             metadata = read_marker(path / '.cop-job.json')
             if (not metadata or metadata.get('state') != 'completed' or metadata.get('hold') is True or
-                    not owned_job(path, metadata, path.parent.parent.name)):
+                    not owned_job(path, metadata, job_kind(path, root))):
                 skipped += 1
                 continue
             size = tree_bytes(path)
@@ -589,7 +617,7 @@ def main(argv=None):
             with operation_lock():
                 if args.action == 'init':
                     layout()
-                    result = {'ok': True, 'paths': [str(X5_ROOT / kind / 'cop') for kind in KINDS]}
+                    result = {'ok': True, 'paths': [str(application_directory(kind)) for kind in KINDS]}
                 elif args.action == 'snapshot':
                     result = snapshot(args.compose_file or ['docker-compose.yml'], exclude_env=args.exclude_env)
                 elif args.action == 'verify':

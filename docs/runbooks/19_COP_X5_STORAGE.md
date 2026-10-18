@@ -11,7 +11,8 @@ Rozhodnutí: [ADR 0038](../adr/0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).
 | `/srv/x5-production/backups/cop` | Zálohy aplikační konfigurace a Git | Privátní snapshoty; nejde o zálohu databáze či všech uživatelských dat. |
 | `/srv/x5-production/archives/cop` | Dokončené releasy a dlouhodobé artefakty | Neodvozovat nepotřebnost pouze ze stáří/názvu. |
 | `/srv/x5-production/cache/cop` | Obnovitelné COP pracovní cache | Úklid jen výslovně označených dokončených jobs; dedikovaný builder samostatně. |
-| `/srv/x5-production/staging/cop` | Dočasné COP pracovní soubory | Aktivní jobs a media konverze mají vlastní ochranu. |
+| `/srv/x5-production/staging/cop` | Chráněné instalační balíky a dočasné COP soubory | Při vlastnictví Root `0:0/0755` běžné jobs patří do podadresáře `work`. |
+| `/srv/x5-production/staging/cop/work` | Běžné COP staging jobs při chráněném nadřazeném adresáři | Pouze UID/GID `1000:1000`, režim `0700`, stejné X5; bez náhradní cesty. |
 
 Ověřený X5 je samostatný připojený `ext4` filesystem s UUID
 `2f93f595-b61b-4eea-9054-7afa9b275b5b`. Při inventuře mělo X5
@@ -22,6 +23,24 @@ skutečný mount a UUID a teprve pak aktualizovat očekávané číslo zařízen
 Nástroje musejí odmítnout chybějící mount, jiné UUID/filesystem, read-only X5,
 stejné zařízení jako `/`, symlinkové cíle a nedostatečná oprávnění. Nikdy
 nevytvářejí náhradní backup/cache/staging na interním disku.
+
+### Oddělení Root balíků a pracovních jobs (oprava připravená 18. 10. 2026)
+
+Instalátor mazání vyžaduje Rootem vlastněný nadřazený adresář
+`staging/cop` v režimu `0755`, aby běžný uživatel nemohl přejmenovat jeho
+ověřené balíky. Běžné nasazení proto zapisuje pouze do `staging/cop/work`.
+Tento jediný podadresář musí předem připravit Root; chybějící adresář, jiná
+oprávnění, symlink nebo jiné zařízení znamenají odmítnutí operace. Nástroj
+nemění práva nadřazeného adresáře, nepřidává ACL a nevytváří náhradu na `/`.
+
+Pokud má starší staging stále původního vlastníka a privátní oprávnění,
+zůstává jeho dosavadní cesta beze změny. Staré jednoznačně označené jobs lze
+dokončit a zahrnout do stejné retence i po oddělení pracovního podadresáře;
+Root instalační balíky bez příslušné job značky zůstávají chráněné.
+Zálohy, archivy, cache a jejich retenční pravidla se nemění. Finální aktivace
+instaluje odpovídající verzi `cop-storage.py` se zachováním metadat a kontrolou
+původního otisku, aby další release používal stejné rozdělení.
+Tato zdrojová oprava sama nedokládá provedené nasazení nebo smazání účtu.
 
 ## Skutečně provedené přesuny
 

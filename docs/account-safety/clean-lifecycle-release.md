@@ -38,6 +38,19 @@ release, including a retry stopped before its reset plan exists.
 
 ## Rollback
 
+The 2026-10-18 v11 attempt prepared twelve plans and captured pre-stop health but
+stopped before confirmed production activation. The SIM deployment guard had
+actual mode `0700` and a different digest from the coordinator's admitted inputs;
+its `COMMON_` failure was hidden by the outer error classifier. Do not repeat
+preparation over those existing plans or infer a reset from the prepared summary.
+Any recovery must preserve the original evidence and establish that the exact
+plans were not applied before replacing their abandoned RAM-only preparation.
+
+The Root-owned X5 staging parent remains protected; ordinary COP staging jobs
+use its separately provisioned `work` child, as documented in the
+[X5 runbook](../runbooks/19_COP_X5_STORAGE.md). The guarded deployment installs
+the matching storage operator by exact old-file CAS, preserving its metadata.
+
 Disable new deletion intake if necessary; retain pending jobs, fences and original operation IDs. Deploy only a version which understands the new scope/epoch. Never restore the removed user data or silently start a v1 worker over v2 jobs.
 
 ## Implemented COP–SIM boundary
