@@ -236,3 +236,14 @@ setup. Reconciliation must be an explicit operator mode using the same stored
 secret and the same fixed worker client. It must complete only the originally
 approved mappings and read back the effective token authority. Never rotate the
 secret, remove the client, or skip provider readback to resume this failure.
+
+
+#### Exact publisher compatibility source transition
+
+The retired-producer inspector accepts the original SIM source `15d8a75` and
+the explicitly reviewed `08d81c3` source. The latter adds only the application's
+two optional publisher timestamps to the finite reset scanner; driver-report
+producer code and all historical/live custody requirements remain unchanged.
+The root bootstrap still verifies every imported file against its sealed source
+inventory, and the new operator manifest pins the exact COP/SIM archives.
+There is no unbounded revision allowance or caller-selected producer profile.

@@ -83,7 +83,7 @@ def active_producers():
 def current_inventory():
  bootstrap=json.loads(root_read(ROOT/'bootstrap-public.json',(0o444,)))
  need(bootstrap.get('dependencyImage')=='sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df'and bootstrap.get('copApiImage')=='sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86','RESET_RETIRED_RUNTIME_BINDING')
- sim=bootstrap['sources']['sim'];need(sim['root']==str(ROOT/'sim')and sim['revision']=='15d8a75f1a260f1946e35774e727a2636decc841','RESET_RETIRED_SIM_BINDING')
+ sim=bootstrap['sources']['sim'];need(sim['root']==str(ROOT/'sim')and sim['revision']in['15d8a75f1a260f1946e35774e727a2636decc841','08d81c335b362146c81e269c0c1e412b3e9d1ba9'],'RESET_RETIRED_SIM_BINDING')
  for relative in ['scripts/driver-report-inventory.mjs','deploy/account-safety/driver-report-files.mjs']:
   need(sha(root_read(ROOT/'sim'/relative,(0o444,0o555)))==sim['files'][relative],'RESET_RETIRED_INVENTORY_SOURCE_CHANGED')
  for relative,digest in [('usr/local/bin/node','c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75'),('lib/ld-musl-x86_64.so.1','38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806')]:
