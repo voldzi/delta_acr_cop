@@ -33,8 +33,16 @@ date; it was not relabelled as a new test. Reset was not replayed for these fixe
 
 The production acceptance receipt is retained under the Root-owned artifact
 `/srv/x5-production/staging/cop/post-edge-current-c5256eac-157d-48c0-b139-fd4343d7b027`.
-Deployment housekeeping is recorded separately; successful account deletion must
-not be confused with a successful temporary-transport cleanup.
+Final release closure is complete: `productionAcceptanceVerified=true` and
+`accountDeletionAccepted=true`; the API remains healthy with zero restarts.
+The final receipt is `production-acceptance-result.json` in that artifact directory.
+Independent transport cleanup proof SHA-256:
+`f20eae533d1582325e5e3343932a4b4ebd39d1e0cf8a69e242caa752c3e2caaf`.
+The exact temporary authorizations on COMM/storage, Root RAM identity and control
+connections are absent. Synthetic credentials were removed and the owned Root
+operator exited. Edge source/image pins are installed. Messaging future maintenance
+must append the reviewed image-only override after the portable runtime overlay;
+this does not authorize a fresh rebuild or restart.
 
 ## Historical preparation and intermediate evidence
 
