@@ -1,6 +1,6 @@
 # ADR 0056 — Clean test-user reset and shared identity deletion
 
-Status: accepted for implementation by the application owner on 2026-10-17; production activation pending verification.
+Status: accepted for implementation by the application owner on 2026-10-17; production self-deletion verified for two synthetic accounts on 2026-10-19 (see the lifecycle release evidence).
 
 Supersedes ADR0053 only for the explicitly configured v2 scope. Existing v1 operations retain their original meaning.
 
@@ -25,7 +25,7 @@ The v2 independent fence also retains the original server-verified Keycloak pref
 
 ## SIM application-data boundary
 
-The unreleased v2 scope requires twelve independent domains, including `sim_user_data`.
+The production v2 scope requires twelve independent domains, including `sim_user_data`.
 The original v1 list of eleven domains is unchanged. SIM application data is not
 covered by the COP Router or driver measurement receipts. The twelfth adapter
 requires a combined readback for owned application stores, audit/publisher data

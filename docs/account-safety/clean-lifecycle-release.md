@@ -1,6 +1,42 @@
 # Clean COP/SIM lifecycle release
 
-## Current evidence
+## Current production evidence — 2026-10-19
+
+Account deletion is enabled in production. The actual web BFF/OIDC flow completed
+self-deletion of both existing synthetic acceptance accounts. Both terminal
+receipts reported completion with no remaining domains; both old sessions were
+denied, and absence of both identities in Keycloak was verified. After deleting
+A, B remained present and authenticated before its own deletion. No real user
+account was used. Entry point: https://cop.zeleznalady.cz/account/delete.
+
+Current immutable images:
+
+- COP API: `sha256:251374f1b612dec0b0f0335250f91bb44f9e420d0d92bc2a2a3f9bf459b02a0c` (source `c1ca66ff49c8e250ec260bd199f0d41502d8d600`).
+- COP web: `sha256:6481b7c29d462b10e365692231c19b1b88a631693a09826003333106771b7329`.
+- COP Edge: `sha256:45ee4c54707ae00fbafbe6d60406096111b50400fab2843ab791c5765c795275`.
+- Messaging API: `sha256:531a5282d086300df960f270e5e17d4aa928abc3180af4d14a23d3edc18d9d25`.
+- Synapse: `sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888`.
+
+Messaging source `6908586125b6610416a20257e0eb5899fc61ee2c` batches the
+same catalog checks without caching or reducing validation. Actual native
+readback took 2.817 seconds within the unchanged five-second boundary. Eight
+Python differential cases and eight standalone Elixir cases passed; these are
+not a claim of the full Messaging test suite.
+
+The voice credential drain remains asynchronous (at least 61.5 minutes from the
+request under the current conservative policy). HTTP 202 remains pending, not
+completion; the user is fenced and signed out during cleanup. Shared COP/SIM
+identity deletion occurs last. This is a technical token-lifetime policy, not a
+statutory waiting period. No real iPhone/manual UI-click acceptance or fresh
+restore exercise is claimed here. Earlier restore evidence retains its original
+date; it was not relabelled as a new test. Reset was not replayed for these fixes.
+
+The production acceptance receipt is retained under the Root-owned artifact
+`/srv/x5-production/staging/cop/post-edge-current-c5256eac-157d-48c0-b139-fd4343d7b027`.
+Deployment housekeeping is recorded separately; successful account deletion must
+not be confused with a successful temporary-transport cleanup.
+
+## Historical preparation and intermediate evidence
 
 ### Post-Edge activation and sequential preflight correction (2026-10-19)
 
@@ -19,6 +55,24 @@ with this correction, including rejection of an advanced frontier and expiry
 again after five seconds. The continuity and owner-readiness suites passed 34
 checks. This correction requires its own immutable image and live A/B acceptance;
 no old image proof is relabelled and the completed global reset is not repeated.
+
+### Projection lookup prerequisite
+
+Actual production preflight exposed a separate SQL performance boundary: the
+history lookup combines owner hash with substring searches of object/source IDs.
+A valid B-tree owner index alone cannot prevent a sequential scan of the other
+OR branches. The actual read-only PostgreSQL plan was a parallel sequential scan;
+a bounded real preflight returned SQLSTATE `57014`, while community/sketch/incident
+checks and their combined admission locks passed. No inference from a health-only
+check is treated as deletion acceptance.
+
+The controlled online migration is
+[`012_track_history_erasure_indexes.sql`](../../scripts/account-safety/012_track_history_erasure_indexes.sql).
+It adds both required trigram branches without deleting provider history or
+changing ownership classification, row formats, roles or global timeouts. It is
+not run implicitly on API startup. Preserve both indexes across subsequent
+releases and verify the complete OR plan, not just the owner-only query. Production
+execution and A/B completion must be reported separately from this source.
 
 ### Production attempt 2026-10-19 — not accepted
 
