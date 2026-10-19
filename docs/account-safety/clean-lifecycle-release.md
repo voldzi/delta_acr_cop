@@ -14,7 +14,10 @@ old unguarded API or repeat the completed reset to recover this failed candidate
 The source correction refreshes the existing durable frontier after the database
 read and immediately before each synchronous batch of at most 128 restored
 objects. It preserves the five-second maximum, cached actor fences, and rejection
-of an advanced/unavailable frontier. There is no background lease extension.
+of an advanced/unavailable frontier. The same refresh is applied after federation/flight reads and AI owner lookups,
+immediately before their guarded in-memory writes. A blocked background flight
+update is logged without payload; it does not become an unhandled rejection.
+There is no background lease extension.
 A focused regression covers expiration, successful revalidation, expiration again,
 and rejection after an advanced frontier. A new immutable image requires its own
 honest release binding; the old nine-image acceptance must not be relabelled as

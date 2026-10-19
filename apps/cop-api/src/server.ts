@@ -2123,10 +2123,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       await federationRuntimeStore.init(Array.from(state.federatedNodes.values()));
       const persistedNodes = await federationRuntimeStore.listNodes();
+      await accountErasure?.refreshCachedGuard();
       runWithProjectionHydration(() => { state.federatedNodes.clear(); for (const node of persistedNodes) state.federatedNodes.set(node.nodeId, node); });
       federationRuntimeStoreStatus = "ok";
       federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ready; nodes ${persistedNodes.length}; events ${await federationRuntimeStore.countEvents()}`;
     } catch (error) {
+      if (error instanceof AccountErasureError || error instanceof ContentErasureStoreError) throw error;
       federationRuntimeStoreStatus = "degraded";
       federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ${errorMessage(error)}`;
       app.log.error({ error }, "Federation runtime store initialization failed; using in-memory fallback.");
@@ -2566,7 +2568,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await refreshFlightDataSource("startup");
     if (flightDataSource.config.pollMs > 0) {
       flightDataPollTimer = setInterval(() => {
-        void refreshFlightDataSource("interval");
+        void refreshFlightDataSource("interval").catch(() => {
+          app.log.warn({ component: "flight-data", reasonCode: "PROJECTION_ADMISSION_UNAVAILABLE" }, "Flight data update remains blocked until its admission is available.");
+        });
       }, flightDataSource.config.pollMs);
       flightDataPollTimer.unref?.();
     }
@@ -2579,12 +2583,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     try {
       const result = await flightDataSource.poll(requestNow);
+      await accountErasure?.refreshCachedGuard();
       state.sources.set(
         flightDataSource.sourceSystem.sourceSystemId,
         withFlightDataHealth(activeFlightDataSourceSystem(), result.health)
       );
       const acceptedObjects: ObservedObject[] = [];
-      for (const event of result.events) {
+      for (let offset = 0; offset < result.events.length; offset += 1) {
+        if (offset % 128 === 0) await accountErasure?.refreshCachedGuard();
+        const event = result.events[offset]!;
         if (state.events.has(event.eventId)) {
           continue;
         }
@@ -2595,6 +2602,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (acceptedObjects.length > 0) {
         await publishCurrentTracks(acceptedObjects);
       }
+      await accountErasure?.refreshCachedGuard();
       appendAudit(state, "FLIGHT_DATA_POLL_OK", {
         acceptedEvents: acceptedObjects.length,
         sourceSystemId: flightDataSource.sourceSystem.sourceSystemId,
@@ -2602,7 +2610,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         warnings: result.response.warnings
       });
     } catch (error) {
+      if (error instanceof AccountErasureError || error instanceof ContentErasureStoreError) throw error;
       const health = unavailableFlightDataHealth(error, requestNow);
+      await accountErasure?.refreshCachedGuard();
       state.sources.set(
         flightDataSource.sourceSystem.sourceSystemId,
         withFlightDataHealth(activeFlightDataSourceSystem(), health)
@@ -2652,6 +2662,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       // UUID witnesses are attached in memory, never imported from free context.
       const snapshot = await buildAiContextIndexSnapshot(requestNow);
       const documents = await attestStoredCopAiDocuments(createSemanticDocuments(snapshot));
+      await accountErasure?.refreshCachedGuard();
       const result = aiContextIndex.replaceDocuments(documents, {
         indexedAt: requestNow,
         reason
@@ -2682,6 +2693,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const incidents = documents.filter(value => value.entityType === "incident").map(value => value.entityId).filter(id => !!optionalUuid(id));
     const reportOwners = await activeCommunityReportStore().readVerifiedProjectionOwners?.("report", reports) ?? new Map();
     const incidentOwners = await activeIncidentStore().readVerifiedProjectionOwners?.("incident", incidents) ?? new Map();
+    await accountErasure.refreshCachedGuard();
     return documents.filter(document => {
       if (document.entityType !== "communityReport" && document.entityType !== "incident") return true;
       const owner = (document.entityType === "communityReport" ? reportOwners : incidentOwners).get(document.entityId.toLowerCase());
