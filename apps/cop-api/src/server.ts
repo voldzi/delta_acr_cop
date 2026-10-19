@@ -1682,7 +1682,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       providerCopiesProjectionOwner = createProviderCopiesErasure({
         sources: [situationDataSource, safetyDataSource, takGatewaySource, simSearchDataSource].filter(Boolean) as ProviderLocalCopiesSource[],
         issuer: accountErasure.options.issuer,
-        cachedGuard: { ready: () => accountErasure!.cachedGuardReady(), assertActorAllowed: owner => accountErasure!.assertCachedActorAllowed(owner) },
+        cachedGuard: { ready: () => accountErasure!.cachedGuardReady(), refresh: () => accountErasure!.refreshCachedGuard(), assertActorAllowed: owner => accountErasure!.assertCachedActorAllowed(owner) },
         loadFences: loadActualProjectionFences
       });
       await providerCopiesProjectionOwner.init();

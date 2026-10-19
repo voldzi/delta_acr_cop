@@ -45,6 +45,29 @@ async function flush() { for (let i = 0; i < 15; i++) await Promise.resolve(); }
 describe("actual local provider copy erasure", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
+  it("revalidates a trusted frontier after a transport outlives the cached observation", async () => {
+    const { situation } = adapters(); let valid = true;
+    const refresh = vi.fn(async () => { valid = true; });
+    vi.stubGlobal("fetch", vi.fn(async () => { valid = false; return new Response(JSON.stringify(collection("situation"))); }));
+    const port = createProviderCopiesErasure({ sources: [situation], issuer, loadFences: async () => snapshot,
+      cachedGuard: { ready: () => valid, refresh, assertActorAllowed: () => { if (!valid) throw Object.assign(new Error("expired"), { code: "ERASURE_STORE_UNAVAILABLE" }); } } });
+    await port.init();
+    expect((await situation.fetchFeatures({ bbox, layers: ["weather"], limit: 20 }, now)).features).toHaveLength(1);
+    expect(refresh.mock.calls.length).toBeGreaterThan(1);
+    expect(await port.ready()).toBe(true);
+  });
+
+  it("rejects a fetched result when durable frontier revalidation fails", async () => {
+    const { situation } = adapters(); let advanced = false;
+    vi.stubGlobal("fetch", vi.fn(async () => { advanced = true; return new Response(JSON.stringify(collection("situation"))); }));
+    const port = createProviderCopiesErasure({ sources: [situation], issuer, loadFences: async () => snapshot,
+      cachedGuard: { ready: () => !advanced, refresh: async () => { if (advanced) throw new Error("advanced frontier"); }, assertActorAllowed: () => {} } });
+    await port.init();
+    await expect(situation.fetchFeatures({ bbox, layers: ["weather"], limit: 20 }, now)).rejects.toBeInstanceOf(ProviderCopiesUnavailableError);
+    expect(situation.cacheStats().entries).toBe(0);
+    expect(await port.ready()).toBe(false);
+  });
+
   it("clears the three actual feature caches at binding and erase, preserving public map responses and static source definitions", async () => {
     const { situation, safety, tak } = adapters();
     const fetch = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(collection(String(input).includes("situation") ? "situation" : String(input).includes("safety") ? "safety" : "tak"))));

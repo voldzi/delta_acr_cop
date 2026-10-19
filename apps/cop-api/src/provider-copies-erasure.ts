@@ -14,6 +14,8 @@ export class ProviderCopiesUnavailableError extends Error {
 }
 interface Guard {
   ready(): boolean;
+  /** Server-owned durable frontier check at asynchronous producer boundaries. */
+  refresh?(): Promise<void>;
   /** Only a deny check for a possible reference, never origin/ownership proof. */
   assertPossibleSubjectAllowed(subject: string): void;
 }
@@ -23,6 +25,10 @@ class ProviderCopyFence {
   private readonly subjects = new Set<string>();
   constructor(private readonly guard: Guard) {}
   ready(): boolean { return this.loaded && this.guard.ready(); }
+  async refresh(): Promise<void> {
+    try { await this.guard.refresh?.(); if (!this.ready()) throw new ProviderCopiesUnavailableError(); }
+    catch { throw new ProviderCopiesUnavailableError(); }
+  }
   hydrate(snapshot: ProjectionFenceSnapshot): void {
     if (!/^[a-zA-Z0-9_-]{8,128}$/u.test(snapshot.version) || snapshot.resources.length + snapshot.subjectHashes.length + snapshot.ownerHashes.length > 100000) throw new ProviderCopiesUnavailableError();
     for (const ref of snapshot.resources) { if (!kinds.has(ref.kind) || !uuid.test(ref.id)) throw new ProviderCopiesUnavailableError(); this.resourceIds.add(ref.id.toLowerCase()); }
@@ -113,12 +119,13 @@ export class ProviderCopiesBoundary {
     if (this.guard && (!this.guard.ready() || generation !== this.generation)) throw new ProviderCopiesUnavailableError();
   }
   private async run<T>(args: unknown[], run: () => Promise<T>): Promise<T> {
-    const generation = this.generation; this.current(generation);
-    if (this.guard?.blocked(args)) throw new ProviderCopiesUnavailableError();
+    const generation = this.generation;
     const call = { generation }; this.calls.add(call);
     try {
+      await this.guard?.refresh(); this.current(generation);
+      if (this.guard?.blocked(args)) throw new ProviderCopiesUnavailableError();
       return await context.run({ boundary: this, generation }, async () => {
-        const value = await run(); this.current(generation);
+        const value = await run(); await this.guard?.refresh(); this.current(generation);
         if (this.guard?.blocked(value)) throw new ProviderCopiesUnavailableError();
         return this.guard ? copied(value, false) : value;
       });
@@ -130,8 +137,12 @@ export class ProviderCopiesBoundary {
     return this.guard ? copied(value, true) : value;
   }
   async track<T>(start: () => Promise<T>, generation: number, controller?: AbortController): Promise<T> {
-    this.current(generation); const fetch = { generation, ...(controller ? { controller } : {}) }; this.fetches.add(fetch);
-    try { const value = await start(); this.current(generation); if (this.guard?.blocked(value)) throw new ProviderCopiesUnavailableError(); return value; }
+    const fetch = { generation, ...(controller ? { controller } : {}) }; this.fetches.add(fetch);
+    try {
+      await this.guard?.refresh(); this.current(generation);
+      const value = await start(); await this.guard?.refresh(); this.current(generation);
+      if (this.guard?.blocked(value)) throw new ProviderCopiesUnavailableError(); return value;
+    }
     finally { this.fetches.delete(fetch); }
   }
   async settlement<T>(start: () => Promise<T>, generation: number): Promise<T> {
@@ -182,11 +193,12 @@ export function createProviderCopiesErasure(options: {
   sources: readonly ProviderLocalCopiesSource[];
   /** Exact server-owned issuer; possible source references cannot select it. */
   issuer: string;
-  cachedGuard: { ready(): boolean; assertActorAllowed(owner: RuntimeOwner): void };
+  cachedGuard: { ready(): boolean; refresh?(): Promise<void>; assertActorAllowed(owner: RuntimeOwner): void };
   loadFences(): Promise<ProjectionFenceSnapshot>;
 }): ProviderCopiesOwner {
   if (!options.issuer) throw new ProviderCopiesUnavailableError();
   const guard = new ProviderCopyFence({ ready: () => options.cachedGuard.ready(),
+    refresh: options.cachedGuard.refresh ? () => options.cachedGuard.refresh!() : undefined,
     assertPossibleSubjectAllowed: subject => options.cachedGuard.assertActorAllowed({ issuer: options.issuer, subjectId: subject }) });
   const sources = [...new Set(options.sources)], boundaries = sources.map(source => source.providerCopiesBoundary?.());
   const installed = boundaries.every((boundary, index) => boundary?.owns(sources[index]!) && boundary.bind(guard));
@@ -199,7 +211,7 @@ export function createProviderCopiesErasure(options: {
       initialization ??= options.loadFences().then(value => guard.hydrate(value)).catch(error => { initialization = undefined; throw error; });
       await initialization;
     },
-    async ready() { try { await port.init(); return bound() && guard.ready() && boundaries.every(boundary => boundary!.ready()); } catch { return false; } },
+    async ready() { try { await port.init(); await guard.refresh(); return bound() && guard.ready() && boundaries.every(boundary => boundary!.ready()); } catch { return false; } },
     async preflight(owner) {
       requireRuntimeOwner(owner);
       if (!await port.ready()) return { ...runtimeAssessment(["provider-copies-unavailable"]), ready: false };
@@ -208,7 +220,7 @@ export function createProviderCopiesErasure(options: {
     },
     async erase(resources, erasure) {
       erasure.signal.throwIfAborted(); if (!erasure.actor || !bound()) return false;
-      await port.init();
+      await port.init(); await guard.refresh(); erasure.signal.throwIfAborted();
       const results = boundaries.map(boundary => boundary!.erase(resources, erasure));
       erasure.signal.throwIfAborted(); return results.every(Boolean);
     }

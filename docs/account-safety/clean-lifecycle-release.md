@@ -15,6 +15,14 @@ entity fetch, before updating guarded source health for the AI index. That exact
 boundary now refreshes the durable frontier before both success and ordinary
 provider-error writes; continuity/projection errors propagate without fallback.
 The other startup AI callees were inspected for guarded writes after awaits.
+An imported provider-copy boundary also retained its pre-fetch observation across
+transport waits. A single server-local profile of 1,000 public SIM entities took
+1,063 ms (15,149 deny checks) with a fresh synthetic five-second observation; no
+payload or production secrets left the server. The boundary now revalidates the
+server-owned durable frontier before and after asynchronous provider work, while
+tracking operations before the first await and retaining generation and content
+checks. Advanced/unavailable frontiers still reject the result; synchronous cache
+checks retain the five-second limit. This is not production acceptance.
 
 The approved shared test-data reset and SIM/Messaging enrollment completed. Their
 protected readiness checks passed. The COP candidate `sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86`
