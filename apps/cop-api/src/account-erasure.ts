@@ -344,6 +344,13 @@ export class AccountErasureService {
       if (job) { this.cacheFence(this.accountKey(actor)); throw new AccountErasureError(403, "ACCOUNT_ERASURE_FENCED"); }
     } catch (error) { throw known(error); }
   }
+  /** Refresh the existing durable frontier before a synchronous producer chunk.
+   * This never extends the five-second observation or admits an advanced frontier.
+   */
+  async refreshCachedGuard(): Promise<void> {
+    await this.init();
+    await this.assertContinuityCurrent();
+  }
   cachedGuardReady(): boolean { return this.cacheLoaded && (!this.options.continuityRequired && !this.options.continuity || this.continuityVerifiedUntil > this.now().getTime()); }
   cachedFenceGeneration(): number { return this.cacheGeneration; }
   /** Owner-private readback for final COP grant revocation; never a public API. */

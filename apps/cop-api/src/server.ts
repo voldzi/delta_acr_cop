@@ -2252,8 +2252,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return 0;
     }
     const objects = await trackHistoryStore.loadCurrent();
-    for (const object of objects) {
-      state.objects.set(object.objectId, object);
+    // Loading the persistent tracks can outlive the short continuity observation.
+    // Refresh after the await and immediately before each synchronous write chunk.
+    for (let offset = 0; offset < objects.length; offset += 128) {
+      await accountErasure?.refreshCachedGuard();
+      for (const object of objects.slice(offset, offset + 128)) {
+        state.objects.set(object.objectId, object);
+      }
     }
     return objects.length;
   }

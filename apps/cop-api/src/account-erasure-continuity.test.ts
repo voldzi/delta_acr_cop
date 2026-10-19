@@ -63,6 +63,27 @@ async function start(service: AccountErasureService) {
   return service.request(actor, operationId, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
 }
 describe("independent fence controller recovery", () => {
+  it("refreshes expired producer admission after a slow read without extending its observation", async () => {
+    const { options, journal } = await setup();
+    let now = instant.getTime();
+    journal.assertCurrent = async frontier => {
+      if (journal.unavailable || JSON.stringify(frontier) !== JSON.stringify(journal.head)) throw new Error("synthetic stale frontier");
+      return { validUntil: new Date(now + 5000).toISOString() };
+    };
+    const service = new AccountErasureService({ ...options, now: () => new Date(now) });
+    await service.init();
+    now += 5001; // A real persistent read may finish after the initial lease.
+    expect(service.cachedGuardReady()).toBe(false);
+    expect(() => service.assertCachedActorAllowed({ issuer, subjectId: actor.subjectId! })).toThrow();
+    await service.refreshCachedGuard();
+    expect(() => service.assertCachedActorAllowed({ issuer, subjectId: actor.subjectId! })).not.toThrow();
+    now += 5001;
+    expect(service.cachedGuardReady()).toBe(false);
+    journal.head = { sequence: 1, digest: "1".repeat(64) };
+    await expect(service.refreshCachedGuard()).rejects.toMatchObject({ code: "ERASURE_CONTINUITY_UNAVAILABLE" });
+    expect(service.cachedGuardReady()).toBe(false);
+    expect(() => service.assertCachedActorAllowed({ issuer, subjectId: actor.subjectId! })).toThrow();
+  });
   it("requires the configured bridge and never silently uses legacy version3", async () => {
     const { options, store } = await setup();
     await expect(new AccountErasureService({ ...options, continuity: undefined }).init()).rejects.toMatchObject({ status: 503 });

@@ -2,6 +2,27 @@
 
 ## Current evidence
 
+### Production attempt 2026-10-19 — not accepted
+
+The approved shared test-data reset and SIM/Messaging enrollment completed. Their
+protected readiness checks passed. The COP candidate `sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86`
+started but failed closed while restoring persistent tracks: the five-second
+continuity observation had expired before a guarded `state.objects.set`.
+The account-deletion feature is **not production accepted**. Never restart the
+old unguarded API or repeat the completed reset to recover this failed candidate.
+
+The source correction refreshes the existing durable frontier after the database
+read and immediately before each synchronous batch of at most 128 restored
+objects. It preserves the five-second maximum, cached actor fences, and rejection
+of an advanced/unavailable frontier. There is no background lease extension.
+A focused regression covers expiration, successful revalidation, expiration again,
+and rejection after an advanced frontier. A new immutable image requires its own
+honest release binding; the old nine-image acceptance must not be relabelled as
+acceptance of this derivative. Live startup, owner readiness and two synthetic
+production self-deletions are still required before completion can be reported.
+
+Historical preparation notes below are not the current production state.
+
 2026-10-17: owner authorized clean deletion of all test-user data, no new backup of those test data. Reset and production activation have not yet run.
 
 Read-only COP inventory: 11 profiles, 12 devices, 7 web sessions, 4 pairing sessions, 111 calls, 9 community reports, 10 groups/15 memberships, 21 drawings/920 drawing audit rows, 18 mobility KV entries. Attachment rows and driver consent rows are empty. The database also contains 54,012,548 track-history rows and 21,468 current tracks: these are outside the blanket user reset pending source classification and must not be truncated.
