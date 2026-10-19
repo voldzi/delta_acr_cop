@@ -172,7 +172,8 @@ owned vehicles must be transferred first. The local vehicle-cleanup candidate
 is not the complete `mobility_dispatch` adapter and does not activate account
 deletion or authorize a production deployment.
 
-- [ADR0053: COP/Jizda removal preserves shared identity and SIM](adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)
+- [Historical ADR0053: original COP-only v1 scope](adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)
+- [Current ADR0056: shared COP/SIM identity deletion](adr/0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md)
 
 Account-erasure deployment configuration transition: [runbook 27](runbooks/27_ACCOUNT_ERASURE_CONFIG_TRANSITION.md).
 
