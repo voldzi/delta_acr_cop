@@ -85,6 +85,72 @@ NODE_METADATA_FROM_VERSION = '24.21.0'
 NODE_METADATA_TO_VERSION = '24.22.0'
 NODE_METADATA_KEY = 'NODE_VERSION'
 EXISTING_ACTOR_KEY = 'COP_SIM_ERASURE_ACTOR_SECRET'
+PENDING_REPLACEMENT_VERSION = 'cop-api-account-erasure-pending-replacement-config-v1'
+PENDING_REPLACEMENT_ENABLE_VERSION = 'cop-api-account-erasure-pending-replacement-enable-v1'
+REPLACEMENT_PREPARE_CHECKS = {'historicalOriginalJointAcceptanceVerified',
+    'focusedContinuityRegressionVerified', 'providerClosureVerified',
+    'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified'}
+REPLACEMENT_ENABLE_CHECKS = {'replacementRuntimeAccepted', 'freshOwnerReadinessVerified',
+    'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified',
+    'productionSyntheticAcceptancePending'}
+REPLACEMENT_IMAGE = 'sha256:056a735741395677ad7742f7a9f21c13f3d0e9f1a8e367494fa5a5d48ea6111f'
+REPLACEMENT_REVISION = '2cea89023dc61a9ac82c186385b2cb62aac15183'
+
+
+def pending_replacement_schema(proof):
+    require(proof.get('contractVersion') == PENDING_REPLACEMENT_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == [],
+            'pending_replacement_scope')
+    w = proof.get('pendingTargetReplacement')
+    fixed = {
+        'contractVersion': 'cop-pending-target-replacement-witness-v1',
+        'originalPlanSha256': '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1',
+        'originalWholeReportSha256': '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a',
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'pendingSha256': '4b8534417f9ff45d66f57ae16393b450ebbc5bec9bc511144288665a27654c6e',
+        'pendingHealthSha256': 'bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+        'failedContainerId': '1f50bd766d3865933d4ea1fcd5cebc27728185f47798855dc4c716d79e76cc45',
+        'failedImageId': NODE_METADATA_TO_IMAGE,
+        'failedReleaseId': 'release-2fbcedbc83f14f49949530b3ca79a29b',
+        'targetImageId': REPLACEMENT_IMAGE,
+        'targetSourceRevision': REPLACEMENT_REVISION,
+        'plannedUnchangedImageBindingsSha256': '2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b'}
+    digests = {'sourceSpecSha256', 'authorizationRecordSha256', 'focusedRegressionSha256',
+               'imageBuildReceiptSha256', 'targetAttestationSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'pending_replacement_witness_schema')
+    require(proof['cleanReset']['resetEpoch'] == w['resetEpoch']
+            and proof['target']['imageId'] == REPLACEMENT_IMAGE
+            and proof['target']['sourceRevision'] == REPLACEMENT_REVISION,
+            'pending_replacement_target_binding')
+    checked, expires = fenced_timestamp(w['checkedAt']), fenced_timestamp(w['expiresAt'])
+    require(0 < expires - checked <= 600, 'pending_replacement_validity')
+    return w
+
+
+def pending_replacement_enable_schema(proof):
+    require(proof.get('contractVersion') == PENDING_REPLACEMENT_ENABLE_VERSION
+            and proof.get('operation') == 'enable'
+            and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == REPLACEMENT_IMAGE
+            and proof['target']['sourceRevision'] == REPLACEMENT_REVISION
+            and proof['cleanReset']['resetEpoch'] == 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+            'pending_replacement_enable_scope')
+    w = proof.get('pendingTargetReplacementEnable')
+    digests = {'replacementPrepareProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt'}
+            and w['contractVersion'] == 'cop-pending-target-replacement-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'pending_replacement_enable_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'pending_replacement_enable_validity')
+    return w
 FENCED_SOURCE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v3'
 FENCED_SOURCE_PLAN_SHA256 = '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1'
 FENCED_SOURCE_BASELINE_SHA256 = '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2'
@@ -146,9 +212,525 @@ def erasure_target_environment(target, operation, clean=None):
     require(not target.get('COP_LIVEKIT_ADMIN_URL'), 'erasure_livekit_transport_conflict')
 
 
+STARTUP_REPAIR_VERSION = 'cop-api-account-erasure-bounded-startup-repair-config-v1'
+STARTUP_REPAIR_ENABLE_VERSION = 'cop-api-account-erasure-bounded-startup-repair-enable-v1'
+STARTUP_REPAIR_IMAGE = 'sha256:b4e6087f33fa1c1e8dee19b32bb3036f8e0266de39d1e3f150c6c639d0a46e28'
+STARTUP_REPAIR_FAILED_IMAGE = REPLACEMENT_IMAGE
+STARTUP_REPAIR_REVISION = 'bbd3c49ec9818ae87f636e3faa59c78c7c784b88'
+STARTUP_REPAIR_PREPARE_CHECKS = REPLACEMENT_PREPARE_CHECKS | {'boundedStartupConfigurationVerified'}
+STARTUP_REPAIR_ENABLE_CHECKS = REPLACEMENT_ENABLE_CHECKS
+
+
+def startup_repair_schema(proof):
+    require(proof.get('contractVersion') == STARTUP_REPAIR_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == [],
+            'bounded_startup_repair_scope')
+    w = proof.get('boundedStartupRepair')
+    fixed = {
+        'contractVersion': 'cop-bounded-startup-repair-witness-v1',
+        'originalPlanSha256': '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1',
+        'originalWholeReportSha256': '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a',
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'pendingSha256': 'bd4e3f5e81c5cd6de48ba5b53ae791f7381c81b1fb100c9b99dc11b210636b03',
+        'pendingHealthSha256': 'bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+        'failedContainerId': 'ac5e8d9b52fb6d18acab78482ffd0fee22ba7db4b1c1a3518f2106915b8ae286',
+        'failedImageId': STARTUP_REPAIR_FAILED_IMAGE,
+        'failedReleaseId': 'release-084c89ea02114ec088ccb36809aa35a1',
+        'targetImageId': STARTUP_REPAIR_IMAGE,
+        'targetSourceRevision': STARTUP_REPAIR_REVISION,
+        'plannedUnchangedImageBindingsSha256': '2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b'}
+    digests = {'sourceSpecSha256', 'authorizationRecordSha256', 'focusedRegressionSha256',
+               'imageBuildReceiptSha256', 'targetAttestationSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'bounded_startup_repair_witness_schema')
+    require(proof['cleanReset']['resetEpoch'] == w['resetEpoch']
+            and proof['target']['imageId'] == STARTUP_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == STARTUP_REPAIR_REVISION,
+            'bounded_startup_repair_target_binding')
+    checked, expires = fenced_timestamp(w['checkedAt']), fenced_timestamp(w['expiresAt'])
+    require(0 < expires - checked <= 600, 'bounded_startup_repair_validity')
+    return w
+
+
+def startup_repair_enable_schema(proof):
+    require(proof.get('contractVersion') == STARTUP_REPAIR_ENABLE_VERSION
+            and proof.get('operation') == 'enable'
+            and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == STARTUP_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == STARTUP_REPAIR_REVISION
+            and proof['cleanReset']['resetEpoch'] == 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+            'bounded_startup_repair_enable_scope')
+    w = proof.get('boundedStartupRepairEnable')
+    digests = {'replacementPrepareProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt'}
+            and w['contractVersion'] == 'cop-bounded-startup-repair-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'bounded_startup_repair_enable_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'bounded_startup_repair_enable_validity')
+    return w
+INDEX_BOUNDARY_REPAIR_VERSION = 'cop-api-account-erasure-index-boundary-repair-config-v1'
+INDEX_BOUNDARY_REPAIR_ENABLE_VERSION = 'cop-api-account-erasure-index-boundary-repair-enable-v1'
+INDEX_BOUNDARY_REPAIR_IMAGE = 'sha256:979004d63d3615926ef9905b05365a9d2ebe6044033fd2a5d2f28c48cd3e21c5'
+INDEX_BOUNDARY_REPAIR_FAILED_IMAGE = STARTUP_REPAIR_IMAGE
+INDEX_BOUNDARY_REPAIR_REVISION = '6e2de62ee97dd81e09dc62446b6a81d56b2770a5'
+INDEX_BOUNDARY_REPAIR_PREPARE_CHECKS = STARTUP_REPAIR_PREPARE_CHECKS | {'indexBoundaryRefreshVerified'}
+INDEX_BOUNDARY_REPAIR_ENABLE_CHECKS = STARTUP_REPAIR_ENABLE_CHECKS
+
+
+def index_boundary_repair_schema(proof):
+    require(proof.get('contractVersion') == INDEX_BOUNDARY_REPAIR_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == [],
+            'index_boundary_repair_scope')
+    w = proof.get('indexBoundaryRepair')
+    fixed = {
+        'contractVersion': 'cop-index-boundary-repair-witness-v1',
+        'originalPlanSha256': '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1',
+        'originalWholeReportSha256': '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a',
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'pendingSha256': '3df46df4c8da253f494c653bab52446bcbf3e34be9275a83794802201381b105',
+        'pendingHealthSha256': 'bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+        'failedContainerId': 'fb800679222a33cc0eb4930c353d7882e0a31ce07a3bb24a74cf86836c71fee7',
+        'failedImageId': INDEX_BOUNDARY_REPAIR_FAILED_IMAGE,
+        'failedReleaseId': 'release-4e83883771dd464e8df4a50213b83a36',
+        'targetImageId': INDEX_BOUNDARY_REPAIR_IMAGE,
+        'targetSourceRevision': INDEX_BOUNDARY_REPAIR_REVISION,
+        'plannedUnchangedImageBindingsSha256': '2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b'}
+    digests = {'sourceSpecSha256', 'authorizationRecordSha256', 'focusedRegressionSha256',
+               'imageBuildReceiptSha256', 'targetAttestationSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'index_boundary_repair_witness_schema')
+    require(proof['cleanReset']['resetEpoch'] == w['resetEpoch']
+            and proof['target']['imageId'] == INDEX_BOUNDARY_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == INDEX_BOUNDARY_REPAIR_REVISION,
+            'index_boundary_repair_target_binding')
+    checked, expires = fenced_timestamp(w['checkedAt']), fenced_timestamp(w['expiresAt'])
+    require(0 < expires - checked <= 600, 'index_boundary_repair_validity')
+    return w
+
+
+def index_boundary_repair_enable_schema(proof):
+    require(proof.get('contractVersion') == INDEX_BOUNDARY_REPAIR_ENABLE_VERSION
+            and proof.get('operation') == 'enable'
+            and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == INDEX_BOUNDARY_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == INDEX_BOUNDARY_REPAIR_REVISION
+            and proof['cleanReset']['resetEpoch'] == 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+            'index_boundary_repair_enable_scope')
+    w = proof.get('indexBoundaryRepairEnable')
+    digests = {'replacementPrepareProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt'}
+            and w['contractVersion'] == 'cop-index-boundary-repair-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'index_boundary_repair_enable_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'index_boundary_repair_enable_validity')
+    return w
+PROVIDER_BOUNDARY_REPAIR_VERSION = 'cop-api-account-erasure-provider-boundary-repair-config-v1'
+PROVIDER_BOUNDARY_REPAIR_ENABLE_VERSION = 'cop-api-account-erasure-provider-boundary-repair-enable-v1'
+PROVIDER_BOUNDARY_REPAIR_IMAGE = 'sha256:6bc4920b772ba8317da8dba470558aa5daf26d2bce35f3703af5b1bc40f932b1'
+PROVIDER_BOUNDARY_REPAIR_FAILED_IMAGE = INDEX_BOUNDARY_REPAIR_IMAGE
+PROVIDER_BOUNDARY_REPAIR_REVISION = '733885bb5445b561a9bed6fa0a8287c5653a5eb1'
+PROVIDER_BOUNDARY_REPAIR_PREPARE_CHECKS = INDEX_BOUNDARY_REPAIR_PREPARE_CHECKS | {'providerBoundaryRefreshVerified'}
+PROVIDER_BOUNDARY_REPAIR_ENABLE_CHECKS = INDEX_BOUNDARY_REPAIR_ENABLE_CHECKS
+
+
+def provider_boundary_repair_schema(proof):
+    require(proof.get('contractVersion') == PROVIDER_BOUNDARY_REPAIR_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == [],
+            'provider_boundary_repair_scope')
+    w = proof.get('providerBoundaryRepair')
+    fixed = {
+        'contractVersion': 'cop-provider-boundary-repair-witness-v1',
+        'originalPlanSha256': '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1',
+        'originalWholeReportSha256': '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a',
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'pendingSha256': '1d2bff33b9ebe25ece9643865cb8fa3f52ea99e78b5bc8c19259b965926d8997',
+        'pendingHealthSha256': 'bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+        'failedContainerId': '5c638b0f8431c1eb2b52fd1ac8a165b1d66acbdd1f0cc71705e94278f25d62a1',
+        'failedImageId': PROVIDER_BOUNDARY_REPAIR_FAILED_IMAGE,
+        'failedReleaseId': 'release-6e970c09a18e4455980a01eb47f01965',
+        'targetImageId': PROVIDER_BOUNDARY_REPAIR_IMAGE,
+        'targetSourceRevision': PROVIDER_BOUNDARY_REPAIR_REVISION,
+        'plannedUnchangedImageBindingsSha256': '2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b'}
+    digests = {'sourceSpecSha256', 'authorizationRecordSha256', 'focusedRegressionSha256',
+               'imageBuildReceiptSha256', 'targetAttestationSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'provider_boundary_repair_witness_schema')
+    require(proof['cleanReset']['resetEpoch'] == w['resetEpoch']
+            and proof['target']['imageId'] == PROVIDER_BOUNDARY_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == PROVIDER_BOUNDARY_REPAIR_REVISION,
+            'provider_boundary_repair_target_binding')
+    checked, expires = fenced_timestamp(w['checkedAt']), fenced_timestamp(w['expiresAt'])
+    require(0 < expires - checked <= 600, 'provider_boundary_repair_validity')
+    return w
+
+
+def provider_boundary_repair_enable_schema(proof):
+    require(proof.get('contractVersion') == PROVIDER_BOUNDARY_REPAIR_ENABLE_VERSION
+            and proof.get('operation') == 'enable'
+            and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == PROVIDER_BOUNDARY_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == PROVIDER_BOUNDARY_REPAIR_REVISION
+            and proof['cleanReset']['resetEpoch'] == 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+            'provider_boundary_repair_enable_scope')
+    w = proof.get('providerBoundaryRepairEnable')
+    digests = {'replacementPrepareProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt'}
+            and w['contractVersion'] == 'cop-provider-boundary-repair-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'provider_boundary_repair_enable_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'provider_boundary_repair_enable_validity')
+    return w
+OWNER_READINESS_REPAIR_VERSION = 'cop-api-account-erasure-owner-readiness-repair-config-v1'
+OWNER_READINESS_REPAIR_ENABLE_VERSION = 'cop-api-account-erasure-owner-readiness-repair-enable-v1'
+OWNER_READINESS_REPAIR_IMAGE = 'sha256:7a77ff158165048ff4bbed69cb69548c76260f8bc4e7e385b888ee36a3aa4551'
+OWNER_READINESS_REPAIR_FAILED_IMAGE = PROVIDER_BOUNDARY_REPAIR_IMAGE
+OWNER_READINESS_REPAIR_REVISION = 'c4c76cc9f3cfe3f9e6d6a1f28e7ed328c2b0b82d'
+OWNER_READINESS_REPAIR_PREPARE_CHECKS = PROVIDER_BOUNDARY_REPAIR_PREPARE_CHECKS | {'ownerReadinessFrontierRefreshVerified'}
+OWNER_READINESS_REPAIR_ENABLE_CHECKS = PROVIDER_BOUNDARY_REPAIR_ENABLE_CHECKS
+
+
+def owner_readiness_repair_schema(proof):
+    require(proof.get('contractVersion') == OWNER_READINESS_REPAIR_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == [],
+            'owner_readiness_repair_scope')
+    w = proof.get('ownerReadinessRepair')
+    fixed = {
+        'contractVersion': 'cop-owner-readiness-repair-witness-v1',
+        'originalPlanSha256': '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1',
+        'originalWholeReportSha256': '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a',
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'pendingSha256': '4d267e151063b16008e0bb385d59da5589796a7ca5337a4ab80ec27f1d13effd',
+        'pendingHealthSha256': 'bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+        'failedContainerId': '314b7cc084a80d88cb121a9146c0e2eb5e1732dda8baa28aadc1dd3016b6751a',
+        'failedImageId': OWNER_READINESS_REPAIR_FAILED_IMAGE,
+        'failedReleaseId': 'release-122fc831a4aa47c2a60457ad259269ab',
+        'targetImageId': OWNER_READINESS_REPAIR_IMAGE,
+        'targetSourceRevision': OWNER_READINESS_REPAIR_REVISION,
+        'plannedUnchangedImageBindingsSha256': '2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b'}
+    digests = {'sourceSpecSha256', 'authorizationRecordSha256', 'focusedRegressionSha256',
+               'imageBuildReceiptSha256', 'targetAttestationSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'owner_readiness_repair_witness_schema')
+    require(re.fullmatch(r'sha256:[0-9a-f]{64}', OWNER_READINESS_REPAIR_IMAGE)
+            and proof['cleanReset']['resetEpoch'] == w['resetEpoch']
+            and proof['target']['imageId'] == OWNER_READINESS_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == OWNER_READINESS_REPAIR_REVISION,
+            'owner_readiness_repair_target_binding')
+    checked, expires = fenced_timestamp(w['checkedAt']), fenced_timestamp(w['expiresAt'])
+    require(0 < expires - checked <= 600, 'owner_readiness_repair_validity')
+    return w
+
+
+def owner_readiness_repair_enable_schema(proof):
+    require(proof.get('contractVersion') == OWNER_READINESS_REPAIR_ENABLE_VERSION
+            and proof.get('operation') == 'enable'
+            and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == OWNER_READINESS_REPAIR_IMAGE
+            and re.fullmatch(r'sha256:[0-9a-f]{64}', OWNER_READINESS_REPAIR_IMAGE)
+            and proof['target']['sourceRevision'] == OWNER_READINESS_REPAIR_REVISION
+            and proof['cleanReset']['resetEpoch'] == 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+            'owner_readiness_repair_enable_scope')
+    w = proof.get('ownerReadinessRepairEnable')
+    digests = {'replacementPrepareProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt'}
+            and w['contractVersion'] == 'cop-owner-readiness-repair-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'owner_readiness_repair_enable_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'owner_readiness_repair_enable_validity')
+    return w
+
+
+PUBLIC_FLIGHT_REPAIR_VERSION = 'cop-api-account-erasure-public-flight-repair-config-v1'
+PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION = 'cop-api-account-erasure-public-flight-repair-enable-v1'
+PUBLIC_FLIGHT_REPAIR_IMAGE = OWNER_READINESS_REPAIR_IMAGE
+PUBLIC_FLIGHT_REPAIR_FAILED_IMAGE = OWNER_READINESS_REPAIR_FAILED_IMAGE
+PUBLIC_FLIGHT_REPAIR_REVISION = OWNER_READINESS_REPAIR_REVISION
+PUBLIC_FLIGHT_REPAIR_PREPARE_CHECKS = OWNER_READINESS_REPAIR_PREPARE_CHECKS | {'publicFlightDegradationPolicyReviewed'}
+PUBLIC_FLIGHT_REPAIR_ENABLE_CHECKS = OWNER_READINESS_REPAIR_ENABLE_CHECKS | {'publicFlightDegradationPolicyReviewed'}
+
+
+def public_flight_policy_ref(proof):
+    ref = proof.get('publicFlightPolicy')
+    require(isinstance(ref, dict) and set(ref) == {'path', 'sha256', 'operationId'}
+            and isinstance(ref['operationId'], str) and PROFILE_UUID.fullmatch(ref['operationId'])
+            and ref['operationId'] == proof['transitionId']
+            and isinstance(ref['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', ref['sha256'])
+            and ref['path'] == str(PROFILES / proof['target']['profileGeneration'] /
+                                  ('public-flight-' + ref['operationId'] + '.json')),
+            'public_flight_policy_reference')
+    return ref
+
+
+def public_flight_repair_schema(proof):
+    normalized = dict(proof)
+    normalized['contractVersion'] = OWNER_READINESS_REPAIR_VERSION
+    normalized['ownerReadinessRepair'] = dict(proof.get('publicFlightRepair', {}))
+    normalized['ownerReadinessRepair']['contractVersion'] = 'cop-owner-readiness-repair-witness-v1'
+    require(proof.get('contractVersion') == PUBLIC_FLIGHT_REPAIR_VERSION
+            and proof.get('publicFlightRepair', {}).get('contractVersion') == 'cop-public-flight-repair-witness-v1',
+            'public_flight_repair_scope')
+    owner_readiness_repair_schema(normalized)
+    public_flight_policy_ref(proof)
+    return proof['publicFlightRepair']
+
+
+def public_flight_repair_enable_schema(proof):
+    normalized = dict(proof)
+    normalized['contractVersion'] = OWNER_READINESS_REPAIR_ENABLE_VERSION
+    normalized['ownerReadinessRepairEnable'] = dict(proof.get('publicFlightRepairEnable', {}))
+    normalized['ownerReadinessRepairEnable']['contractVersion'] = 'cop-owner-readiness-repair-enable-witness-v1'
+    require(proof.get('contractVersion') == PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION
+            and proof.get('publicFlightRepairEnable', {}).get('contractVersion') == 'cop-public-flight-repair-enable-witness-v1',
+            'public_flight_repair_enable_scope')
+    owner_readiness_repair_enable_schema(normalized)
+    public_flight_policy_ref(proof)
+    return proof['publicFlightRepairEnable']
+
+
+def public_flight_evidence_schema(value, ref, proof, fresh=False):
+    fixed = {
+        'contractVersion': 'cop-public-flight-upstream-degradation-v1',
+        'operationId': ref['operationId'],
+        'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+        'targetImageId': PUBLIC_FLIGHT_REPAIR_IMAGE,
+        'targetSourceRevision': PUBLIC_FLIGHT_REPAIR_REVISION,
+        'historicalBaselineSha256': '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+        'failedContainerId': '314b7cc084a80d88cb121a9146c0e2eb5e1732dda8baa28aadc1dd3016b6751a',
+        'pendingSha256': '4d267e151063b16008e0bb385d59da5589796a7ca5337a4ab80ec27f1d13effd',
+        'acceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b'}
+    digests = {'sourceSpecSha256', 'adapterConfigSha256', 'routeSha256'}
+    request = {'origin': 'http://docker.home.cz:5020', 'path': '/flight-data/api/v1/cop/tracks',
+               'limit': 500, 'includeStale': True, 'source': None, 'bbox': None}
+    observation = {'httpStatus': 502, 'errorCode': 'SOURCE_UNAVAILABLE', 'jsonProblem': True,
+                   'allEnabledSourcesFailed': True, 'onlyUpstream429': True, 'upstreamHttpCodes': [429],
+                   'enabledSources': ['adsb_lol'], 'simServiceAlive': True, 'simServiceReady': True}
+    require(isinstance(value, dict) and set(value) == set(fixed) | digests | {'request', 'observation', 'checkedAt', 'expiresAt'}
+            and all(value[k] == v for k, v in fixed.items())
+            and all(isinstance(value[k], str) and re.fullmatch(r'[0-9a-f]{64}', value[k]) for k in digests)
+            and encoded(value['request']) == encoded(request)
+            and encoded(value['observation']) == encoded(observation)
+            and value['routeSha256'] == sha(encoded(request))
+            and proof['target']['imageId'] == value['targetImageId']
+            and proof['target']['sourceRevision'] == value['targetSourceRevision']
+            and proof['cleanReset']['resetEpoch'] == value['resetEpoch'], 'public_flight_evidence_scope')
+    if proof['operation'] == 'prepare':
+        require(value['sourceSpecSha256'] == proof['publicFlightRepair']['sourceSpecSha256'],
+                'public_flight_evidence_source_spec')
+    checked, expires = fenced_timestamp(value['checkedAt']), fenced_timestamp(value['expiresAt'])
+    require(0 < expires - checked <= 600, 'public_flight_evidence_lifetime')
+    if fresh:
+        require(checked <= datetime.now(timezone.utc).timestamp() <= expires, 'public_flight_evidence_expired')
+    return value
+
+
+def public_flight_health_comparison(before, after):
+    """One explicit optional-feed delta, never a rewritten baseline or success stub."""
+    health_statuses(before); health_statuses(after)
+    ranks = {'ok': 0, 'online': 0, 'degraded': 1, 'unavailable': 2, 'offline': 2}
+    for url in HEALTH_URLS:
+        old, new = before[url], after[url]
+        require(new['httpStatus'] == old['httpStatus'] or
+                (old['httpStatus'] == 503 and new['httpStatus'] == 200), 'critical_health_http_changed')
+        require(new['httpStatus'] == 200, 'critical_health_http_not_ready')
+        if url == HEALTH_URLS[-1]:
+            continue
+        a = {'self': old.get('status'), **old.get('dependencies', {})}
+        b = {'self': new.get('status'), **new.get('dependencies', {})}
+        added = b.keys() - a.keys()
+        require(not a.keys() - b.keys() and added <= {'safety-notification-worker', 'cop-account-erasure-owners'}
+                and all(b[k] in {'ok', 'online', 'disabled'} for k in added), 'critical_health_dependency_set')
+        for name, previous in a.items():
+            current = b[name]
+            if url == HEALTH_URLS[2] and name == 'flight-data-source':
+                require(previous in {'ok', 'degraded'} and current in {'ok', 'degraded'}, 'public_flight_state_not_permitted')
+            else:
+                require(current != 'unknown' and previous != 'unknown' and
+                        (current == previous or previous in ranks and current in ranks and ranks[current] <= ranks[previous]),
+                        'critical_health_regression')
+    deps = after[HEALTH_URLS[2]].get('dependencies', {})
+    require(deps.get('cop-account-erasure-owners') == 'ok'
+            and deps.get('flight-data-source') in {'ok', 'degraded'}, 'critical_owner_or_public_flight_missing')
+    critical = {'csm-messaging-provider', 'situation-data-source', 'safety-data-source', 'sim-search-data-source',
+                'cop-stream-bus', 'federation-runtime-store', 'track-history-store', 'user-profile-store',
+                'community-report-store', 'incident-store', 'sketch-drawing-store', 'mobile-device-store', 'media-storage'}
+    require(all(deps.get(name) == 'ok' for name in critical), 'critical_dependency_not_ready')
+    return deps['flight-data-source']
+
+
+def public_flight_auth_boundary():
+    import urllib.request
+    import urllib.error
+    for path in ('/api/v1/auth/session', '/api/v1/me/account-deletion/capabilities'):
+        try:
+            response = urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:4310' + path,
+                headers={'DNT': '1', 'Sec-GPC': '1'}), timeout=10)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            require(response.status == 401, 'public_flight_critical_auth_failed')
+
+
+PREPARED_CONTINUATION_VERSION = 'cop-api-account-erasure-prepared-target-continuation-v1'
+PREPARED_CONTINUATION_ENABLE_VERSION = 'cop-api-account-erasure-prepared-target-continuation-enable-v1'
+PREPARED_CONTINUATION_CHECKS = {'currentPreparedTargetVerified', 'currentProvidersAndProducersVerified',
+                               'originalEvidencePreserved', 'criticalHealthPolicyReviewed'}
+PREPARED_CONTINUATION_ENABLE_CHECKS = PUBLIC_FLIGHT_REPAIR_ENABLE_CHECKS | {'acceptedPreparedContinuationVerified'}
+PREPARED_CONTINUATION_CID = '7e7423bb9e42794d24896e682731479ae1e1c815827a0a33ea73d876231fe206'
+PREPARED_CONTINUATION_RELEASE = 'release-818c6ce08ff648e9a845dde2c155e056'
+PREPARED_CONTINUATION_PENDING = 'fc93ba32d0ebb2442b62f10dad60a365a269c15363d5a8adde878b0fbf1a7860'
+
+
+def prepared_continuation_ref(proof):
+    ref = proof.get('publicFlightPolicy')
+    require(isinstance(ref, dict) and set(ref) == {'path', 'sha256', 'operationId'}
+            and ref['operationId'] == proof['transitionId'] and PROFILE_UUID.fullmatch(ref['operationId'])
+            and isinstance(ref['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', ref['sha256'])
+            and ref['path'] == str(PROFILES / proof['target']['profileGeneration'] /
+                                  ('prepared-flight-' + ref['operationId'] + '.json')), 'prepared_continuation_reference')
+    return ref
+
+
+def prepared_continuation_schema(proof):
+    require(proof.get('contractVersion') == PREPARED_CONTINUATION_VERSION
+            and proof.get('operation') == 'prepare' and proof.get('changedKeys') == []
+            and proof['target']['imageId'] == PUBLIC_FLIGHT_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == PUBLIC_FLIGHT_REPAIR_REVISION,
+            'prepared_continuation_scope')
+    w = proof.get('preparedTargetContinuation')
+    fixed = {'contractVersion': 'cop-prepared-target-continuation-witness-v1',
+             'originalProofPath': str(PROFILES / proof['target']['profileGeneration'] /
+                 'account-erasure-ada81c52-8e1a-46c0-8b42-5b7a05e8390f.json'),
+             'originalExternalReceiptSha256': '3e11eff3022bab050e16dfa61ba49533dbfac3d547932a939e55fe1e37937486',
+             'originalProofSha256': '0706a8d3dd5782b29db2870c011e8d1fe419fdd46d68462408c7411310aaca8f',
+             'originalBindingSha256': '9319dea17eba6fccadf24b805ec0c144ae7fa98e618e6925c8ee6421d512236b',
+             'sourceSpecSha256': 'f3a037ccf1e01c321ce20a6e6d70bbb9ff860f1c179052b8a2167f1aaec05912',
+             'pendingSha256': PREPARED_CONTINUATION_PENDING,
+             'originalAcceptedPointerSha256': 'b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b',
+             'targetContainerId': PREPARED_CONTINUATION_CID, 'targetReleaseId': PREPARED_CONTINUATION_RELEASE}
+    digests = {'authorizationRecordSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    require(isinstance(w, dict) and set(w) == set(fixed) | digests | {'checkedAt', 'expiresAt'}
+            and all(w[k] == v for k, v in fixed.items())
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests),
+            'prepared_continuation_witness')
+    require(0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'prepared_continuation_lifetime')
+    prepared_continuation_ref(proof)
+    return w
+
+
+def prepared_continuation_enable_schema(proof):
+    require(proof.get('contractVersion') == PREPARED_CONTINUATION_ENABLE_VERSION
+            and proof.get('operation') == 'enable' and proof.get('changedKeys') == ['COP_ACCOUNT_ERASURE_ENABLED']
+            and proof['previous']['imageId'] == proof['target']['imageId'] == PUBLIC_FLIGHT_REPAIR_IMAGE
+            and proof['target']['sourceRevision'] == PUBLIC_FLIGHT_REPAIR_REVISION,
+            'prepared_continuation_enable_scope')
+    w = proof.get('preparedTargetContinuationEnable')
+    digests = {'acceptedContinuationProofSha256', 'runtimeAcceptanceReceiptSha256',
+               'authorizationRecordSha256', 'freshOwnerReadinessSha256'}
+    require(isinstance(w, dict) and set(w) == digests | {'contractVersion', 'checkedAt', 'expiresAt', 'acceptedContinuationProofPath'}
+            and w['contractVersion'] == 'cop-prepared-target-continuation-enable-witness-v1'
+            and all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k]) for k in digests)
+            and 0 < fenced_timestamp(w['expiresAt']) - fenced_timestamp(w['checkedAt']) <= 600,
+            'prepared_continuation_enable_witness')
+    require(isinstance(w['acceptedContinuationProofPath'], str)
+            and Path(w['acceptedContinuationProofPath']).parent == PROFILES / proof['target']['profileGeneration']
+            and re.fullmatch(r'account-erasure-[0-9a-f-]{36}\.json', Path(w['acceptedContinuationProofPath']).name),
+            'prepared_continuation_enable_prepare_path')
+    prepared_continuation_ref(proof)
+    return w
+
+
+def prepared_target_observation_schema(value, proof, basis, fresh=False):
+    recovered = {'httpStatus': 200, 'responseContractMatches': True, 'enabledSources': ['adsb_lol'],
+                 'simServiceAlive': True, 'simServiceReady': True}
+    fixed = {'contractVersion': 'cop-public-flight-prepared-target-observation-v1',
+             'operationId': proof['transitionId'], 'originalProofSha256': basis['originalProofSha256'],
+             'originalExternalReceiptSha256': basis['originalExternalReceiptSha256'],
+             'resetEpoch': 'ea1699f1-16c7-47cb-9d81-9ab423e349df',
+             'targetContainerId': PREPARED_CONTINUATION_CID, 'targetReleaseId': PREPARED_CONTINUATION_RELEASE,
+             'targetImageId': PUBLIC_FLIGHT_REPAIR_IMAGE, 'targetSourceRevision': PUBLIC_FLIGHT_REPAIR_REVISION,
+             'preparedPendingSha256': PREPARED_CONTINUATION_PENDING,
+             'originalAcceptedPointerSha256': basis['originalAcceptedPointerSha256'],
+             'preparedSourceSpecSha256': basis['sourceSpecSha256']}
+    digests = {'currentActivePointerSha256', 'observedSourceSpecSha256', 'adapterConfigSha256', 'routeSha256',
+               'actualProviderReadinessSha256', 'actualProducerInventorySha256'}
+    request = {'origin': 'http://docker.home.cz:5020', 'path': '/flight-data/api/v1/cop/tracks',
+               'limit': 500, 'includeStale': True, 'source': None, 'bbox': None}
+    observation = {'httpStatus': 502, 'errorCode': 'SOURCE_UNAVAILABLE', 'jsonProblem': True,
+                   'allEnabledSourcesFailed': True, 'onlyUpstream429': True, 'upstreamHttpCodes': [429],
+                   'enabledSources': ['adsb_lol'], 'simServiceAlive': True, 'simServiceReady': True}
+    require(isinstance(value, dict) and set(value) == set(fixed) | digests | {'request', 'observation', 'checkedAt', 'expiresAt'}
+            and all(value[k] == v for k, v in fixed.items())
+            and all(isinstance(value[k], str) and re.fullmatch(r'[0-9a-f]{64}', value[k]) for k in digests)
+            and encoded(value['request']) == encoded(request)
+            and encoded(value['observation']) in {encoded(observation), encoded(recovered)}
+            and value['routeSha256'] == sha(encoded(request)), 'prepared_target_observation_scope')
+    w = basis if proof['operation'] == 'prepare' else proof['preparedTargetContinuationEnable']
+    require(value['checkedAt'] == w['checkedAt'] and value['expiresAt'] == w['expiresAt']
+            and 0 < fenced_timestamp(value['expiresAt']) - fenced_timestamp(value['checkedAt']) <= 600,
+            'prepared_target_observation_lifetime')
+    if proof['operation'] == 'prepare':
+        require(value['currentActivePointerSha256'] == basis['originalAcceptedPointerSha256']
+                and value['observedSourceSpecSha256'] == basis['sourceSpecSha256']
+                and value['actualProviderReadinessSha256'] == basis['actualProviderReadinessSha256']
+                and value['actualProducerInventorySha256'] == basis['actualProducerInventorySha256'],
+                'prepared_target_current_facts')
+    if fresh:
+        require(fenced_timestamp(value['checkedAt']) <= datetime.now(timezone.utc).timestamp() <= fenced_timestamp(value['expiresAt']),
+                'prepared_target_observation_expired')
+    return value
+
+
+POST_EDGE_VERSION = 'cop-api-post-edge-promotion-v1'
+POST_EDGE_ENABLE_VERSION = 'cop-api-post-edge-enable-v1'
+POST_EDGE_ENABLE_AUTH_VERSION = 'cop-api-post-edge-enable-oidc-v1'
+CONTINUITY_REPAIR_VERSION = 'cop-api-continuity-image-repair-v1'
+POST_EDGE_AUTH_SCOPE = 'oidc_no_lab_v1'
+POST_EDGE_AUTH_KEYS = frozenset({'COP_AUTH_MODE', 'COP_ALLOW_LAB_TOKEN'})
+POST_EDGE_HELPER_SHA256 = '77b6df4c6c68637ab66ee67c43ec8de8d475afa0b9224b0cb7aa52e8971e7ca9'
+POST_EDGE_PEER_HELPER_SHA256 = '02892fda977ba186694ff4bac536db40ad7bedf14eb3e5e819ae0698e44ec8f5'
+
+
 def is_clean_erasure_proof(value):
     return isinstance(value, dict) and value.get('contractVersion') in {
-        CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
+        CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION,
+        PENDING_REPLACEMENT_VERSION, PENDING_REPLACEMENT_ENABLE_VERSION,
+        STARTUP_REPAIR_VERSION, STARTUP_REPAIR_ENABLE_VERSION,
+        INDEX_BOUNDARY_REPAIR_VERSION, INDEX_BOUNDARY_REPAIR_ENABLE_VERSION,
+        PROVIDER_BOUNDARY_REPAIR_VERSION, PROVIDER_BOUNDARY_REPAIR_ENABLE_VERSION,
+        OWNER_READINESS_REPAIR_VERSION, OWNER_READINESS_REPAIR_ENABLE_VERSION,
+        PUBLIC_FLIGHT_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION,
+        PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION,
+        POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}
 
 
 def node_metadata_transition(proof):
@@ -273,11 +855,23 @@ def erasure_environment_changes(actual, desired, proof):
         require(bool(changed) and actual.get('COP_ACCOUNT_ERASURE_ENABLED', 'false') == 'false'
                 and actual.get('COP_ACCOUNT_SAFETY_GUARD_REQUIRED', 'false') == 'false', 'erasure_first_install_only')
     elif operation in {'enable', 'pause'}:
-        require(changed == {'COP_ACCOUNT_ERASURE_ENABLED'}
-                and actual.get('COP_ACCOUNT_ERASURE_ENABLED') == ('false' if operation == 'enable' else 'true'),
-                'erasure_intake_transition_invalid')
+        if proof.get('contractVersion') == POST_EDGE_ENABLE_AUTH_VERSION:
+            require(operation == 'enable' and changed == {'COP_ACCOUNT_ERASURE_ENABLED'} | POST_EDGE_AUTH_KEYS
+                    and {k: actual.get(k) for k in changed} == {
+                        'COP_ACCOUNT_ERASURE_ENABLED': 'false', 'COP_AUTH_MODE': 'hybrid', 'COP_ALLOW_LAB_TOKEN': 'true'}
+                    and {k: desired.get(k) for k in changed} == {
+                        'COP_ACCOUNT_ERASURE_ENABLED': 'true', 'COP_AUTH_MODE': 'oidc', 'COP_ALLOW_LAB_TOKEN': 'false'},
+                    'erasure_oidc_auth_transition_invalid')
+        else:
+            require(changed == {'COP_ACCOUNT_ERASURE_ENABLED'}
+                    and actual.get('COP_ACCOUNT_ERASURE_ENABLED') == ('false' if operation == 'enable' else 'true'),
+                    'erasure_intake_transition_invalid')
     else:
         require(operation == 'maintain' and not changed, 'erasure_maintain_config_changed')
+        if proof.get('contractVersion') == CONTINUITY_REPAIR_VERSION:
+            require(desired.get('COP_ACCOUNT_ERASURE_ENABLED') == 'true'
+                    and desired.get('COP_AUTH_MODE') == 'oidc' and desired.get('COP_ALLOW_LAB_TOKEN') == 'false',
+                    'continuity_repair_auth_not_preserved')
 
 
 class RuntimeError(Exception):
@@ -590,6 +1184,9 @@ def overlay(binding, mode):
         # guarded release overlay gains exact .env references, never values.
         service['environment'].update({name: '${' + name + '?Clean lifecycle setting is required}'
             for name in sorted(CLEAN_ERASURE_CONFIG_KEYS)})
+        if binding['accountErasureConfig'].get('authScope') == POST_EDGE_AUTH_SCOPE:
+            service['environment'].update({name: '${' + name + '?Reviewed OIDC setting is required}'
+                for name in sorted(POST_EDGE_AUTH_KEYS)})
     if mode == 'transaction':
         service['group_add'] = ['982']
         service['volumes'] = [
@@ -610,7 +1207,7 @@ def overlay_bytes(binding, mode):
         json.dumps(item, sort_keys=True) + '\n' for key, item in api.items())).encode()
 
 
-def verify_api_diff(base, desired, values, mode, image, presence=None, clean_values=None):
+def verify_api_diff(base, desired, values, mode, image, presence=None, clean_values=None, auth_scope=False):
     """Compare resolved values in RAM; all non-API services/topology stay equal."""
     require(set(base) == set(desired), 'compose_topology_changed')
     for key in base:
@@ -627,7 +1224,12 @@ def verify_api_diff(base, desired, values, mode, image, presence=None, clean_val
     require(old.get('environment', {}).get('COP_STREAM_BUS', 'memory') == 'memory', 'stream_contract_not_approved')
     expected_env = {**old.get('environment', {}), **values}
     if clean_values is not None:
-        require(isinstance(clean_values, dict) and set(clean_values) == CLEAN_ERASURE_CONFIG_KEYS, 'clean_overlay_scope')
+        require(isinstance(clean_values, dict) and set(clean_values) ==
+                (CLEAN_ERASURE_CONFIG_KEYS | POST_EDGE_AUTH_KEYS if auth_scope else CLEAN_ERASURE_CONFIG_KEYS),
+                'clean_overlay_scope')
+        if auth_scope:
+            require(clean_values['COP_AUTH_MODE'] == 'oidc' and clean_values['COP_ALLOW_LAB_TOKEN'] == 'false',
+                    'clean_oidc_overlay_values')
         expected_env.update(clean_values)
     if presence is not None:
         for key, included in presence.items():
@@ -782,6 +1384,21 @@ def runtime_parity(current, desired, image_config, transition=False):
                                     if k not in ignored_labels and not k.startswith('com.docker.compose.')}
     actual_public = public_labels(current['Config'].get('Labels') or {})
     expected_public = public_labels(expected_labels)
+    # The single approved derivative carries one image-owned provenance label.
+    # Only the stopped, pinned failed candidate may lack it before replacement;
+    # post-start live validation compares the complete target labels normally.
+    provenance = 'cop.continuity.refresh.base'
+    if (transition and current.get('Id') == '1f50bd766d3865933d4ea1fcd5cebc27728185f47798855dc4c716d79e76cc45'
+            and current.get('Image') == NODE_METADATA_TO_IMAGE
+            and desired.get('image') == REPLACEMENT_IMAGE
+            and image_config.get('Labels', {}).get('org.opencontainers.image.revision') == REPLACEMENT_REVISION
+            and image_config.get('Labels', {}).get(provenance) == NODE_METADATA_TO_IMAGE
+            and provenance not in (desired.get('labels') or {})
+            and provenance not in actual_public
+            and current.get('State', {}).get('Running') is False
+            and current.get('State', {}).get('Restarting') is False
+            and current.get('State', {}).get('Pid') == 0):
+        expected_public.pop(provenance, None)
     # The reviewed replacement image adds this exact base provenance label.
     # Permit only its image-owned addition/removal during the transition;
     # post-start validation still compares the complete target label strictly.
@@ -1124,11 +1741,26 @@ class Store:
             require(sha(raw) == digest, 'erasure_proof_changed')
         value = json.loads(raw)
         clean = is_clean_erasure_proof(value)
+        if isinstance(value, dict) and value.get('contractVersion') in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            return self.post_edge_module().read_proof(self.post_edge_runtime(), self, path, raw, binding)
         metadata_v2 = isinstance(value, dict) and value.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
+        replacement_enable = isinstance(value, dict) and value.get('contractVersion') == PENDING_REPLACEMENT_ENABLE_VERSION
+        startup_prepare = isinstance(value, dict) and value.get('contractVersion') == STARTUP_REPAIR_VERSION
+        startup_enable = isinstance(value, dict) and value.get('contractVersion') == STARTUP_REPAIR_ENABLE_VERSION
+        index_prepare = isinstance(value, dict) and value.get('contractVersion') == INDEX_BOUNDARY_REPAIR_VERSION
+        index_enable = isinstance(value, dict) and value.get('contractVersion') == INDEX_BOUNDARY_REPAIR_ENABLE_VERSION
+        provider_prepare = isinstance(value, dict) and value.get('contractVersion') == PROVIDER_BOUNDARY_REPAIR_VERSION
+        provider_enable = isinstance(value, dict) and value.get('contractVersion') == PROVIDER_BOUNDARY_REPAIR_ENABLE_VERSION
+        owner_prepare = isinstance(value, dict) and value.get('contractVersion') == OWNER_READINESS_REPAIR_VERSION
+        owner_enable = isinstance(value, dict) and value.get('contractVersion') == OWNER_READINESS_REPAIR_ENABLE_VERSION
+        flight_prepare = isinstance(value, dict) and value.get('contractVersion') == PUBLIC_FLIGHT_REPAIR_VERSION
+        flight_enable = isinstance(value, dict) and value.get('contractVersion') == PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION
+        continuation_prepare = isinstance(value, dict) and value.get('contractVersion') == PREPARED_CONTINUATION_VERSION
+        continuation_enable = isinstance(value, dict) and value.get('contractVersion') == PREPARED_CONTINUATION_ENABLE_VERSION
         fields = {'contractVersion', 'transitionId', 'operation', 'previous', 'target', 'changedKeys',
-                  'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'} | ({'cleanReset'} if clean else set()) | ({'imageMetadataTransition'} if metadata_v2 else set()) | ({'fencedSourceReadiness', 'existingActorIntroduction'} if value.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION else set())
+                  'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'} | ({'cleanReset'} if clean else set()) | ({'imageMetadataTransition'} if metadata_v2 else set()) | ({'fencedSourceReadiness', 'existingActorIntroduction'} if value.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION else set()) | ({'pendingTargetReplacement'} if value.get('contractVersion') == PENDING_REPLACEMENT_VERSION else set()) | ({'pendingTargetReplacementEnable'} if replacement_enable else set()) | ({'boundedStartupRepair'} if startup_prepare else set()) | ({'boundedStartupRepairEnable'} if startup_enable else set()) | ({'indexBoundaryRepair'} if index_prepare else set()) | ({'indexBoundaryRepairEnable'} if index_enable else set()) | ({'providerBoundaryRepair'} if provider_prepare else set()) | ({'providerBoundaryRepairEnable'} if provider_enable else set()) | ({'ownerReadinessRepair'} if owner_prepare else set()) | ({'ownerReadinessRepairEnable'} if owner_enable else set()) | ({'publicFlightRepair', 'publicFlightPolicy'} if flight_prepare else set()) | ({'publicFlightRepairEnable', 'publicFlightPolicy'} if flight_enable else set()) | ({'preparedTargetContinuation', 'publicFlightPolicy'} if continuation_prepare else set()) | ({'preparedTargetContinuationEnable', 'publicFlightPolicy'} if continuation_enable else set())
         require(isinstance(value, dict) and set(value) == fields
-                and value['contractVersion'] in {'cop-api-account-erasure-config-v1', CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
+                and value['contractVersion'] in {'cop-api-account-erasure-config-v1', CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION, PENDING_REPLACEMENT_VERSION, PENDING_REPLACEMENT_ENABLE_VERSION, STARTUP_REPAIR_VERSION, STARTUP_REPAIR_ENABLE_VERSION, INDEX_BOUNDARY_REPAIR_VERSION, INDEX_BOUNDARY_REPAIR_ENABLE_VERSION, PROVIDER_BOUNDARY_REPAIR_VERSION, PROVIDER_BOUNDARY_REPAIR_ENABLE_VERSION, OWNER_READINESS_REPAIR_VERSION, OWNER_READINESS_REPAIR_ENABLE_VERSION, PUBLIC_FLIGHT_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION, PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION}
                 and isinstance(value['transitionId'], str) and PROFILE_UUID.fullmatch(value['transitionId'])
                 and path.name == 'account-erasure-' + value['transitionId'] + '.json'
                 and value['operation'] in {'prepare', 'enable', 'pause', 'maintain'}
@@ -1153,6 +1785,34 @@ class Store:
                 and previous['profileId'] == binding['profileId']
                 and previous['releaseId'] == binding['previousReleaseId'], 'erasure_proof_previous')
         keys = value['changedKeys']
+        if value.get('contractVersion') == PENDING_REPLACEMENT_VERSION:
+            pending_replacement_schema(value)
+        if replacement_enable:
+            pending_replacement_enable_schema(value)
+        if startup_prepare:
+            startup_repair_schema(value)
+        if startup_enable:
+            startup_repair_enable_schema(value)
+        if index_prepare:
+            index_boundary_repair_schema(value)
+        if index_enable:
+            index_boundary_repair_enable_schema(value)
+        if provider_prepare:
+            provider_boundary_repair_schema(value)
+        if provider_enable:
+            provider_boundary_repair_enable_schema(value)
+        if owner_prepare:
+            owner_readiness_repair_schema(value)
+        if owner_enable:
+            owner_readiness_repair_enable_schema(value)
+        if flight_prepare:
+            public_flight_repair_schema(value)
+        if flight_enable:
+            public_flight_repair_enable_schema(value)
+        if continuation_prepare:
+            prepared_continuation_schema(value)
+        if continuation_enable:
+            prepared_continuation_enable_schema(value)
         if metadata_v2:
             node_metadata_transition(value)
             if value.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION:
@@ -1168,8 +1828,21 @@ class Store:
         metadata = value['environmentMetadata']
         require(isinstance(metadata, dict) and set(metadata) == {'device', 'inode', 'size', 'mtimeNs', 'ctimeNs'}
                 and all(type(v) is int and v >= 0 for v in metadata.values()), 'erasure_proof_environment_metadata')
-        require(isinstance(value['checks'], dict) and set(value['checks']) == (CLEAN_ERASURE_PROOF_CHECKS if clean else ERASURE_PROOF_CHECKS)
+        required_checks = (PREPARED_CONTINUATION_CHECKS if continuation_prepare else PREPARED_CONTINUATION_ENABLE_CHECKS if continuation_enable
+                           else PUBLIC_FLIGHT_REPAIR_PREPARE_CHECKS if flight_prepare else PUBLIC_FLIGHT_REPAIR_ENABLE_CHECKS if flight_enable
+                           else OWNER_READINESS_REPAIR_PREPARE_CHECKS if owner_prepare else OWNER_READINESS_REPAIR_ENABLE_CHECKS if owner_enable
+                           else PROVIDER_BOUNDARY_REPAIR_PREPARE_CHECKS if provider_prepare else PROVIDER_BOUNDARY_REPAIR_ENABLE_CHECKS if provider_enable
+                           else INDEX_BOUNDARY_REPAIR_PREPARE_CHECKS if index_prepare else INDEX_BOUNDARY_REPAIR_ENABLE_CHECKS if index_enable
+                           else STARTUP_REPAIR_PREPARE_CHECKS if startup_prepare else STARTUP_REPAIR_ENABLE_CHECKS if startup_enable
+                           else REPLACEMENT_PREPARE_CHECKS if value['contractVersion'] == PENDING_REPLACEMENT_VERSION
+                           else REPLACEMENT_ENABLE_CHECKS if replacement_enable
+                           else CLEAN_ERASURE_PROOF_CHECKS if clean else ERASURE_PROOF_CHECKS)
+        require(isinstance(value['checks'], dict) and set(value['checks']) == required_checks
                 and all(v is True for v in value['checks'].values()), 'erasure_proof_acceptance_missing')
+        if flight_prepare or flight_enable:
+            self.public_flight_evidence(value, fresh=False)
+        if continuation_prepare or continuation_enable:
+            self.prepared_continuation_evidence(value, binding, fresh=False)
         return sha(raw), value
 
     def assert_erasure_environment(self, binding):
@@ -1178,6 +1851,8 @@ class Store:
             return
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
         require(not (ERASURE_CONFIG_KEYS & set(os.environ)), 'erasure_shell_override_forbidden')
+        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            require(not (POST_EDGE_AUTH_KEYS & set(os.environ)), 'erasure_auth_shell_override_forbidden')
         require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
         scope = getattr(self.docker, 'account_erasure_scope', None)
         if scope is not None and scope.get('edgeContainerId') is not None:
@@ -1191,6 +1866,8 @@ class Store:
             yield
             return
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        require(proof['contractVersion'] not in {PENDING_REPLACEMENT_VERSION, STARTUP_REPAIR_VERSION, INDEX_BOUNDARY_REPAIR_VERSION, PROVIDER_BOUNDARY_REPAIR_VERSION, OWNER_READINESS_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_VERSION, PREPARED_CONTINUATION_VERSION, POST_EDGE_VERSION},
+                'pending_replacement_requires_dedicated_transition')
         require(proof['previous'] == previous, 'erasure_previous_cas_changed')
         self.assert_erasure_environment(binding)
         current = self.docker.current(directory)
@@ -1239,12 +1916,16 @@ class Store:
         require(set(binding) in (release_keys, release_keys | {'accountErasureConfig'}), 'release_schema_invalid')
         if 'accountErasureConfig' in binding:
             reference = binding['accountErasureConfig']
-            require(isinstance(reference, dict) and set(reference) in ({'path', 'sha256'}, {'path', 'sha256', 'cleanScope'})
+            require(isinstance(reference, dict) and set(reference) in ({'path', 'sha256'}, {'path', 'sha256', 'cleanScope'},
+                    {'path', 'sha256', 'cleanScope', 'authScope'})
                     and reference.get('cleanScope', 'cop_sim_shared_identity_v1') == 'cop_sim_shared_identity_v1'
                     and isinstance(reference['path'], str) and isinstance(reference['sha256'], str)
                     and re.fullmatch(r'[0-9a-f]{64}', reference['sha256']), 'erasure_reference_invalid')
             _, config_proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
             require(('cleanScope' in reference) == is_clean_erasure_proof(config_proof), 'erasure_reference_scope')
+            require(('authScope' in reference) == (config_proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION})
+                    and reference.get('authScope', POST_EDGE_AUTH_SCOPE) == POST_EDGE_AUTH_SCOPE,
+                    'erasure_auth_reference_scope')
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
         require(binding.get('contractVersion') == 'cop-api-runtime-release-v1'
                 and binding.get('releaseId') == identifier and IMAGE.fullmatch(binding.get('imageId', ''))
@@ -1290,8 +1971,13 @@ class Store:
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
         values = config['services']['cop-api']['environment']
         erasure_target_environment(values, proof['operation'], proof['cleanReset'])
-        require(CLEAN_ERASURE_CONFIG_KEYS <= set(values), 'clean_overlay_missing')
-        return {key: values[key] for key in CLEAN_ERASURE_CONFIG_KEYS}
+        keys = CLEAN_ERASURE_CONFIG_KEYS | (POST_EDGE_AUTH_KEYS if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION} else set())
+        require(keys <= set(values), 'clean_overlay_missing')
+        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            require(values['COP_AUTH_MODE'] == 'oidc' and values['COP_ALLOW_LAB_TOKEN'] == 'false', 'clean_oidc_values')
+            if proof['contractVersion'] == CONTINUITY_REPAIR_VERSION:
+                require(values.get('COP_ACCOUNT_ERASURE_ENABLED') == 'true', 'continuity_repair_intake_changed')
+        return {key: values[key] for key in keys}
 
     def prepare(self, image, revision, attestation, expected, profile_id=None, baseline=False, erasure_config=None):
         self.clean(); pointer = self.check_cas(expected)
@@ -1320,11 +2006,15 @@ class Store:
         if erasure_config is not None:
             require(pointer is not None and not baseline, 'erasure_candidate_required')
             digest, proof = self.erasure_config_proof(Path(erasure_config), binding)
+            require(proof['contractVersion'] not in {PENDING_REPLACEMENT_VERSION, STARTUP_REPAIR_VERSION, INDEX_BOUNDARY_REPAIR_VERSION, PROVIDER_BOUNDARY_REPAIR_VERSION, OWNER_READINESS_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_VERSION, PREPARED_CONTINUATION_VERSION, POST_EDGE_VERSION},
+                    'pending_replacement_requires_dedicated_transition')
             require(proof['previous'] == pointer, 'erasure_previous_cas_changed')
             require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
             binding['accountErasureConfig'] = {'path': str(erasure_config), 'sha256': digest}
             if is_clean_erasure_proof(proof):
                 binding['accountErasureConfig']['cleanScope'] = 'cop_sim_shared_identity_v1'
+            if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+                binding['accountErasureConfig']['authScope'] = POST_EDGE_AUTH_SCOPE
             self.assert_erasure_environment(binding)
         self.docker.image(image, baseline=baseline, revision=revision)
         self.check_mounts(binding, profile)
@@ -1366,7 +2056,8 @@ class Store:
         self.write(directory / 'image.env', self.image_env(binding, profile['mode']))
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
                         profile['values'], profile['mode'], image, presence,
-                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])),
+                        auth_scope=binding.get('accountErasureConfig', {}).get('authScope') == POST_EDGE_AUTH_SCOPE)
         self.write(directory / 'release.json', encoded(binding))
         self.check_cas(expected)
         return binding
@@ -1409,15 +2100,142 @@ class Store:
                 'accepted_health_witness_scope_changed')
         return encoded(health_statuses(value['statuses']))
 
+    def post_edge_runtime(self):
+        import types
+        return types.SimpleNamespace(**globals())
+
+    def post_edge_module(self):
+        import types
+        path = self.protected_root / '206c4507-5e00-458e-b0ee-4061309aa7a8' / ('post-edge-promotion-helper-' + POST_EDGE_HELPER_SHA256 + '.py')
+        self.protected_directory(path.parent)
+        raw = private_read(path, 0, mode=0o640, gid=1000)
+        require(sha(raw) == POST_EDGE_HELPER_SHA256, 'post_edge_operator_source_changed')
+        module = types.ModuleType('closed_post_edge_promotion')
+        exec(compile(raw, str(path), 'exec'), module.__dict__)
+        return module
+
+    def prepared_continuation_basis(self, proof, binding):
+        prepared = proof
+        if proof['contractVersion'] == PREPARED_CONTINUATION_ENABLE_VERSION:
+            w = prepared_continuation_enable_schema(proof)
+            path = Path(w['acceptedContinuationProofPath'])
+            raw = private_read(path, 0, mode=0o640, gid=1000)
+            require(sha(raw) == w['acceptedContinuationProofSha256'], 'prepared_continuation_prepare_changed')
+            prepared = json.loads(raw)
+            require(prepared.get('contractVersion') == PREPARED_CONTINUATION_VERSION,
+                    'prepared_continuation_prepare_contract')
+            self.erasure_config_proof(path, {**binding, 'previousReleaseId': prepared['previous']['releaseId']}, sha(raw))
+            require(proof['cleanReset'] == prepared['cleanReset']
+                    and w['authorizationRecordSha256'] == prepared['preparedTargetContinuation']['authorizationRecordSha256'],
+                    'prepared_continuation_enable_history')
+        basis = prepared_continuation_schema(prepared)
+        path = Path(basis['originalProofPath'])
+        _, original = self.erasure_config_proof(path, {**binding, 'previousReleaseId': prepared['previous']['releaseId']},
+                                                basis['originalProofSha256'])
+        require(original['contractVersion'] == PUBLIC_FLIGHT_REPAIR_VERSION
+                and original['transitionId'] == 'ada81c52-8e1a-46c0-8b42-5b7a05e8390f'
+                and original['publicFlightPolicy']['sha256'] == basis['originalExternalReceiptSha256']
+                and all(prepared[key] == original[key] for key in
+                    ('previous', 'target', 'changedKeys', 'environmentMetadata', 'composeHashes', 'cleanReset')),
+                'prepared_continuation_original_history_changed')
+        return basis
+
+    def prepared_continuation_evidence(self, proof, binding, fresh=False):
+        ref = prepared_continuation_ref(proof)
+        self.protected_directory(self.protected_root); self.protected_directory(Path(ref['path']).parent)
+        raw = private_read(Path(ref['path']), 0, mode=0o640, gid=1000)
+        require(sha(raw) == ref['sha256'], 'prepared_continuation_observation_changed')
+        basis = self.prepared_continuation_basis(proof, binding)
+        return prepared_target_observation_schema(json.loads(raw), proof, basis, fresh)
+
+    def prepared_continuation_verified_health(self, binding, verified):
+        reference = binding['accountErasureConfig']
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            return self.post_edge_module().validate_health(self.post_edge_runtime(), self, binding, verified)
+        require(proof['contractVersion'] in {PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION},
+                'prepared_continuation_health_contract')
+        evidence = self.prepared_continuation_evidence(proof, binding, fresh=True)
+        public_flight_auth_boundary()
+        value = json.loads(verified)
+        require(isinstance(value, dict) and set(value) == {'contractVersion', 'criticalHealthAndDemoPreserved',
+                'publicFlightStatus', 'externalEvidenceSha256', 'operationId', 'baselineSha256', 'statuses',
+                'unauthorizedRequestsRejected', 'authorityProofSha256'}
+                and value['contractVersion'] == 'cop-critical-health-prepared-continuation-v1'
+                and value['criticalHealthAndDemoPreserved'] is True and value['unauthorizedRequestsRejected'] is True
+                and value['authorityProofSha256'] == reference['sha256']
+                and value['externalEvidenceSha256'] == proof['publicFlightPolicy']['sha256']
+                and value['operationId'] == proof['transitionId']
+                and value['baselineSha256'] == '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2',
+                'prepared_continuation_health_result')
+        baseline_raw = private_read(CLEAN_RESET_DIRECTORY / 'pre-stop-health.json', 0, mode=0o640, gid=1000)
+        require(sha(baseline_raw) == value['baselineSha256'], 'prepared_continuation_original_baseline_changed')
+        status = public_flight_health_comparison(json.loads(baseline_raw)['statuses'], value['statuses'])
+        require(value['publicFlightStatus'] == status
+                and (evidence['observation']['httpStatus'] == 502 or status == 'ok'),
+                'prepared_continuation_recovered_feed_not_ok')
+        return value
+
+    def public_flight_evidence(self, proof, fresh=False):
+        ref = public_flight_policy_ref(proof)
+        path = Path(ref['path'])
+        self.protected_directory(self.protected_root); self.protected_directory(path.parent)
+        raw = private_read(path, self.protected_uid, mode=0o640, gid=self.protected_gid)
+        require(sha(raw) == ref['sha256'], 'public_flight_evidence_changed')
+        return public_flight_evidence_schema(json.loads(raw), ref, proof, fresh)
+
+    def public_flight_verified_health(self, binding, verified):
+        reference = binding.get('accountErasureConfig')
+        require(reference is not None, 'public_flight_health_proof_missing')
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            return self.post_edge_module().validate_health(self.post_edge_runtime(), self, binding, verified)
+        if proof['contractVersion'] in {PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION}:
+            return self.prepared_continuation_verified_health(binding, verified)
+        require(proof['contractVersion'] in {PUBLIC_FLIGHT_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION, PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION},
+                'public_flight_health_contract')
+        evidence = self.public_flight_evidence(proof, fresh=True)
+        public_flight_auth_boundary()
+        value = json.loads(verified)
+        require(isinstance(value, dict) and set(value) == {'contractVersion', 'criticalHealthAndDemoPreserved',
+                'publicFlightStatus', 'externalEvidenceSha256', 'operationId', 'baselineSha256', 'statuses', 'unauthorizedRequestsRejected'}
+                and value['contractVersion'] == 'cop-critical-health-public-flight-v1'
+                and value['criticalHealthAndDemoPreserved'] is True
+                and value['unauthorizedRequestsRejected'] is True
+                and value['externalEvidenceSha256'] == proof['publicFlightPolicy']['sha256']
+                and value['operationId'] == proof['transitionId']
+                and value['baselineSha256'] == evidence['historicalBaselineSha256'], 'public_flight_health_result')
+        baseline_raw = private_read(CLEAN_RESET_DIRECTORY / 'pre-stop-health.json', self.protected_uid,
+                                    mode=0o640, gid=self.protected_gid)
+        require(sha(baseline_raw) == evidence['historicalBaselineSha256'], 'public_flight_original_baseline_changed')
+        baseline = json.loads(baseline_raw)
+        require(baseline['statuses'][HEALTH_URLS[2]]['dependencies'].get('flight-data-source') == 'ok',
+                'public_flight_original_source_baseline')
+        require(value['publicFlightStatus'] == public_flight_health_comparison(baseline['statuses'], value['statuses']),
+                'public_flight_health_observation_mismatch')
+        return value
+
     def record_accepted_health(self, directory, binding, current, verified):
+        finite_flight = False
+        if binding.get('accountErasureConfig'):
+            reference = binding['accountErasureConfig']
+            _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+            finite_flight = proof['contractVersion'] in {PUBLIC_FLIGHT_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION, PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION, POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}
+        if finite_flight:
+            value = self.public_flight_verified_health(binding, verified)
+            expected_image = binding['imageId'] if proof['contractVersion'] == CONTINUITY_REPAIR_VERSION else PUBLIC_FLIGHT_REPAIR_IMAGE
+            expected_revision = proof['target']['sourceRevision'] if proof['contractVersion'] == CONTINUITY_REPAIR_VERSION else PUBLIC_FLIGHT_REPAIR_REVISION
+            require(current.get('State', {}).get('Running') is True and current['Image'] == expected_image
+                    and binding['sourceRevision'] == expected_revision, 'public_flight_live_target')
+            self.write(directory / 'accepted-public-flight-health.json', encoded(value))
         if binding['driverContract']['poolMode'] != 'direct':
             return
         if binding['acceptedHealthSha256'] is not None:
             self.accepted_health(directory, binding)
             return  # Preserve the original accepted observation, including CID.
         value = json.loads(verified)
-        require(set(value) == {'healthAndPublicDemoPreserved', 'statuses'}
-                and value['healthAndPublicDemoPreserved'] is True
+        require((finite_flight or set(value) == {'healthAndPublicDemoPreserved', 'statuses'}
+                and value['healthAndPublicDemoPreserved'] is True)
                 and current.get('State', {}).get('Running') is True
                 and current['Image'] == binding['imageId'], 'accepted_health_verification_invalid')
         witness = {'contractVersion': 'cop-api-runtime-health-witness-v1',
@@ -1475,7 +2293,8 @@ class Store:
                           revision=binding['sourceRevision'])
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
                         profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'],
-                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])),
+                        auth_scope=binding.get('accountErasureConfig', {}).get('authScope') == POST_EDGE_AUTH_SCOPE)
         if adopt:
             actual = self.docker.current(directory)
             require(actual['Id'] == binding['legacyContainerId'], 'legacy_container_witness_mismatch')
@@ -1590,7 +2409,8 @@ class Store:
                           revision=binding['sourceRevision'])
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
                         profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'],
-                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])),
+                        auth_scope=binding.get('accountErasureConfig', {}).get('authScope') == POST_EDGE_AUTH_SCOPE)
         self.docker.preserve(directory, profile['directory'], actual)
         self.docker.unchanged(directory, actual)
         if rollback and target_running:
