@@ -847,3 +847,13 @@ compare the remaining provider snapshots before a specifically reviewed
 continuation. A finite in-memory SQL correction must record both the original
 source hash and corrected hash; it is not an unchanged sealed-source execution.
 Production activation and account-deletion acceptance remain separate evidence.
+
+
+The storage readiness gate uses a 120-second readiness polling window after
+the same provider instance has restarted; each request retains its 8-second
+timeout. It still requires the new COP credential to work and
+the previous credential to return 403 before inventory checks or deletion.
+This bounded wait does not restart the provider again or rotate another key.
+A failure after rotation must retain the same private context and continue
+only after independently verifying the exact provider/configuration, restart
+time, new/old credentials and unchanged object inventory.

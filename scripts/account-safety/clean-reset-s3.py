@@ -394,7 +394,7 @@ def apply_s3_reset(reviewed, admission, storage):
     need(started.get('sameSpec') is True and started.get('imageId') == before['providerImageId'],
          'RESET_S3_PROVIDER_CHANGED')
     client = S3(new)
-    deadline = time.monotonic()+15
+    deadline = time.monotonic()+120
     while True:
         admission.assert_current()
         try:
