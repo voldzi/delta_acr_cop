@@ -875,6 +875,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const serviceAuthPolicy = new ServiceAuthPolicy(process.env.COP_SERVICE_AUTH_BINDINGS);
   const maxCommunityAttachmentBytes = readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024);
   const app = Fastify({
+    // Guarded durable hydration must finish before serving any requests.
+    // This startup budget does not extend the five-second continuity observation.
+    pluginTimeout: 90_000,
     bodyLimit: readPositiveInteger(
       process.env.COP_API_BODY_LIMIT_BYTES,
       Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)

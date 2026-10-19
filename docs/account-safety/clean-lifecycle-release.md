@@ -4,6 +4,13 @@
 
 ### Production attempt 2026-10-19 — not accepted
 
+The first continuity repair reached the Fastify readiness hook, but actual startup
+failed with `FST_ERR_HOOK_TIMEOUT`: the default ten-second hook budget was too
+short for guarded persistent hydration. The next repair gives initialization a
+bounded 90-second budget. Requests remain unavailable until all initialization
+finishes; the five-second continuity observation and all account fences are
+unchanged. This source correction is not production acceptance.
+
 The approved shared test-data reset and SIM/Messaging enrollment completed. Their
 protected readiness checks passed. The COP candidate `sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86`
 started but failed closed while restoring persistent tracks: the five-second
