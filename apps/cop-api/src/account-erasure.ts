@@ -277,8 +277,11 @@ export class AccountErasureService {
     try {
       await this.init();
       await this.assertContinuityCurrent();
-      for (const id of this.required) if (!(await bounded(this.adapters.get(id)!.ready(), AbortSignal.timeout(this.timeoutMs)))) {
-        return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "adapter_unavailable" };
+      for (const id of this.required) {
+        await this.assertContinuityCurrent();
+        if (!(await bounded(this.adapters.get(id)!.ready(), AbortSignal.timeout(this.timeoutMs)))) {
+          return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "adapter_unavailable" };
+        }
       }
       return { contractVersion: this.contractVersion, accountDeletion: true };
     } catch { return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "adapter_unavailable" }; }
@@ -440,8 +443,13 @@ export class AccountErasureService {
       if (!adapter?.preflight) { blockers.push({ domain: id, reason: "adapter_preflight_missing" }); continue; }
       try {
         const signal = AbortSignal.timeout(this.timeoutMs);
+        // Earlier owners can consume the short observation. Revalidate the same
+        // durable frontier; never adopt a newer head or extend the five-second lease.
+        await this.assertContinuityCurrent();
         if (!await bounded(adapter.ready(), signal)) { blockers.push({ domain: id, reason: "adapter_unavailable" }); continue; }
+        await this.assertContinuityCurrent();
         const result = await bounded(adapter.preflight(actor, { signal, operationId }), signal);
+        await this.assertContinuityCurrent();
         if (result.ready === false) {
           if (!["ownership_unresolved", "choice_required", "adapter_preflight_missing", "adapter_unavailable"].includes(result.reason)) throw new Error("Invalid preflight blocker");
           blockers.push({ domain: id, reason: result.reason }); continue;

@@ -63,6 +63,28 @@ async function start(service: AccountErasureService) {
   return service.request(actor, operationId, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
 }
 describe("independent fence controller recovery", () => {
+  it("revalidates the accepted frontier between sequential preflight owners", async () => {
+    const { options, journal, adapters } = await setup();
+    let clock = instant.getTime();
+    journal.assertCurrent = async frontier => {
+      if (journal.unavailable || JSON.stringify(frontier) !== JSON.stringify(journal.head)) throw new Error("synthetic stale frontier");
+      return { validUntil: new Date(clock + 5000).toISOString() };
+    };
+    const service = new AccountErasureService({ ...options, now: () => new Date(clock) });
+    adapters[0]!.preflight = async () => { clock += 6000; return { ready: true, version: "synthetic_preflight" }; };
+    adapters.find(a => a.id === "cop_content_media")!.ready = async () => service.cachedGuardReady();
+    const result = await service.preflight(actor, operationId);
+    expect(result.response.canConfirm).toBe(true);
+    expect(result.response.blockers).toEqual([]);
+    expect(service.cachedGuardReady()).toBe(true);
+    clock += 5001;
+    expect(service.cachedGuardReady()).toBe(false);
+    adapters[0]!.preflight = async () => { journal.head = { sequence: 1, digest: "1".repeat(64) }; return { ready: true, version: "synthetic_preflight" }; };
+    const changed = await service.preflight(actor, operationId);
+    expect(changed.response.canConfirm).toBe(false);
+    expect(journal.entries).toEqual([]);
+  });
+
   it("refreshes expired producer admission after a slow read without extending its observation", async () => {
     const { options, journal } = await setup();
     let now = instant.getTime();

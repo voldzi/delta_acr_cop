@@ -2,6 +2,24 @@
 
 ## Current evidence
 
+### Post-Edge activation and sequential preflight correction (2026-10-19)
+
+The repaired Edge `45ee4c5…` and API `7a77ff1…` were actually deployed. API
+startup, strict OIDC with lab tokens disabled, all owner health checks and web
+publication passed. The first actual two-user acceptance reached both BFF logins,
+but account A preflight reported `cop_content_media: adapter_unavailable`; no
+account had yet been fenced or erased. Individual real PostgreSQL content
+preflights passed. This is not completed production deletion acceptance.
+
+Sequential capability and preflight owners now revalidate the same already
+accepted durable frontier between asynchronous owner checks. The five-second
+observation remains unchanged; an advanced or unavailable frontier still blocks
+intake. A targeted regression first failed on the old implementation, then passed
+with this correction, including rejection of an advanced frontier and expiry
+again after five seconds. The continuity and owner-readiness suites passed 34
+checks. This correction requires its own immutable image and live A/B acceptance;
+no old image proof is relabelled and the completed global reset is not repeated.
+
 ### Production attempt 2026-10-19 — not accepted
 
 The first continuity repair reached the Fastify readiness hook, but actual startup
