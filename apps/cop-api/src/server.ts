@@ -2794,14 +2794,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const { metadata, response: combined } = combineSimSearchPages(responses, aiContextIndexSimSearchEntityLimit, now());
       const health = buildSimSearchDataHealth(combined, requestNow);
       health.summary = { ...health.summary, ...metadata };
+      await accountErasure?.refreshCachedGuard();
       state.sources.set(
         simSearchDataSource.sourceSystem.sourceSystemId,
         withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
       );
       return summarizeSimSearchResponseForAi(combined, undefined);
     } catch (error) {
-      if (error instanceof ProviderCopiesUnavailableError) throw error;
+      if (error instanceof ProviderCopiesUnavailableError || error instanceof AccountErasureError || error instanceof ContentErasureStoreError) throw error;
       const health = unavailableSimSearchDataHealth(error, requestNow);
+      await accountErasure?.refreshCachedGuard();
       state.sources.set(
         simSearchDataSource.sourceSystem.sourceSystemId,
         withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)

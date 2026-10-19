@@ -10,6 +10,11 @@ short for guarded persistent hydration. The next repair gives initialization a
 bounded 90-second budget. Requests remain unavailable until all initialization
 finishes; the five-second continuity observation and all account fences are
 unchanged. This source correction is not production acceptance.
+The longer startup then exposed a second stale observation after the SIM search
+entity fetch, before updating guarded source health for the AI index. That exact
+boundary now refreshes the durable frontier before both success and ordinary
+provider-error writes; continuity/projection errors propagate without fallback.
+The other startup AI callees were inspected for guarded writes after awaits.
 
 The approved shared test-data reset and SIM/Messaging enrollment completed. Their
 protected readiness checks passed. The COP candidate `sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86`
