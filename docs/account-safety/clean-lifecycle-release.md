@@ -661,3 +661,14 @@ hashes are captured first; the locally modified `deploy-production.sh` and other
 checkout files are preserved. This is a scoped source installation, not a claim
 that the production Git HEAD moved. Boundary tests and guarded Store tests do
 not replace actual Root execution or production acceptance.
+
+## Owner diagnostic freshness repair
+
+Owner readiness revalidates the already accepted independent frontier before
+calling the owner ports, after its first read-only store/snapshot verification.
+It does not initialize, replay, publish or adopt a new frontier. The maximum
+five-second observation and the second exact snapshot comparison remain in force.
+A newer frontier or failed observation still makes readiness unavailable.
+The targeted synthetic test covers expiration, successful revalidation and
+rejection of an advanced frontier with no durable writes. Production activation
+and synthetic account deletion remain pending until actual health and acceptance pass.

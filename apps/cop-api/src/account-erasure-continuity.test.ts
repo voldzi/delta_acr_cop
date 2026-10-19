@@ -84,6 +84,30 @@ describe("independent fence controller recovery", () => {
     expect(service.cachedGuardReady()).toBe(false);
     expect(() => service.assertCachedActorAllowed({ issuer, subjectId: actor.subjectId! })).toThrow();
   });
+  it("refreshes owner diagnostics against the accepted frontier without initializing or adopting a newer one", async () => {
+    const { options, journal, adapters, store } = await setup();
+    let now = instant.getTime();
+    journal.assertCurrent = async frontier => {
+      if (journal.unavailable || JSON.stringify(frontier) !== JSON.stringify(journal.head)) throw new Error("synthetic stale frontier");
+      return { validUntil: new Date(now + 5000).toISOString() };
+    };
+    const service = new AccountErasureService({ ...options, now: () => new Date(now) });
+    await service.init();
+    const init = vi.spyOn(service, "init"), publish = vi.spyOn(journal, "publishFence");
+    adapters[0]!.ready = async () => service.cachedGuardReady();
+    const before = await store.transact([], tx => tx.scan(""));
+    now += 5001;
+    expect(service.cachedGuardReady()).toBe(false);
+    expect(await service.ownerReadiness()).toMatchObject({ ready: true });
+    expect(init).not.toHaveBeenCalled();
+    now += 5001;
+    journal.head = { sequence: 1, digest: "1".repeat(64) };
+    expect(await service.ownerReadiness()).toMatchObject({ ready: false });
+    expect(service.cachedGuardReady()).toBe(false);
+    expect(init).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(await store.transact([], tx => tx.scan(""))).toEqual(before);
+  });
   it("requires the configured bridge and never silently uses legacy version3", async () => {
     const { options, store } = await setup();
     await expect(new AccountErasureService({ ...options, continuity: undefined }).init()).rejects.toMatchObject({ status: 503 });

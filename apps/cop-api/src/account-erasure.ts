@@ -329,6 +329,8 @@ export class AccountErasureService {
         return replay ? JSON.stringify([replay.frontier, replay.datasetBinding, replay.entries]) : "local";
       };
       const before = await verify();
+      // Revalidate only the already accepted frontier; diagnostics must not initialize or replay it.
+      await this.assertContinuityCurrent();
       const readiness = await Promise.all(this.required.map(id => bounded(this.adapters.get(id)!.ready(), AbortSignal.timeout(this.timeoutMs))));
       if (readiness.some(value => value !== true) || await verify() !== before) return result(false, "adapter_unavailable");
       return result(true);
