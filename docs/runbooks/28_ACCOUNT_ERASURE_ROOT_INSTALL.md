@@ -830,3 +830,20 @@ the same Root custody and normal health/source/profile controls. The actual PG
 test unpauses the synthetic writer, updates a profile and refreshes encrypted
 session bytes, pauses it again and demonstrates both distinct verification
 paths while preserving B and all new ciphertext bytes.
+
+
+## Messaging metadata timestamp boundary
+
+The metadata reset must explicitly populate `inserted_at` and `updated_at`
+with PostgreSQL `now()` when recreating `account_safety`. The production Ecto
+schema makes both columns non-null without database defaults. The reset keeps
+its original transaction, exact metadata-plan comparison and rollback on error;
+no schema default or relaxation of a constraint is required.
+
+A stopped release that already committed earlier phases must not replay the
+whole reset. Preserve the same plan, epoch and private configuration; establish
+the actual completed phases and rolled-back transaction, then independently
+compare the remaining provider snapshots before a specifically reviewed
+continuation. A finite in-memory SQL correction must record both the original
+source hash and corrected hash; it is not an unchanged sealed-source execution.
+Production activation and account-deletion acceptance remain separate evidence.

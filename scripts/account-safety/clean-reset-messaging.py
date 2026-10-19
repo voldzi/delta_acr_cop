@@ -205,7 +205,7 @@ def apply_metadata_reset(connection, reviewed_plan, server_name, admission):
         q.execute('DELETE FROM public.csm_messaging_stores WHERE store_name<>%s', ('matrix_identities',))
         q.execute('UPDATE public.csm_messaging_stores SET payload=%s::jsonb,updated_at=now() WHERE store_name=%s',
                   (json.dumps(fresh),'matrix_identities'))
-        q.execute("INSERT INTO public.csm_messaging_stores(store_name,payload) VALUES('account_safety',%s::jsonb)",
+        q.execute("INSERT INTO public.csm_messaging_stores(store_name,payload,inserted_at,updated_at) VALUES('account_safety',%s::jsonb,now(),now())",
                   (json.dumps({'version':1,'fences':{},'jizdaFences':{},'bindings':{}}),))
         after, remaining = metadata_snapshot(q, server_name)
         need(remaining == service and after['serviceMappingDigest'] == before['serviceMappingDigest']
