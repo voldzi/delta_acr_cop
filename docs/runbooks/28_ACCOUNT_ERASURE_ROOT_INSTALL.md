@@ -857,3 +857,12 @@ This bounded wait does not restart the provider again or rotate another key.
 A failure after rotation must retain the same private context and continue
 only after independently verifying the exact provider/configuration, restart
 time, new/old credentials and unchanged object inventory.
+
+
+The native reset preserves the exact existing `X`/numeric stream-frontier row
+in `device_lists_changes_in_room_max_pruned_stream_id`. It is operational
+control state, not a user's contribution. Its exact two-column structure,
+singleton identity and safe numeric range are required before truncation;
+restoration and readback remain in the same native transaction. All actual
+device-change rows are still removed. This avoids removing a control row
+required by the subsequent unchanged owner-stream migration.

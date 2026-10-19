@@ -138,6 +138,13 @@ def apply_native_reset(connection, reviewed_plan, admin_token, server_name, admi
                 'devices': _rows(q, 'devices', 'user_id=%s', (admin,)),
                 'refresh_tokens': _rows(q, 'refresh_tokens', 'user_id=%s', (admin,)),
                 'access_tokens': _rows(q, 'access_tokens', 'token=%s', (admin_token,))}
+        frontier = 'device_lists_changes_in_room_max_pruned_stream_id'
+        kept[frontier] = _rows(q, frontier, 'true', ())
+        frontier_names, frontier_rows = kept[frontier]
+        need(frontier_names == ['lock', 'stream_id'] and len(frontier_rows) == 1
+             and frontier_rows[0][0] == 'X' and type(frontier_rows[0][1]) is int
+             and 0 <= frontier_rows[0][1] < 9007199254740992,
+             'RESET_NATIVE_FRONTIER_UNPROVEN')
         # Admin device bindings needed by its configured token survive, but old
         # client IP, user-agent and last-seen observations do not.
         names, rows = kept['devices']
@@ -145,12 +152,13 @@ def apply_native_reset(connection, reviewed_plan, admin_token, server_name, admi
                                          for i,n in enumerate(names)) for r in rows])
         need(all(len(rows) <= 100 for _,rows in kept.values()), 'RESET_NATIVE_CREDENTIAL_LIMIT')
         q.execute('TRUNCATE TABLE ' + ','.join('public.' + x for x in p['dataTables']))
-        for table in ['users', 'devices', 'refresh_tokens', 'access_tokens']:
+        for table in ['users', 'devices', 'refresh_tokens', 'access_tokens', frontier]:
             _restore(q, table, kept[table])
+        need(_rows(q, frontier, 'true', ()) == kept[frontier], 'RESET_NATIVE_FRONTIER_READBACK_FAILED')
         after, _ = native_snapshot(q, admin_token, server_name)
         need(after['humanCount'] == 0 and after['configuration'] == before['configuration']
              and after['preservedServiceFingerprint'] == before['preservedServiceFingerprint'], 'RESET_NATIVE_READBACK_FAILED')
-        allowed = {'users','devices','refresh_tokens','access_tokens'}
+        allowed = {'users','devices','refresh_tokens','access_tokens',frontier}
         need(all(n == 0 for t,n in after['counts'].items() if t not in allowed), 'RESET_NATIVE_DATA_REMAIN')
         for table, (_,rows) in kept.items():
             need(after['counts'][table] == len(rows), 'RESET_NATIVE_CREDENTIAL_READBACK_FAILED')
