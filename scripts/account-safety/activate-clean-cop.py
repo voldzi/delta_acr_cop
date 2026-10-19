@@ -88,6 +88,8 @@ def capture_cop_pre_stop_health(host,plan):
 CHILD=r'''
 import json,os,sys,types
 from pathlib import Path
+assert os.geteuid()==1000 and os.getegid()==1000 and __import__('pwd').getpwuid(1000).pw_dir=='/home/voldzi'
+os.environ['HOME']='/home/voldzi'
 os.umask(0o077);p=json.load(sys.stdin);mods=[]
 for name in ['runtime','storage']:
  m=types.ModuleType('sealed_'+name);m.__file__=p[name+'Path'];exec(compile(p[name+'Source'],m.__file__,'exec'),m.__dict__);mods.append(m)

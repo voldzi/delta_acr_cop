@@ -1,0 +1,84 @@
+{
+  "contractVersion": "cop-pending-target-replacement-review-v1",
+  "mode": "review_only",
+  "activationAuthorized": false,
+  "resetEpoch": "ea1699f1-16c7-47cb-9d81-9ab423e349df",
+  "originalPlanSha256": "74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1",
+  "originalWholeReportSha256": "66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a",
+  "historicalBaselineSha256": "0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2",
+  "failedImageId": "sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86",
+  "sourceRevision": "2cea89023dc61a9ac82c186385b2cb62aac15183",
+  "allowedCompiledDelta": [
+    "/app/apps/cop-api/dist/account-erasure.js",
+    "/app/apps/cop-api/dist/server.js"
+  ],
+  "allowedProvenanceDelta": [
+    "/app/apps/cop-api/dist/account-erasure.js.map",
+    "/app/apps/cop-api/dist/server.js.map",
+    "/app/apps/cop-api/dist/account-erasure.d.ts",
+    "/app/apps/cop-api/dist/server.d.ts",
+    "/app/apps/cop-api/src/account-erasure.ts",
+    "/app/apps/cop-api/src/server.ts"
+  ],
+  "preservation": {
+    "resetReplay": false,
+    "oldWriterRestart": false,
+    "databaseReset": false,
+    "keyRotation": false,
+    "roleChange": false,
+    "networkChange": false,
+    "simMutation": false,
+    "messagingMutation": false,
+    "historicalProofRewrite": false,
+    "ttlIncrease": false,
+    "automaticOldImageFallback": false,
+    "realAccountDeletionForTest": false
+  },
+  "requiredEvidence": [
+    "explicit_human_derivative_policy_approval",
+    "root_current_pending_and_accepted_pointer_cas",
+    "failed_candidate_stopped_identity_and_spec",
+    "same_epoch_and_database_continuity",
+    "unchanged_other_eight_image_bindings",
+    "exact_two_executable_and_six_provenance_files_only",
+    "new_image_identity_source_revision_and_sharp_x5_attestation",
+    "fresh_sim_five_capabilities_and_authenticated_messaging_owner",
+    "fresh_paused_producer_inventory",
+    "new_candidate_actual_health_auth_owners_and_public_demo",
+    "two_synthetic_accounts_isolation_and_self_deletion",
+    "old_sessions_rejected_and_identity_deletion_confirmed",
+    "unchanged_historical_proof_readback",
+    "commit_new_pointer_only_after_actual_runtime_acceptance",
+    "whole_account_complete_only_after_synthetic_acceptance"
+  ],
+  "newImageId": "sha256:056a735741395677ad7742f7a9f21c13f3d0e9f1a8e367494fa5a5d48ea6111f",
+  "imageMetadataException": {
+    "baseImageId": "sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86",
+    "targetImageId": "sha256:056a735741395677ad7742f7a9f21c13f3d0e9f1a8e367494fa5a5d48ea6111f",
+    "platform": "linux/amd64",
+    "field": "Config.ArgsEscaped",
+    "beforePresent": true,
+    "beforeValue": true,
+    "afterPresent": false,
+    "allOtherExecutionFieldsMustMatch": true,
+    "runtimeAuthorization": false
+  },
+  "actualBindings": {
+    "failedContainerId": "1f50bd766d3865933d4ea1fcd5cebc27728185f47798855dc4c716d79e76cc45",
+    "pendingSha256": "4b8534417f9ff45d66f57ae16393b450ebbc5bec9bc511144288665a27654c6e",
+    "pendingTargetReleaseId": "release-2fbcedbc83f14f49949530b3ca79a29b",
+    "pendingHealthSha256": "bee9c12f612c9967452802d03ddbe21b2dd6aa7765735d232c9b788dfa2f85f2",
+    "acceptedPointerSha256": "b987a423f28f4715d353010d94ced745e479f3d6f41574151d7a8a8df092c70b",
+    "acceptedReleaseId": "release-cfc42353256f4f24ab026ffc4d3ed993",
+    "acceptedHealthState": "absent_legacy_transaction",
+    "acceptedHealthSha256": null,
+    "plannedUnchangedImageBindingsSha256": "2d77e672466224fbb9a82e374e3a6a47924d1b4c6e5c292d6cb61592e97df61b"
+  },
+  "approval": null,
+  "unresolved": [
+    "Root revalidation of supplied derivative build receipt and actual runtime attestation",
+    "fresh Root revalidation of supplied pending/accepted bindings and eight unchanged image bindings",
+    "explicit human approval of this derivative transition policy",
+    "actual new-candidate readiness and synthetic A/B acceptance"
+  ]
+}

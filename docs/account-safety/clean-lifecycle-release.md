@@ -24,6 +24,19 @@ honest release binding; the old nine-image acceptance must not be relabelled as
 acceptance of this derivative. Live startup, owner readiness and two synthetic
 production self-deletions are still required before completion can be reported.
 
+Prepared repair: source `2cea89023dc61a9ac82c186385b2cb62aac15183`, image
+`sha256:056a735741395677ad7742f7a9f21c13f3d0e9f1a8e367494fa5a5d48ea6111f`.
+The focused continuity regression, TypeScript build, actual eight-file image
+readback, dependency-layer preservation, offline sharp conversion and socket/CA
+metadata probe passed. No repaired application startup or production self-deletion
+has yet passed. Both temporary build containers and the previous COMM/storage
+transport authorizations were removed. The finite [replacement review](pending-target-replacement-20261019.review.json)
+is a proposal, with `activationAuthorized=false` and no recorded human approval.
+Its only non-label image configuration difference is the removal of deprecated
+Windows-only `ArgsEscaped=true` from this Linux image; all other configuration
+fields match its exact base. The original same-image approval does not by itself
+authorize this replacement.
+
 Historical preparation notes below are not the current production state.
 
 2026-10-17: owner authorized clean deletion of all test-user data, no new backup of those test data. Reset and production activation have not yet run.
@@ -59,6 +72,31 @@ All original proof-content checks, Root plan/no-adoption guards, live readiness,
 source, authentication and restore checks remain required. The exception changes
 neither application images nor the original proof and authorizes only this exact
 release, including a retry stopped before its reset plan exists.
+
+## Finite operator proof extensions (2026-10-19)
+
+The installed runtime operator uses separate closed clean-configuration v2/v3
+proofs. V2 binds only the exact old/new image-owned Node version metadata. V3
+additionally preserves the historical pre-stop health bytes, verifies the old
+API remained stopped, and requires fresh SIM/Messaging/producer observations
+within ten minutes and the fixed release deadline. Historical active readback
+checks the immutable proof structure without expiring an already accepted
+release. V1/v2 retain their original one-hour stopped-health rule.
+
+The production source also needed one exact reference to the already existing
+`COP_SIM_ERASURE_ACTOR_SECRET`: old runtime/Compose omitted it. V3 records this
+introduction separately, requires absence from the old container, binds public
+Compose before/after hashes, and checks the effective target against the same
+private COP environment. The Root producer verifies equality with both existing
+SIM actor secrets before issuing the protected proof; secrets are neither
+included nor hashed in it. No new identity or secret is generated.
+
+The UID1000 deployment child verifies its UID/GID and account home before setting
+its own home for Docker CLI discovery. Root's home is unchanged. This fixes the
+proven failure caused by passing Root's home through `setpriv`.
+
+These extensions describe the already approved attempt, not approval of the new
+pending-target replacement proposal or acceptance of any repaired image.
 
 ## Rollback
 

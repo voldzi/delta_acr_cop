@@ -77,6 +77,18 @@ CLEAN_ERASURE_CONFIG_KEYS = ERASURE_CONFIG_KEYS | frozenset({
 CLEAN_ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
                              'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified'}
 CLEAN_ERASURE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v1'
+# A closed operator-proof extension, not an application configuration key.
+NODE_METADATA_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v2'
+NODE_METADATA_FROM_IMAGE = 'sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f'
+NODE_METADATA_TO_IMAGE = 'sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86'
+NODE_METADATA_FROM_VERSION = '24.21.0'
+NODE_METADATA_TO_VERSION = '24.22.0'
+NODE_METADATA_KEY = 'NODE_VERSION'
+EXISTING_ACTOR_KEY = 'COP_SIM_ERASURE_ACTOR_SECRET'
+FENCED_SOURCE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v3'
+FENCED_SOURCE_PLAN_SHA256 = '74f333d3d7a21ce2643756769fa1b6fd14f259319b7afb22155cb47076d381b1'
+FENCED_SOURCE_BASELINE_SHA256 = '0d80ff6b78f046ddfcb5ca4b8865ae72aabcc0c8c7f5d76daa9b7cf46d0d7ef2'
+FENCED_SOURCE_DEADLINE = '2026-10-19T15:22:00Z'
 CLEAN_RESET_DIRECTORY = SOURCE / 'runtime/clean-reset'
 CLEAN_RESET_PHASES = ['identity', 'cop', 'ai', 'driver', 'files', 'sim_app_files',
                       'sim_user_install', 'cop_safety_install', 'remaining', 'messaging_install', 'readback', 'sim_config']
@@ -134,13 +146,128 @@ def erasure_target_environment(target, operation, clean=None):
     require(not target.get('COP_LIVEKIT_ADMIN_URL'), 'erasure_livekit_transport_conflict')
 
 
+def is_clean_erasure_proof(value):
+    return isinstance(value, dict) and value.get('contractVersion') in {
+        CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
+
+
+def node_metadata_transition(proof):
+    """Root-attested, single-image-pair metadata witness; never a general override."""
+    require(isinstance(proof, dict) and proof.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
+            and proof.get('operation') == 'prepare', 'node_metadata_proof_scope')
+    witness = proof.get('imageMetadataTransition')
+    require(isinstance(witness, dict) and set(witness) == {
+        'contractVersion', 'key', 'fromImageId', 'toImageId', 'fromNodeVersion',
+        'toNodeVersion', 'fromBinaryVersion', 'toBinaryVersion'}, 'node_metadata_witness_schema')
+    require(witness == {
+        'contractVersion': 'cop-node-image-metadata-v1', 'key': NODE_METADATA_KEY,
+        'fromImageId': NODE_METADATA_FROM_IMAGE, 'toImageId': NODE_METADATA_TO_IMAGE,
+        'fromNodeVersion': NODE_METADATA_FROM_VERSION, 'toNodeVersion': NODE_METADATA_TO_VERSION,
+        'fromBinaryVersion': 'v' + NODE_METADATA_FROM_VERSION,
+        'toBinaryVersion': 'v' + NODE_METADATA_TO_VERSION}, 'node_metadata_witness_binding')
+    require(proof.get('previous', {}).get('imageId') == NODE_METADATA_FROM_IMAGE
+            and proof.get('target', {}).get('imageId') == NODE_METADATA_TO_IMAGE,
+            'node_metadata_image_pair')
+    keys = proof.get('changedKeys')
+    extras = {NODE_METADATA_KEY}
+    if proof['contractVersion'] == FENCED_SOURCE_PROOF_VERSION:
+        existing_actor_introduction(proof)
+        extras.add(EXISTING_ACTOR_KEY)
+    require(isinstance(keys, list) and all(isinstance(k, str) for k in keys)
+            and keys == sorted(set(keys)) and set(keys) - CLEAN_ERASURE_CONFIG_KEYS == extras,
+            'node_metadata_delta_scope')
+    return witness
+
+
+def existing_actor_introduction(proof):
+    witness = proof.get('existingActorIntroduction')
+    require(proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION
+            and proof.get('operation') == 'prepare'
+            and isinstance(witness, dict) and set(witness) == {
+                'contractVersion', 'key', 'sourceAbsent', 'existingCopEnvironmentVerified',
+                'simRouterBindingVerified', 'simDriverBindingVerified',
+                'composeFile', 'beforeSha256', 'afterSha256'}
+            and witness['contractVersion'] == 'cop-existing-erasure-actor-binding-v1'
+            and witness['key'] == EXISTING_ACTOR_KEY
+            and all(witness[k] is True for k in ('sourceAbsent', 'existingCopEnvironmentVerified',
+                'simRouterBindingVerified', 'simDriverBindingVerified'))
+            and witness['composeFile'] == 'docker-compose.yml'
+            and all(isinstance(witness[k], str) and re.fullmatch(r'[0-9a-f]{64}', witness[k])
+                    for k in ('beforeSha256', 'afterSha256'))
+            and witness['beforeSha256'] != witness['afterSha256']
+            and witness['afterSha256'] == proof.get('composeHashes', {}).get('docker-compose.yml'),
+            'existing_actor_introduction_unproven')
+
+
+def existing_actor_from_dotenv(raw):
+    require(isinstance(raw, bytes) and len(raw) <= 1048576, 'existing_actor_environment_invalid')
+    rows = re.findall(rb'^(?:export[ \t]+)?COP_SIM_ERASURE_ACTOR_SECRET[ \t]*=(.*)$', raw, re.MULTILINE)
+    require(len(rows) == 1, 'existing_actor_environment_ambiguous')
+    value = rows[0].strip().decode('utf-8')
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', "'"}:
+        value = value[1:-1]
+    require(32 <= len(value) <= 16384 and not any(ord(c) < 32 for c in value)
+            and EXISTING_ACTOR_KEY not in os.environ, 'existing_actor_environment_invalid')
+    return value
+
+
+def node_image_default(image, expected_id):
+    require(isinstance(image, dict) and image.get('Id') == expected_id
+            and isinstance(image.get('Config'), dict), 'node_metadata_actual_image')
+    rows = image['Config'].get('Env')
+    require(isinstance(rows, list) and all(isinstance(x, str) for x in rows), 'node_metadata_image_environment')
+    values = [x.split('=', 1)[1] for x in rows if x.startswith(NODE_METADATA_KEY + '=')]
+    require(len(values) == 1, 'node_metadata_unique_default')
+    return values[0]
+
+
+def node_metadata_witness(from_image, to_image, *, binary_versions):
+    """Producer inputs are actual inspect records and bounded --version receipts."""
+    require(node_image_default(from_image, NODE_METADATA_FROM_IMAGE) == NODE_METADATA_FROM_VERSION
+            and node_image_default(to_image, NODE_METADATA_TO_IMAGE) == NODE_METADATA_TO_VERSION,
+            'node_metadata_actual_defaults')
+    require(binary_versions == {NODE_METADATA_FROM_IMAGE: 'v' + NODE_METADATA_FROM_VERSION,
+                                NODE_METADATA_TO_IMAGE: 'v' + NODE_METADATA_TO_VERSION},
+            'node_metadata_binary_receipts')
+    return {'contractVersion': 'cop-node-image-metadata-v1', 'key': NODE_METADATA_KEY,
+            'fromImageId': NODE_METADATA_FROM_IMAGE, 'toImageId': NODE_METADATA_TO_IMAGE,
+            'fromNodeVersion': NODE_METADATA_FROM_VERSION, 'toNodeVersion': NODE_METADATA_TO_VERSION,
+            'fromBinaryVersion': binary_versions[NODE_METADATA_FROM_IMAGE],
+            'toBinaryVersion': binary_versions[NODE_METADATA_TO_IMAGE]}
+
+
+def validate_node_metadata_images(proof, from_image, to_image, *, compose_environment,
+                                  dotenv_raw, profile_environment):
+    """Called with actual Docker inspect/config and protected server files only."""
+    witness = node_metadata_transition(proof)
+    require(node_image_default(from_image, NODE_METADATA_FROM_IMAGE) == witness['fromNodeVersion']
+            and node_image_default(to_image, NODE_METADATA_TO_IMAGE) == witness['toNodeVersion'],
+            'node_metadata_actual_defaults')
+    require(isinstance(compose_environment, dict) and NODE_METADATA_KEY not in compose_environment
+            and isinstance(profile_environment, dict) and NODE_METADATA_KEY not in profile_environment,
+            'node_metadata_config_override')
+    require(isinstance(dotenv_raw, bytes) and len(dotenv_raw) <= 1048576
+            and not re.search(rb'^\s*(?:export\s+)?NODE_VERSION\s*=', dotenv_raw, re.MULTILINE)
+            and NODE_METADATA_KEY not in os.environ, 'node_metadata_environment_override')
+    return witness
+
+
 def erasure_environment_changes(actual, desired, proof):
     """Compare complete actual/effective environments only in RAM."""
     changed = {key for key in set(actual) | set(desired)
                if (key in actual) != (key in desired) or actual.get(key) != desired.get(key)}
     require(changed == set(proof['changedKeys']), 'erasure_configuration_delta_mismatch')
     operation = proof['operation']
-    clean = proof.get('cleanReset') if proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION else None
+    clean = proof.get('cleanReset') if is_clean_erasure_proof(proof) else None
+    if proof.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}:
+        witness = node_metadata_transition(proof)
+        require(actual.get(NODE_METADATA_KEY) == witness['fromNodeVersion']
+                and desired.get(NODE_METADATA_KEY) == witness['toNodeVersion']
+                and NODE_METADATA_KEY in changed, 'node_metadata_actual_delta')
+    if proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION:
+        existing_actor_introduction(proof)
+        require(EXISTING_ACTOR_KEY not in actual and EXISTING_ACTOR_KEY in changed,
+                'existing_actor_source_not_absent')
     erasure_target_environment(desired, operation, clean)
     if operation == 'prepare':
         require(bool(changed) and actual.get('COP_ACCOUNT_ERASURE_ENABLED', 'false') == 'false'
@@ -283,12 +410,126 @@ def health_statuses(value):
     return value
 
 
+
+def fenced_timestamp(value):
+    require(isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', value), 'fenced_source_time_format')
+    return datetime.fromisoformat(value[:-1] + '+00:00').timestamp()
+
+
+def fenced_public_source_spec(actual):
+    """No environment, credentials or data payload in this public runtime hash."""
+    return {'Id': actual.get('Id'), 'Image': actual.get('Image'),
+            'HostConfig': actual.get('HostConfig'),
+            'Mounts': sorted(actual.get('Mounts', []), key=lambda x: x['Destination']),
+            'NetworkSettings': actual.get('NetworkSettings')}
+
+
+def fenced_source_witness_schema(proof):
+    """Immutable historical readback; no current-clock or Docker dependency."""
+    require(isinstance(proof, dict) and proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION
+            and proof.get('operation') == 'prepare', 'fenced_source_proof_scope')
+    node_metadata_transition(proof)
+    w = proof.get('fencedSourceReadiness')
+    fields = {'contractVersion', 'planSha256', 'resetEpoch', 'resetReceiptSha256',
+              'historicalBaselineSha256', 'preStopReportSha256', 'sourceContainerId',
+              'sourceImageId', 'targetImageId', 'sourceStartedAt', 'sourceFinishedAt',
+              'sourceSpecSha256', 'checkedAt', 'expiresAt', 'sourceStopped',
+              'sourceHealthHistorical', 'producerPaused', 'activeProducerCount',
+              'simReadiness', 'messagingReadiness'}
+    require(isinstance(w, dict) and set(w) == fields, 'fenced_source_witness_schema')
+    require(w['contractVersion'] == 'cop-clean-fenced-source-readiness-v1'
+            and w['planSha256'] == FENCED_SOURCE_PLAN_SHA256
+            and w['historicalBaselineSha256'] == FENCED_SOURCE_BASELINE_SHA256
+            and w['resetEpoch'] == proof['cleanReset']['resetEpoch']
+            and w['resetReceiptSha256'] == proof['cleanReset']['receiptSha256']
+            and w['sourceContainerId'] == proof['previous']['containerId']
+            and w['sourceImageId'] == proof['previous']['imageId'] == NODE_METADATA_FROM_IMAGE
+            and w['targetImageId'] == proof['target']['imageId'] == NODE_METADATA_TO_IMAGE,
+            'fenced_source_schema_binding')
+    require(all(isinstance(w[k], str) and re.fullmatch(r'[0-9a-f]{64}', w[k])
+                for k in ('resetReceiptSha256', 'preStopReportSha256', 'sourceSpecSha256', 'sourceContainerId'))
+            and w['sourceStopped'] is True and w['sourceHealthHistorical'] is True
+            and w['producerPaused'] is True and type(w['activeProducerCount']) is int
+            and w['activeProducerCount'] == 0, 'fenced_source_schema_values')
+    started, finished, checked, expires = [fenced_timestamp(w[k]) for k in
+        ('sourceStartedAt', 'sourceFinishedAt', 'checkedAt', 'expiresAt')]
+    require(started <= finished <= checked < expires <= fenced_timestamp(FENCED_SOURCE_DEADLINE)
+            and expires - checked <= 600, 'fenced_source_schema_time')
+    sim, message = w['simReadiness'], w['messagingReadiness']
+    require(isinstance(sim, dict) and set(sim) == {'ready', 'count', 'resetEpoch', 'proofSha256'}
+            and sim['ready'] is True and type(sim['count']) is int and sim['count'] == 5
+            and sim['resetEpoch'] == w['resetEpoch']
+            and isinstance(sim['proofSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', sim['proofSha256']),
+            'fenced_source_sim_schema')
+    require(isinstance(message, dict) and set(message) == {'ready', 'authenticatedOwnerPreflight', 'proofSha256'}
+            and message['ready'] is True and message['authenticatedOwnerPreflight'] is True
+            and isinstance(message['proofSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', message['proofSha256']),
+            'fenced_source_message_schema')
+    return w
+
+
+def validate_fenced_source_readiness(proof, previous, actual, receipt_raw, baseline_raw, *, now=None):
+    """Fresh stopped-source continuity, NOT a fresh health claim for the old API.
+    Historical health stays unmodified and remains only the regression baseline.
+    The target still passes the existing real live/ready/dependency/demo gates.
+    """
+    require(proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION and proof.get('operation') == 'prepare', 'fenced_source_proof_scope')
+    node_metadata_transition(proof)
+    witness = fenced_source_witness_schema(proof)
+    fields = {'contractVersion', 'planSha256', 'resetEpoch', 'resetReceiptSha256',
+              'historicalBaselineSha256', 'preStopReportSha256', 'sourceContainerId',
+              'sourceImageId', 'targetImageId', 'sourceStartedAt', 'sourceFinishedAt',
+              'sourceSpecSha256', 'checkedAt', 'expiresAt', 'sourceStopped',
+              'sourceHealthHistorical', 'producerPaused', 'activeProducerCount',
+              'simReadiness', 'messagingReadiness'}
+    require(isinstance(witness, dict) and set(witness) == fields, 'fenced_source_witness_schema')
+    receipt, baseline = json.loads(receipt_raw), json.loads(baseline_raw)
+    require(witness['contractVersion'] == 'cop-clean-fenced-source-readiness-v1'
+            and witness['planSha256'] == FENCED_SOURCE_PLAN_SHA256
+            and witness['resetEpoch'] == proof['cleanReset']['resetEpoch'] == receipt['resetEpoch'] == baseline['resetEpoch']
+            and witness['resetReceiptSha256'] == sha(receipt_raw) == proof['cleanReset']['receiptSha256']
+            and witness['historicalBaselineSha256'] == sha(baseline_raw) == FENCED_SOURCE_BASELINE_SHA256
+            and witness['preStopReportSha256'] == receipt['preStopReportSha256'] == baseline['preStopReportSha256'], 'fenced_source_historical_binding')
+    require(witness['sourceContainerId'] == previous['containerId'] == actual['Id'] == baseline['containerId']
+            and witness['sourceImageId'] == previous['imageId'] == actual['Image'] == NODE_METADATA_FROM_IMAGE
+            and witness['targetImageId'] == proof['target']['imageId'] == NODE_METADATA_TO_IMAGE,
+            'fenced_source_runtime_binding')
+    state = actual.get('State', {})
+    require(witness['sourceStopped'] is True and witness['sourceHealthHistorical'] is True
+            and state.get('Running') is False and state.get('Restarting') is False
+            and state.get('Status') == 'exited' and state.get('Pid') == 0,
+            'fenced_source_not_stopped')
+    require(witness['sourceStartedAt'] == state.get('StartedAt')
+            and witness['sourceFinishedAt'] == state.get('FinishedAt')
+            and witness['sourceSpecSha256'] == sha(encoded(fenced_public_source_spec(actual))),
+            'fenced_source_continuity_changed')
+    started = fenced_timestamp(witness['sourceStartedAt']); finished = fenced_timestamp(witness['sourceFinishedAt'])
+    historical = fenced_timestamp(baseline['checkedAt']); checked = fenced_timestamp(witness['checkedAt'])
+    expires = fenced_timestamp(witness['expiresAt']); current = datetime.now(timezone.utc).timestamp() if now is None else now
+    require(started <= historical <= finished <= checked <= current <= expires
+            and 0 <= current - checked <= 600 and 0 < expires - checked <= 600
+            and expires <= fenced_timestamp(FENCED_SOURCE_DEADLINE), 'fenced_source_freshness')
+    require(witness['producerPaused'] is True and type(witness['activeProducerCount']) is int
+            and witness['activeProducerCount'] == 0, 'fenced_source_producer_unproven')
+    sim = witness['simReadiness']; message = witness['messagingReadiness']
+    require(isinstance(sim, dict) and set(sim) == {'ready', 'count', 'resetEpoch', 'proofSha256'}
+            and sim['ready'] is True and type(sim['count']) is int and sim['count'] == 5
+            and sim['resetEpoch'] == receipt['resetEpoch']
+            and isinstance(sim['proofSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', sim['proofSha256']),
+            'fenced_source_sim_unproven')
+    require(isinstance(message, dict) and set(message) == {'ready', 'authenticatedOwnerPreflight', 'proofSha256'}
+            and message['ready'] is True and message['authenticatedOwnerPreflight'] is True
+            and isinstance(message['proofSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', message['proofSha256']),
+            'fenced_source_messaging_unproven')
+    return witness
+
+
 def stopped_clean_baseline(proof, previous, actual, receipt_raw, baseline_raw, now=None):
     """Validate actual Root-owned reset output before using pre-stop health.
     This never authorizes an old-image restart or manufactures a healthy state.
     The normal live source path does not use this exceptional reset transition.
     """
-    require(proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+    require(is_clean_erasure_proof(proof)
             and proof.get('operation') == 'prepare', 'clean_stopped_source_scope')
     reset = proof.get('cleanReset', {})
     require(sha(receipt_raw) == reset.get('receiptSha256'), 'clean_reset_receipt_changed')
@@ -328,7 +569,10 @@ def stopped_clean_baseline(proof, previous, actual, receipt_raw, baseline_raw, n
             'clean_reset_health_time')
     checked = datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).timestamp()
     current = datetime.now(timezone.utc).timestamp() if now is None else now
-    require(0 <= current - checked <= 3600, 'clean_reset_health_time')
+    if proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION:
+        validate_fenced_source_readiness(proof, previous, actual, receipt_raw, baseline_raw, now=current)
+    else:
+        require(0 <= current - checked <= 3600, 'clean_reset_health_time')
     return encoded(health_statuses(baseline['statuses']))
 
 
@@ -879,11 +1123,12 @@ class Store:
         if digest is not None:
             require(sha(raw) == digest, 'erasure_proof_changed')
         value = json.loads(raw)
-        clean = isinstance(value, dict) and value.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+        clean = is_clean_erasure_proof(value)
+        metadata_v2 = isinstance(value, dict) and value.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
         fields = {'contractVersion', 'transitionId', 'operation', 'previous', 'target', 'changedKeys',
-                  'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'} | ({'cleanReset'} if clean else set())
+                  'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'} | ({'cleanReset'} if clean else set()) | ({'imageMetadataTransition'} if metadata_v2 else set()) | ({'fencedSourceReadiness', 'existingActorIntroduction'} if value.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION else set())
         require(isinstance(value, dict) and set(value) == fields
-                and value['contractVersion'] in {'cop-api-account-erasure-config-v1', CLEAN_ERASURE_PROOF_VERSION}
+                and value['contractVersion'] in {'cop-api-account-erasure-config-v1', CLEAN_ERASURE_PROOF_VERSION, NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
                 and isinstance(value['transitionId'], str) and PROFILE_UUID.fullmatch(value['transitionId'])
                 and path.name == 'account-erasure-' + value['transitionId'] + '.json'
                 and value['operation'] in {'prepare', 'enable', 'pause', 'maintain'}
@@ -908,8 +1153,13 @@ class Store:
                 and previous['profileId'] == binding['profileId']
                 and previous['releaseId'] == binding['previousReleaseId'], 'erasure_proof_previous')
         keys = value['changedKeys']
-        require(isinstance(keys, list) and all(isinstance(k, str) for k in keys)
-                and keys == sorted(set(keys)) and set(keys) <= (CLEAN_ERASURE_CONFIG_KEYS if clean else ERASURE_CONFIG_KEYS), 'erasure_proof_keys')
+        if metadata_v2:
+            node_metadata_transition(value)
+            if value.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION:
+                fenced_source_witness_schema(value)
+        else:
+            require(isinstance(keys, list) and all(isinstance(k, str) for k in keys)
+                    and keys == sorted(set(keys)) and set(keys) <= (CLEAN_ERASURE_CONFIG_KEYS if clean else ERASURE_CONFIG_KEYS), 'erasure_proof_keys')
         require(isinstance(value['composeHashes'], dict) and set(value['composeHashes']) == set(FILES)
                 and all(isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v) for v in value['composeHashes'].values()),
                 'erasure_proof_compose_scope')
@@ -948,7 +1198,19 @@ class Store:
         image_config = json.loads(self.docker.run(['docker', 'image', 'inspect', binding['imageId']]))[0]['Config']
         target = dict(line.split('=', 1) for line in image_config.get('Env', []) if '=' in line)
         target.update(api.get('environment', {}))
-        erasure_target_environment(target, proof['operation'])
+        if proof.get('contractVersion') == FENCED_SOURCE_PROOF_VERSION:
+            require(target.get(EXISTING_ACTOR_KEY) == existing_actor_from_dotenv(
+                private_read(self.source / '.env', self.uid, 1048576)), 'existing_actor_target_mismatch')
+        erasure_target_environment(target, proof['operation'],
+            proof.get('cleanReset') if is_clean_erasure_proof(proof) else None)
+        if proof.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}:
+            records = json.loads(self.docker.run(['docker', 'image', 'inspect',
+                NODE_METADATA_FROM_IMAGE, NODE_METADATA_TO_IMAGE]))
+            require(isinstance(records, list) and len(records) == 2, 'node_metadata_image_inventory')
+            validate_node_metadata_images(proof, records[0], records[1],
+                compose_environment=api.get('environment', {}),
+                dotenv_raw=private_read(self.source / '.env', self.uid, 1048576),
+                profile_environment=profile['values'])
         if owned_target and current['Image'] == binding['imageId'] and current['Config'].get('Labels', {}).get(
                 'com.cop.runtime.release') == binding['releaseId']:
             yield  # Normal pending recovery still requires its exact saved CID and complete target parity.
@@ -982,7 +1244,7 @@ class Store:
                     and isinstance(reference['path'], str) and isinstance(reference['sha256'], str)
                     and re.fullmatch(r'[0-9a-f]{64}', reference['sha256']), 'erasure_reference_invalid')
             _, config_proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
-            require(('cleanScope' in reference) == (config_proof['contractVersion'] == CLEAN_ERASURE_PROOF_VERSION), 'erasure_reference_scope')
+            require(('cleanScope' in reference) == is_clean_erasure_proof(config_proof), 'erasure_reference_scope')
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
         require(binding.get('contractVersion') == 'cop-api-runtime-release-v1'
                 and binding.get('releaseId') == identifier and IMAGE.fullmatch(binding.get('imageId', ''))
@@ -1061,7 +1323,7 @@ class Store:
             require(proof['previous'] == pointer, 'erasure_previous_cas_changed')
             require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
             binding['accountErasureConfig'] = {'path': str(erasure_config), 'sha256': digest}
-            if proof['contractVersion'] == CLEAN_ERASURE_PROOF_VERSION:
+            if is_clean_erasure_proof(proof):
                 binding['accountErasureConfig']['cleanScope'] = 'cop_sim_shared_identity_v1'
             self.assert_erasure_environment(binding)
         self.docker.image(image, baseline=baseline, revision=revision)
@@ -1232,7 +1494,7 @@ class Store:
         reference = binding.get('accountErasureConfig')
         if reference:
             _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
-            clean = proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+            clean = is_clean_erasure_proof(proof)
         if clean and source.get('State', {}).get('Running') is False:
             # Global test-data reset has already closed the old writer. It must
             # remain stopped; use its bound real pre-stop health, then verify
