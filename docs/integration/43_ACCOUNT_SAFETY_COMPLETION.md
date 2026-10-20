@@ -55,3 +55,13 @@ Unauthenticated safety capability and moderation queue requests both returned
 401. The receipt explicitly records `authenticatedEndUserDeliveryVerified=false`
 until a legitimate fresh authenticated session is available; no bypass token is
 created for that verification.
+
+
+Authenticated readback on 2026-10-20: the owner's fresh BFF session was accepted
+as `voldzi`; safety capabilities returned reporting=true and blocking=true with
+the approved contact. The moderator queue returned a valid empty item list.
+This verifies authenticated availability and moderator authorization, not an
+actual report submission or message/call blocking delivery test. No report,
+block, identity, vehicle or user-content mutation was made for this readback.
+Sanitized local receipt SHA-256:
+`be8926490d6319bad9cc26b7d8216595ec08887d405687ed5d2ed6582c849bec`.
