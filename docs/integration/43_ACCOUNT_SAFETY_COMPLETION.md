@@ -4,17 +4,17 @@
 
 The owner approved removing the shared Keycloak identity, including SIM access, and a one-time reset of all COP/SIM test-user data without creating a backup of those data. The new scope is `cop_sim_shared_identity_v1`; web contracts are `cop-account-erasure-v2` and `cop-account-erasure-preflight-v2`. Other applications manage their own data. Service identities, configuration, official map/provider data and infrastructure are preserved.
 
-Production deletion intake is still disabled. The reset and new deployment have not run. No current production user was deleted during these tests.
+Production deletion intake is enabled. The 2026-10-19 release completed actual deletion of two synthetic accounts, including old-session denial, Keycloak identity absence and preservation of B after deleting A. A read-only recheck on 2026-10-20 confirmed the same healthy API image and finished/accepted release state. No real account was deleted for acceptance.
 
 The web is the only entry point being changed in this stage. It identifies the actual authenticated account, requires fresh login and confirmation, commits a durable fence, logs the user out locally, and lets the server finish/retry cleanup. HTTP202 is pending. Shared identity removal requires its new explicit server authority flag. V1 stores/proofs are not silently reinterpreted as v2.
 
 ## Implemented and verified components
 
-See [the clean lifecycle release record](../account-safety/clean-lifecycle-release.md) for exact source, transport, reset and recovery verification. The new COP adapter has been exercised against real SIM HTTP and owned PostgreSQL. Reset and independent-journal recovery have actual local PG tests; Keycloak reset/individual erasure currently have HTTP-mock evidence. These checks do not constitute whole-provider or production acceptance.
+See [the clean lifecycle release record](../account-safety/clean-lifecycle-release.md) for exact source, transport, reset and recovery verification. The release record separates historical isolated recovery tests from actual production self-deletion. Both synthetic accounts passed the complete terminal all-domain gate and actual Keycloak absence verification. No new restore exercise is claimed by the 2026-10-20 read-only recheck.
 
 ## Remaining release work
 
-Complete the authorized human/service identity separation in Messaging, assemble the fresh whole-service acceptance with actual providers, then perform the finite coordinated reset, Root-bound enrollment and deployment. Actual source/epoch/closure, A/B isolation, failures and recovery must be proven before enabling intake. No test endpoint or old negative case is a positive production receipt.
+Account deletion has no remaining activation gate in this release. The separate communication-safety release remains incomplete: the 2026-10-20 production readback shows report/block intake disabled and no moderator/evidence-key configuration. Do not claim production reporting/blocking or whole Jízda App Review readiness from deletion acceptance alone. Final client privacy declarations and reviewer access require their own truthful acceptance.
 
 ## Previous evidence
 

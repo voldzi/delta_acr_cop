@@ -1,5 +1,10 @@
 # 40. Account safety release boundary — source integration
 
+Current-state correction (2026-10-20): account deletion is production enabled and
+verified for two synthetic accounts; see integration 43 and the lifecycle release.
+Communication safety remains disabled in the current production API. The source
+interface/default descriptions below are historical preparation, not live flags.
+
 Status on 2026-10-13: source prepared on the accepted a06/b13 COP line; no
 deployment, secret, role, flag, account deletion or live provider test was made
 by this integration. The historical candidate is preserved in
