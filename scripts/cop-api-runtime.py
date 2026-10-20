@@ -714,9 +714,10 @@ POST_EDGE_VERSION = 'cop-api-post-edge-promotion-v1'
 POST_EDGE_ENABLE_VERSION = 'cop-api-post-edge-enable-v1'
 POST_EDGE_ENABLE_AUTH_VERSION = 'cop-api-post-edge-enable-oidc-v1'
 CONTINUITY_REPAIR_VERSION = 'cop-api-continuity-image-repair-v1'
+COMMUNICATION_SAFETY_VERSION = 'cop-api-communication-safety-activation-v1'
 POST_EDGE_AUTH_SCOPE = 'oidc_no_lab_v1'
 POST_EDGE_AUTH_KEYS = frozenset({'COP_AUTH_MODE', 'COP_ALLOW_LAB_TOKEN'})
-POST_EDGE_HELPER_SHA256 = '77b6df4c6c68637ab66ee67c43ec8de8d475afa0b9224b0cb7aa52e8971e7ca9'
+POST_EDGE_HELPER_SHA256 = '5e084b39071ffb7b874bd33953fe0017ab1430855d7735625026790dc8ab2533'
 POST_EDGE_PEER_HELPER_SHA256 = '02892fda977ba186694ff4bac536db40ad7bedf14eb3e5e819ae0698e44ec8f5'
 
 
@@ -730,7 +731,7 @@ def is_clean_erasure_proof(value):
         OWNER_READINESS_REPAIR_VERSION, OWNER_READINESS_REPAIR_ENABLE_VERSION,
         PUBLIC_FLIGHT_REPAIR_VERSION, PUBLIC_FLIGHT_REPAIR_ENABLE_VERSION,
         PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION,
-        POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}
+        POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}
 
 
 def node_metadata_transition(proof):
@@ -839,6 +840,11 @@ def erasure_environment_changes(actual, desired, proof):
     changed = {key for key in set(actual) | set(desired)
                if (key in actual) != (key in desired) or actual.get(key) != desired.get(key)}
     require(changed == set(proof['changedKeys']), 'erasure_configuration_delta_mismatch')
+    if proof.get('contractVersion') == COMMUNICATION_SAFETY_VERSION:
+        scope_store = Store(uid=1000)
+        scope_store.post_edge_module().environment(scope_store.post_edge_runtime(), actual, desired, proof)
+        erasure_target_environment(desired, proof['operation'], proof['cleanReset'])
+        return
     operation = proof['operation']
     clean = proof.get('cleanReset') if is_clean_erasure_proof(proof) else None
     if proof.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}:
@@ -1741,7 +1747,7 @@ class Store:
             require(sha(raw) == digest, 'erasure_proof_changed')
         value = json.loads(raw)
         clean = is_clean_erasure_proof(value)
-        if isinstance(value, dict) and value.get('contractVersion') in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+        if isinstance(value, dict) and value.get('contractVersion') in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
             return self.post_edge_module().read_proof(self.post_edge_runtime(), self, path, raw, binding)
         metadata_v2 = isinstance(value, dict) and value.get('contractVersion') in {NODE_METADATA_PROOF_VERSION, FENCED_SOURCE_PROOF_VERSION}
         replacement_enable = isinstance(value, dict) and value.get('contractVersion') == PENDING_REPLACEMENT_ENABLE_VERSION
@@ -1851,7 +1857,9 @@ class Store:
             return
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
         require(not (ERASURE_CONFIG_KEYS & set(os.environ)), 'erasure_shell_override_forbidden')
-        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+        if proof['contractVersion'] == COMMUNICATION_SAFETY_VERSION:
+            require(not (self.post_edge_module().KEYS & set(os.environ)), 'safety_shell_override_forbidden')
+        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
             require(not (POST_EDGE_AUTH_KEYS & set(os.environ)), 'erasure_auth_shell_override_forbidden')
         require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
         scope = getattr(self.docker, 'account_erasure_scope', None)
@@ -1923,7 +1931,7 @@ class Store:
                     and re.fullmatch(r'[0-9a-f]{64}', reference['sha256']), 'erasure_reference_invalid')
             _, config_proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
             require(('cleanScope' in reference) == is_clean_erasure_proof(config_proof), 'erasure_reference_scope')
-            require(('authScope' in reference) == (config_proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION})
+            require(('authScope' in reference) == (config_proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION})
                     and reference.get('authScope', POST_EDGE_AUTH_SCOPE) == POST_EDGE_AUTH_SCOPE,
                     'erasure_auth_reference_scope')
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
@@ -1971,9 +1979,9 @@ class Store:
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
         values = config['services']['cop-api']['environment']
         erasure_target_environment(values, proof['operation'], proof['cleanReset'])
-        keys = CLEAN_ERASURE_CONFIG_KEYS | (POST_EDGE_AUTH_KEYS if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION} else set())
+        keys = CLEAN_ERASURE_CONFIG_KEYS | (POST_EDGE_AUTH_KEYS if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION} else set())
         require(keys <= set(values), 'clean_overlay_missing')
-        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+        if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
             require(values['COP_AUTH_MODE'] == 'oidc' and values['COP_ALLOW_LAB_TOKEN'] == 'false', 'clean_oidc_values')
             if proof['contractVersion'] == CONTINUITY_REPAIR_VERSION:
                 require(values.get('COP_ACCOUNT_ERASURE_ENABLED') == 'true', 'continuity_repair_intake_changed')
@@ -2013,7 +2021,7 @@ class Store:
             binding['accountErasureConfig'] = {'path': str(erasure_config), 'sha256': digest}
             if is_clean_erasure_proof(proof):
                 binding['accountErasureConfig']['cleanScope'] = 'cop_sim_shared_identity_v1'
-            if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+            if proof['contractVersion'] in {POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
                 binding['accountErasureConfig']['authScope'] = POST_EDGE_AUTH_SCOPE
             self.assert_erasure_environment(binding)
         self.docker.image(image, baseline=baseline, revision=revision)
@@ -2151,7 +2159,7 @@ class Store:
     def prepared_continuation_verified_health(self, binding, verified):
         reference = binding['accountErasureConfig']
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
-        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
             return self.post_edge_module().validate_health(self.post_edge_runtime(), self, binding, verified)
         require(proof['contractVersion'] in {PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION},
                 'prepared_continuation_health_contract')
@@ -2188,7 +2196,7 @@ class Store:
         reference = binding.get('accountErasureConfig')
         require(reference is not None, 'public_flight_health_proof_missing')
         _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
-        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION}:
+        if proof['contractVersion'] in {POST_EDGE_VERSION, POST_EDGE_ENABLE_VERSION, POST_EDGE_ENABLE_AUTH_VERSION, CONTINUITY_REPAIR_VERSION, COMMUNICATION_SAFETY_VERSION}:
             return self.post_edge_module().validate_health(self.post_edge_runtime(), self, binding, verified)
         if proof['contractVersion'] in {PREPARED_CONTINUATION_VERSION, PREPARED_CONTINUATION_ENABLE_VERSION}:
             return self.prepared_continuation_verified_health(binding, verified)

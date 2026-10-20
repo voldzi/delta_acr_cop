@@ -14,8 +14,37 @@ See [the clean lifecycle release record](../account-safety/clean-lifecycle-relea
 
 ## Remaining release work
 
-Account deletion has no remaining activation gate in this release. The separate communication-safety release remains incomplete: the 2026-10-20 production readback shows report/block intake disabled and no moderator/evidence-key configuration. Do not claim production reporting/blocking or whole Jízda App Review readiness from deletion acceptance alone. Final client privacy declarations and reviewer access require their own truthful acceptance.
+Account deletion has no remaining activation gate in this release. On 2026-10-20 communication safety was activated using the same API image and a finite five-variable configuration contract. API health and the ordinary fresh health/public-demo gate passed; authentication and erasure remain enabled unchanged. Forty targeted report/block/retention tests passed, plus activation-scope negative tests. Actual authenticated end-user reporting/block delivery acceptance remains separate from configuration activation; final client privacy declarations and reviewer access likewise require their own truthful acceptance.
 
 ## Previous evidence
 
 The earlier failed acceptance cases retain their original operations, scopes and receipts. Their status is unchanged. The pre-reset completion record is archived at [2026-10-17 account safety before clean reset](../archive/2026-10-17_ACCOUNT_SAFETY_BEFORE_CLEAN_RESET.md). ADR0053 remains the historical v1 decision; [ADR0056](../adr/0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md) defines the new explicit scope.
+
+
+## Communication activation (2026-10-20)
+
+Active release: `release-92a29dffbc0743d995f1fd6f47c114ff`. API container:
+`2cd12dea0e291fc1a8356b38bf9c5718db74cdcf2a28bffa4d367f1bf067b482`.
+Image unchanged: `sha256:251374f1b612dec0b0f0335250f91bb44f9e420d0d92bc2a2a3f9bf459b02a0c`.
+
+The owner-approved `voldzi` account now has `cop_admin`, `cop_moderator`,
+`cop_operator` and `csm-sim-admin`; no Keycloak admin role was granted. SIM
+confirmed that the last role includes SIM/AI administration. A fresh token is
+required after assignment. Moderator access covers explicitly submitted reports
+and selected evidence, not automatic access to private chat history.
+
+The finite `cop-api-communication-safety-activation-v1` contract permits only five
+communication-safety environment keys. Immutable historical helpers remain
+installed and delegated to. The key is generated only on the server in
+`/srv/cop/.env.communication-safety` (0600, deployment account). The original
+`/srv/cop/.env` is unchanged. Never copy this file into source or logs. Production
+Compose adds it only to `cop-api`; the complete resolved configuration comparison
+found only those five environment changes. Networks, mounts, ports, image and
+other services are unchanged. Preserve this selected deployment delta on future
+releases; copying a different Compose file is not an accepted migration.
+
+Contact: `podpora@zeleznalady.cz`. Evidence expires at the earlier of 90 days
+from receipt and 30 days from first closure; text-free audit expires by 180 days.
+Blocking lasts until unblock or account deletion. Keep the evidence key for
+existing reports. Disabling new intake must not disable retention or canonical
+block enforcement; rollback requires a separate finite reviewed transition.
