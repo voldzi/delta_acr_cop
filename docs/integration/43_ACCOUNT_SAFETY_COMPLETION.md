@@ -48,3 +48,10 @@ from receipt and 30 days from first closure; text-free audit expires by 180 days
 Blocking lasts until unblock or account deletion. Keep the evidence key for
 existing reports. Disabling new intake must not disable retention or canonical
 block enforcement; rollback requires a separate finite reviewed transition.
+
+Sanitized production receipt: `/srv/cop/runtime/communication-safety/activation-20261020.json`
+SHA-256 `479cf9b5b6d0b2c9d4cf4de67aafaa4f9749bf0585bfee184d4cacbc35f69c15`.
+Unauthenticated safety capability and moderation queue requests both returned
+401. The receipt explicitly records `authenticatedEndUserDeliveryVerified=false`
+until a legitimate fresh authenticated session is available; no bypass token is
+created for that verification.
