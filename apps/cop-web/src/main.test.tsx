@@ -39,6 +39,7 @@ vi.mock("./CopMap", async () => {
   const React = await import("react");
   return {
     CopMap: ({
+      autoFit,
       emptyMessage,
       emergencyRoute,
       emergencyRouteMessage,
@@ -66,6 +67,7 @@ vi.mock("./CopMap", async () => {
       userLocation,
       userLocationFollowEnabled
     }: {
+      autoFit?: boolean;
       emptyMessage: string | null;
       emergencyRoute?: { features?: unknown[]; routes?: Array<{ routeId?: string }> } | null;
       emergencyRouteMessage?: string | null;
@@ -117,6 +119,7 @@ vi.mock("./CopMap", async () => {
       React.createElement(
         "div",
         {
+          "data-auto-fit": String(Boolean(autoFit)),
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
           "data-focus-user-location-request": String(focusUserLocationRequest ?? 0),
           "data-focus-view-request": String(focusViewRequest ?? 0),
@@ -829,6 +832,79 @@ describe("COP web dashboard", () => {
 
     expect(summary.total).toBe(0);
     expect(summary.primary).toBeNull();
+  });
+
+  it.each([
+    "?copLat=50.318253&copLon=15.134050&copZoom=13&copLabel=Košík",
+    "?sv=1&slon=15.134050&slat=50.318253&sz=13&sbr=0&spi=0&sws=map&sbase=civil"
+  ])("keeps a linked camera through delayed BFF authentication and profile hydration: %s", async (search) => {
+    vi.stubEnv("VITE_COP_AUTH_MODE", "oidc");
+    vi.stubEnv("VITE_COP_BFF_SESSION_ENABLED", "true");
+    vi.stubEnv("VITE_COP_OIDC_ISSUER", "https://auth.example.test/realms/cop");
+    vi.stubEnv("VITE_COP_OIDC_CLIENT_ID", "cop-web");
+    window.history.replaceState(null, "", `/${search}`);
+    window.localStorage.setItem(
+      "cop.user.preferences.v1.subject-link",
+      JSON.stringify({
+        autoFit: true,
+        mapView: { center: [14.42, 50.08], zoom: 8 }
+      })
+    );
+    let resolveSession!: (value: Response) => void;
+    let resolveProfile!: (value: Response) => void;
+    const session = new Promise<Response>((resolve) => {
+      resolveSession = resolve;
+    });
+    const profile = new Promise<Response>((resolve) => {
+      resolveProfile = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/session")) return session;
+      if (url.includes("/api/v1/me/preferences")) {
+        if (!init?.method || init.method === "GET") return profile;
+        return jsonResponse({ preferences: {}, alertPreferences: {}, updatedAt: new Date().toISOString() });
+      }
+      if (url.includes("/health/ready")) return jsonResponse({ status: "ok", timestamp: new Date().toISOString() });
+      if (url.includes("/api/v1/map/catalog")) return jsonResponse(testMapCatalogResponse());
+      if (url.includes("/api/v1/map/features")) return jsonResponse(emptyMapQueryResponse([]));
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+    const center = () => screen.getByTestId("cop-map").getAttribute("data-focus-center");
+    await waitFor(() => expect(center()).toBe("15.13405,50.31825"));
+    await act(async () => {
+      resolveSession(
+        jsonResponse({
+          authenticated: true,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          profile: { subjectId: "subject-link", username: "link-test", name: "Link test" }
+        })
+      );
+    });
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/me/preferences"))).toBe(true)
+    );
+    await waitFor(() => expect(center()).toBe("15.13405,50.31825"));
+    await act(async () => {
+      resolveProfile(
+        jsonResponse({
+          actor: { authMode: "oidc", subjectId: "subject-link", username: "link-test" },
+          alertPreferences: {},
+          preferences: { autoFit: true, mapView: { center: [16.6, 49.2], zoom: 7 } },
+          updatedAt: new Date().toISOString()
+        })
+      );
+    });
+    await waitFor(() => expect(center()).toBe("15.13405,50.31825"));
+    expect(screen.getByTestId("cop-map").getAttribute("data-auto-fit")).toBe("false");
+    fireEvent.click(screen.getByTestId("map-simulate-user-pan"));
+    expect(center()).toBe("15.00000,50.00000");
   });
 
   it("starts the map over Czechia when persisted location center is unusable", async () => {

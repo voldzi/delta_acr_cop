@@ -436,3 +436,24 @@ Report intakeoff preserves existing receipt/unblock/moderation and retention;
 new report/block=true returns503 COMMUNICATION_SAFETY_INTAKE_DISABLED.
 
 Prepared erasure source adds authenticated actor-specific `POST /api/v1/me/account-deletion/preflight` and independent capability-only `GET /api/v1/me/account-deletion/receipts/{operationId}`. Confirmation keeps the strict v1 body but requires the current plan and pre-issued capability for initial acceptance. See binding JSON OpenAPI and ADR 0051. Deletion remains disabled.
+
+## Map entry links (2026-10-21)
+
+The web client accepts `/?copLat=50.318253&copLon=15.134050&copZoom=13&copLabel=Ko%C5%A1%C3%ADk`.
+Coordinates are decimal WGS84 degrees (latitude, longitude); zoom is clamped to 3–20.
+The finite latitude/longitude ranges are −90…90 / −180…180. Invalid coordinates
+are ignored and the ordinary saved/default view applies. The optional label is
+plain display text, not a municipality identifier or proof of an incident.
+
+A valid entry explicitly opens the map and keeps the linked camera through
+StrictMode, delayed BFF/OIDC session initialization, account-scope changes and
+server preference hydration. Stored auto-fit and workspace must not replace it.
+Normal map gestures and explicit saved-view actions remain available. Login
+return URLs preserve the query through the existing same-origin auth flow.
+Versioned shared views (`sv=1`, `slon`, `slat`, `sz`, `sbr`, `spi`) have the same
+camera priority and retain their existing validation. No REST endpoint changes.
+
+The synthetic `/demo/flood-central-bohemia` uses a separate fixed scenario and
+is unaffected. A camera link neither authorizes private data nor creates a live
+municipal situation feed. Public analytics remains restricted to the approved
+synthetic demo; entry coordinates, query and private paths are not collected.

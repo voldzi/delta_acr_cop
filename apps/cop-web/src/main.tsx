@@ -993,7 +993,9 @@ export function App() {
   const initialSharedMap = React.useMemo(() => decodeCopMapShareSearch(window.location.search), []);
   const initialChatReportDraft = React.useMemo(() => decodeCopReportDraftSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
-    normalizeWorkspaceModule(initialSharedMap?.workspace ?? initialPreferences.activeWorkspace)
+    normalizeWorkspaceModule(
+      initialSharedMap?.workspace ?? (initialMapFocus ? "map" : initialPreferences.activeWorkspace)
+    )
   );
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
@@ -1287,7 +1289,9 @@ export function App() {
   const userLocationWatchIdRef = React.useRef<number | null>(null);
   const userLocationWatchGenerationRef = React.useRef(0);
   const userLocationFollowEnabledRef = React.useRef(false);
-  const userClaimedMapCameraRef = React.useRef(false);
+  // An explicit URL view has the same priority as a user camera gesture.
+  // Keep it through StrictMode, delayed session restore and profile hydration.
+  const userClaimedMapCameraRef = React.useRef(Boolean(initialMapFocus || initialSharedMap));
   const navigationSessionRef = React.useRef<NavigationSession | null>(initialNavigationSession);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [userLocationFollowEnabled, setUserLocationFollowEnabled] = React.useState(false);
@@ -4420,7 +4424,7 @@ export function App() {
 
   const applyPreferenceSettings = React.useCallback(
     (settings: PreferenceSettings, options: { focusMap?: boolean; preserveMapView?: boolean } = {}) => {
-      if (settings.activeWorkspace !== undefined) {
+      if (settings.activeWorkspace !== undefined && !options.preserveMapView) {
         setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
       }
       if (settings.selectedLayer !== undefined) {
@@ -4532,7 +4536,7 @@ export function App() {
       if (settings.alertRadiusKm !== undefined) {
         setAlertRadiusKm(clamp(settings.alertRadiusKm, 1, 50));
       }
-      if (settings.autoFit !== undefined) {
+      if (settings.autoFit !== undefined && !options.preserveMapView) {
         setAutoFit(settings.autoFit);
       }
       if ("workspaceLayout" in settings && settings.workspaceLayout !== undefined) {

@@ -438,3 +438,16 @@ created and sealed by Root from pinned images/archives; the older UID1000
 dependency runtime stays separately pinned to image2e61857 and the app/dist
 content to the actual API candidate28648cde. Existing occupied targets fail
 preflight instead of being silently trusted.
+
+### Web map entry camera priority (2026-10-21)
+
+The map entry link preserves its camera across BFF/OIDC initialization and
+local/server profile hydration. The same web release keeps existing API,
+networks, environment, analytics and synthetic-demo scope. Deploy only the web
+image, using a source-pinned X5 build and the running web container's complete
+Compose file/environment chain. Compare resolved configuration before activation:
+only the web image may differ. Keep the previous immutable image and exact
+Compose chain as rollback; do not run a whole-stack update or rebuild the API.
+Verify the public link after session restoration, normal map gestures, health,
+and that the synthetic demo still has its disclaimer. A healthy container alone
+does not establish correct map location.
