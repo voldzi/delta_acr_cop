@@ -451,3 +451,27 @@ Compose chain as rollback; do not run a whole-stack update or rebuild the API.
 Verify the public link after session restoration, normal map gestures, health,
 and that the synthetic demo still has its disclaimer. A healthy container alone
 does not establish correct map location.
+
+Production acceptance 2026-10-21: source `4eba9cd`, web image
+`sha256:d6cf225150d721fbb5d0f236c2b921064a2e5906b30b396ad55f85d5fce3770c`,
+container `e326171ec582`. Infrastructure performed the web-only activation using
+the existing authorized Proxmox access; the former image
+`sha256:6481b7c29d462b10e365692231c19b1b88a631693a09826003333106771b7329`
+and original pin remain available for rollback. Infrastructure reports unchanged
+resolved configuration except the web image and unchanged other COP containers.
+COP independently read back the running new image and public entry
+`/assets/index-Bpwbsh4A.js`.
+
+Actual production browser acceptance: a new Košík entry displayed the village at
+the map center after BFF session restoration and profile hydration. A subsequent
+real BFF→Keycloak→COP login roundtrip preserved the query and the same visible
+map. Separately, cookie-free HTTP requests confirmed map HTML/catalog 200,
+auth session/private preferences 401, health 200 and synthetic-demo HTML 200 with
+its synthetic notice. This is anonymous HTTP acceptance, not an anonymous visual
+E2E; visual acceptance used an authenticated session. No new accounts, reports,
+incidents, deletion operations or analytics scope changes were involved.
+
+95 targeted tests passed (map dashboard, share decoder, auth, public analytics),
+as did web build/typecheck, scoped ESLint, analytics guard and skeleton validation.
+Handoff with the functional URL and these limits was sent to the existing web
+Košík thread on 2026-10-21.
