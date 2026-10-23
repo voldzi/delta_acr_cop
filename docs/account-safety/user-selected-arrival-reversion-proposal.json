@@ -1,0 +1,37 @@
+{
+  "contractVersion": "cop-arrival-reversion-proposal-v1",
+  "status": "proposal_only_not_approved_not_implemented_not_applied",
+  "forwardReviewCommit": "3308953",
+  "forwardImage": "sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430",
+  "reversionImage": "sha256:251374f1b612dec0b0f0335250f91bb44f9e420d0d92bc2a2a3f9bf459b02a0c",
+  "reversionApplicationRevision": "c1ca66ff49c8e250ec260bd199f0d41502d8d600",
+  "changedEnvironmentKeys": [],
+  "newPermissions": false,
+  "pauseErasureIntake": false,
+  "restoreDatabaseOrBackup": false,
+  "resetOrEraseUsers": false,
+  "existingModel": {
+    "plainRollbackAllowed": false,
+    "pendingRecoverRollbackAllowed": false,
+    "pendingRecoverSameTargetAllowed": true,
+    "forwardReviewAuthorizesReversion": false
+  },
+  "acceptedForwardReversionProposal": {
+    "method": "new_fresh_maintain_release_not_historical_rollback",
+    "requiresNewExplicitApproval": true,
+    "sourceBinding": "exact accepted forward release, its actual current container and CAS generation",
+    "targetBinding": "only the exact reversion image and original application revision above",
+    "inheritFrom": "accepted forward proof and live state, never old environment or old database snapshots",
+    "preserve": ["OIDC and no-lab authentication", "all current erasure fences and in-progress durable jobs", "erasure intake enabled", "database identity/incarnation/profile", "roles and keys", "all environment values", "all mounts, networks and security options", "Root proof history"],
+    "requiredChecks": ["image configuration equality except revision label", "exact eight-file-only application delta", "no database migration or schema downgrade", "current provider readiness and fence continuity", "fresh exact-image owner attestation", "standard runtime/peer/configuration parity", "fresh pre/post health and anonymous authorization denial"],
+    "expectedFeatureEffect": "user-selected arrival capability disappears; new arrival requests fail closed; no automatic alternative or access relaxation"
+  },
+  "pendingForwardReversionProposal": {
+    "supportedByCurrentGuard": false,
+    "reason": "normal prepare refuses pending activation and guarded recover rollback is explicitly denied",
+    "wouldRequire": "separate bounded pending-state reversion implementation and approval, including a fresh reverse binding and preserved pending history",
+    "notEquivalentTo": ["clearing pending.json", "plain Compose image swap", "reusing an expired historical proof", "restoring an old database", "pausing or disabling erasure protection"]
+  },
+  "recoverOnlyRiskIfForwardProceedingWithoutReversion": "If failure happens after target start but before accepted pointer commit, old-image restoration is not available through existing guards. The pending checkpoint is retained and the same approved target must be recovered, or a separate precisely reviewed repair must be prepared. COP may be unavailable or degraded meanwhile; no guaranteed recovery duration is established.",
+  "productionActivated": false
+}
