@@ -80,3 +80,5 @@ published paths are preserved for integration references.
 - [0054: Independent pseudonymous erasure journal](0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md): original fence recovery, expiring admission and private Root delivery; source/tests before production enrollment.
 
 - [0056 — Clean user reset and shared identity deletion](0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md)
+
+- [0057: Explicit user-selected road arrival](0057_USER_SELECTED_ARRIVAL.md): compatible candidate, independent proof admission and pending production/device acceptance.

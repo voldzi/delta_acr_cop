@@ -1,0 +1,26 @@
+{
+  "Sources/CSMCommunicationKit/CSMUserSelectedArrival.swift": {
+    "beforeSha256": null,
+    "afterSha256": "f8ce8d1701ecd24105ea238aa3b3acc94fece54e7bdd452f352565e8ced05257"
+  },
+  "Sources/CSMCommunicationKit/CSMDriverRouting.swift": {
+    "beforeSha256": "e43066ce3be93496f582ed5ba7e53962021976c785a01b8e30a3bb169c7578a6",
+    "afterSha256": "ccff0afa2566f2597bd221ce4a3373a30aa86968e6f0b0a3853874690eed7bbe"
+  },
+  "Sources/CSMCommunicationKit/CSMMappedVehicleProfile.swift": {
+    "beforeSha256": "a8366eb986bb667bf6c7d208069400c1818f269da89604bcdccae23a7e0c1879",
+    "afterSha256": "fe7259783d64e9eccb0c9b1fe6d9cd91088b7bf29fc0bc7b882a837861950619"
+  },
+  "Sources/CSMCommunicationKit/CSMRoadTrip.swift": {
+    "beforeSha256": "7ba013f64f79a119dc271a215a321f1d169645429c4a759db502e6297b4d4e4e",
+    "afterSha256": "8eba1c8125ec9680998ec2d37c49eb4313b710cdd677b28a28f7be09e6976e71"
+  },
+  "Sources/CSMCore/ProductionCopAPIClient.swift": {
+    "beforeSha256": "f83caacfc0dd370d58b74db51a7f71fcaac3ff6c9e1093972d2f2024ce70a1b8",
+    "afterSha256": "f6d50ee7c3a9ff38b71ccff62046fab0cc0886a826ed1deafc3466642f96c47a"
+  },
+  "Tests/CSMCommunicationKitTests/HTTPClientTests.swift": {
+    "beforeSha256": "90e9c7e06805135945365d4491667b55d7571b8b2eea01d398d1adc49f0016ac",
+    "afterSha256": "c314cc9254d1685d2403759641f14680a98905bb5157c1a1aca378303c65a89e"
+  }
+}

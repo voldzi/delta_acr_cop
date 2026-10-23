@@ -457,3 +457,8 @@ The synthetic `/demo/flood-central-bohemia` uses a separate fixed scenario and
 is unaffected. A camera link neither authorizes private data nor creates a live
 municipal situation feed. Public analytics remains restricted to the approved
 synthetic demo; entry coordinates, query and private paths are not collected.
+
+## Explicit user-selected road arrival (candidate)
+
+The optional `arrival` request and `userSelectedArrival` capability are defined
+in the binding JSON OpenAPI. See [contract, SDK handoff and acceptance limits](integration/32_USER_SELECTED_ARRIVAL_V1.md).

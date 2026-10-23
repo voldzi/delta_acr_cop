@@ -186,3 +186,5 @@ Actual two-user, all-provider deletion and isolated restore fixture: [runbook 30
 Reviewed historical provenance and bounded schema preparation: [runbook 31](runbooks/31_ACCOUNT_ERASURE_LEGACY_PROVENANCE.md).
 
 - [Clean COP/SIM lifecycle release](account-safety/clean-lifecycle-release.md): explicit v2 scope, reset and acceptance progress.
+
+User-selected road arrival: [candidate contract and verification](integration/32_USER_SELECTED_ARRIVAL_V1.md), [ADR 0057](adr/0057_USER_SELECTED_ARRIVAL.md). Production activation remains separate.

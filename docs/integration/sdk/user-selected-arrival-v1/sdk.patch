@@ -1,0 +1,284 @@
+--- /dev/null
++++ b/Sources/CSMCommunicationKit/CSMUserSelectedArrival.swift
+@@ -0,0 +1,132 @@
++import Foundation
++
++public struct CSMUserSelectedArrivalRequest: Encodable, Sendable {
++    public let version = "sim-user-selected-arrival-v1"
++    public let selection = "user_selected"
++    public let target: CSMRoutePoint
++    public init(target: CSMRoutePoint) { self.target = target }
++    private enum CodingKeys: String, CodingKey { case version, selection, target }
++}
++public struct CSMUserSelectedArrivalCapabilities: Codable, Sendable {
++    public let version, availability, selection: String
++    public let profileIds: [String]
++    public let maxRemainingDistanceM, maxSnapDistanceM: Double
++    public let remainingAccess, cachePolicy: String
++    public var permitsUserSelectedArrival: Bool {
++        version == "sim-user-selected-arrival-v1" && availability == "requires_runtime_validation" &&
++        selection == "user_selected_only" && profileIds == ["car"] && maxRemainingDistanceM == 250 &&
++        maxSnapDistanceM == 25 && remainingAccess == "unverified" && cachePolicy == "no_cache"
++    }
++}
++public struct CSMUserSelectedArrival: Codable, Sendable {
++    public struct Engine: Codable, Sendable {
++        public let provider, version, costing: String
++        public let fallbackUsed: Bool
++    }
++    public let version, selection: String
++    public let target, requestedAccess, mappedEndpoint: CSMRoutePoint
++    /// Direct, unrouted remaining distance. Not a legal access claim or pedestrian ETA.
++    public let distanceM, snapDistanceM: Double
++    public let remainingAccess, requestHash, geometryHash, routeId: String
++    public let routingDataset: CSMRoutingDataset
++    public let profileId: String
++    public let engine: Engine
++    public let closureRevision: String
++    public let validUntil: Date
++    private enum CodingKeys: String, CodingKey, CaseIterable { case version, selection, target, requestedAccess, mappedEndpoint, distanceM, snapDistanceM, remainingAccess, requestHash, geometryHash, routeId, routingDataset, profileId, engine, closureRevision, validUntil }
++    public init(from decoder: Decoder) throws {
++        try arrivalKeys(decoder, Set(CodingKeys.allCases.map(\.rawValue)))
++        let c = try decoder.container(keyedBy: CodingKeys.self)
++        version = try c.decode(String.self, forKey: .version)
++        selection = try c.decode(String.self, forKey: .selection)
++        try arrivalKeys(c.superDecoder(forKey: .target), Set(["lat", "lon"]))
++        target = try c.decode(CSMRoutePoint.self, forKey: .target)
++        try arrivalKeys(c.superDecoder(forKey: .requestedAccess), Set(["lat", "lon"]))
++        requestedAccess = try c.decode(CSMRoutePoint.self, forKey: .requestedAccess)
++        try arrivalKeys(c.superDecoder(forKey: .mappedEndpoint), Set(["lat", "lon"]))
++        mappedEndpoint = try c.decode(CSMRoutePoint.self, forKey: .mappedEndpoint)
++        distanceM = try c.decode(Double.self, forKey: .distanceM)
++        snapDistanceM = try c.decode(Double.self, forKey: .snapDistanceM)
++        remainingAccess = try c.decode(String.self, forKey: .remainingAccess)
++        requestHash = try c.decode(String.self, forKey: .requestHash)
++        geometryHash = try c.decode(String.self, forKey: .geometryHash)
++        routeId = try c.decode(String.self, forKey: .routeId)
++        try arrivalKeys(c.superDecoder(forKey: .routingDataset), Set(["version", "builtAt"]))
++        routingDataset = try c.decode(CSMRoutingDataset.self, forKey: .routingDataset)
++        profileId = try c.decode(String.self, forKey: .profileId)
++        try arrivalKeys(c.superDecoder(forKey: .engine), Set(["provider", "version", "costing", "fallbackUsed"]))
++        engine = try c.decode(Engine.self, forKey: .engine)
++        closureRevision = try c.decode(String.self, forKey: .closureRevision)
++        validUntil = try c.decode(Date.self, forKey: .validUntil)
++    }
++}
++func userArrivalDistance(_ a: CSMRoutePoint, _ b: CSMRoutePoint) -> Double {
++    let rad = Double.pi / 180
++    let h = pow(sin((a.lat-b.lat)*rad/2),2) + cos(a.lat*rad)*cos(b.lat*rad)*pow(sin((a.lon-b.lon)*rad/2),2)
++    return 6_371_000 * 2 * asin(sqrt(min(1,max(0,h))))
++}
++extension CSMDriverRouteResponse {
++    func verifyingUserSelectedArrival(_ request: CSMDriverRouteRequest, at now: Date = .now) throws -> Self {
++        guard let asked = request.arrival else {
++            guard !routes.contains(where: { $0.arrival != nil }), !(features?.contains(where: {$0.properties.arrival != nil}) ?? false) else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++            return self
++        }
++        guard asked.version == "sim-user-selected-arrival-v1", asked.selection == "user_selected", asked.target.isValid,
++              request.to.isValid, request.profileId == "car", request.includeSteps,
++              request.vehicle == nil, request.vehicleProfile == nil, request.trip == nil, request.via == nil, request.departureTime == nil,
++              userArrivalDistance(request.to,asked.target) <= 250,
++              knownClosuresVerified, !requiresMapKitFallback, !routes.isEmpty, routes.count <= 3, let query, let features,
++              features.count == routes.count, Set(features.map(\.id)).count == features.count else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++        let canonical = try RoutingCanonicalJSON(), requestHash = try canonical.hash(query)
++        func samePoint(_ a: CSMRoutePoint, _ b: CSMRoutePoint) -> Bool { a.lat == b.lat && a.lon == b.lon }
++        for route in routes {
++            guard route.isNavigable, let a = route.arrival, let closure = route.knownClosures, let last = route.geometry.coordinates.last,
++                  a.version == "sim-user-selected-arrival-v1", a.selection == "user_selected", a.remainingAccess == "unverified",
++                  a.target.isValid, a.requestedAccess.isValid, a.mappedEndpoint.isValid,
++                  samePoint(a.target,asked.target), samePoint(a.requestedAccess,request.to),
++                  a.mappedEndpoint.lat == last[1], a.mappedEndpoint.lon == last[0],
++                  a.distanceM.isFinite, (0...250).contains(a.distanceM), a.snapDistanceM.isFinite, (0...25).contains(a.snapDistanceM),
++                  a.routeId == route.routeId, a.requestHash == requestHash, a.geometryHash == (try canonical.hash(route.geometry)),
++                  a.routingDataset.version == closure.routingDataset.version, a.routingDataset.builtAt == closure.routingDataset.builtAt,
++                  a.profileId == "car", a.engine.provider == "valhalla", a.engine.version == closure.engine.version,
++                  a.engine.costing == "auto", !a.engine.fallbackUsed, route.vehicleAssessment?.providerCosting == "auto",
++                  a.closureRevision == closure.revision, a.validUntil > now, a.validUntil <= closure.validUntil,
++                  let feature = features.first(where: {$0.id == route.routeId}), feature.type == "Feature", let mirrored = feature.properties.arrival,
++                  try canonical.string(mirrored) == canonical.string(a),
++                  try canonical.string(feature.geometry) == canonical.string(route.geometry) else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++            let distance = userArrivalDistance(a.mappedEndpoint,a.target), snap = userArrivalDistance(a.mappedEndpoint,a.requestedAccess)
++            guard distance <= 250, snap <= 25, abs(distance-a.distanceM) <= 0.01, abs(snap-a.snapDistanceM) <= 0.01 else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++        }
++        var verified = self; verified.userArrivalVerified = true; return verified
++    }
++    public func requireValidUserSelectedArrival(at now: Date = .now) throws {
++        guard (!routes.contains(where: {$0.arrival != nil}) && !(features?.contains(where: {$0.properties.arrival != nil}) ?? false)) ||
++                (userArrivalVerified && routes.allSatisfy({$0.arrival.map {$0.validUntil > now} == true})) else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++    }
++}
++public extension CSMCommunicationRuntime {
++    /// The caller must explicitly obtain the road access from the user. Never use this as an automatic error fallback.
++    func drivingRoutes(from: CSMRoutePoint, userSelectedAccess: CSMRoutePoint, originalTarget: CSMRoutePoint, alternatives: Int = 3) async throws -> CSMDriverRouteResponse {
++        guard from.isValid, userSelectedAccess.isValid, originalTarget.isValid else { throw CSMDriverRoutingError.invalidCoordinates }
++        guard (1...3).contains(alternatives), userArrivalDistance(userSelectedAccess,originalTarget) <= 250 else { throw CSMDriverRoutingError.unsupportedUserSelectedArrival }
++        await prepareRoutingAuthentication()
++        guard try await drivingCapabilities().userSelectedArrival?.permitsUserSelectedArrival == true else { throw CSMDriverRoutingError.unsupportedUserSelectedArrival }
++        let request = CSMDriverRouteRequest(from: from, to: userSelectedAccess, alternatives: alternatives, includeRoadAttributes: true,
++                                            arrival: .init(target: originalTarget))
++        let raw = try await driverReportService.drivingRoutes(request)
++        let checked = try await Task.detached { try raw.verifyingKnownClosures(for: request).verifyingMappedProfile(request).verifyingUserSelectedArrival(request) }.value
++        _ = try checked.navigationRoutes()
++        return checked
++    }
++}
++
++private struct ArrivalKey: CodingKey {
++    let stringValue: String
++    let intValue: Int? = nil
++    init?(stringValue: String) { self.stringValue = stringValue }
++    init?(intValue: Int) { return nil }
++}
++private func arrivalKeys(_ decoder: Decoder, _ allowed: Set<String>) throws {
++    let c = try decoder.container(keyedBy: ArrivalKey.self)
++    guard Set(c.allKeys.map(\.stringValue)) == allowed else { throw CSMDriverRoutingError.invalidUserSelectedArrival }
++}
+--- a/Sources/CSMCommunicationKit/CSMDriverRouting.swift
++++ b/Sources/CSMCommunicationKit/CSMDriverRouting.swift
+@@ -21,6 +21,7 @@
+     var via: [CSMRoutePoint]? = nil
+     var departureTime: String? = nil
+     var vehicleProfile: CSMMappedVehicleProfile? = nil
++    var arrival: CSMUserSelectedArrivalRequest? = nil
+ }
+ 
+ /// Actual recorded dimensions only. Unknown values must remain nil.
+@@ -49,6 +50,7 @@
+     public let query: CSMRoutingQuery?
+     var knownClosuresVerified = false
+     var mappedProfileVerified = false
++    var userArrivalVerified = false
+     private enum CodingKeys: String, CodingKey { case query, generatedAt, coverage, routes, traffic, warnings, features }
+     var features: [CSMMappedRouteFeature]? = nil
+     public let generatedAt: Date?
+@@ -64,6 +66,7 @@
+     public func navigationRoutes() throws -> [CSMDriverRoute] {
+         try requireCurrentKnownClosures()
+         try requireValidMappedProfile()
++        try requireValidUserSelectedArrival()
+         let usable = routes.prefix(3).filter { $0.isNavigable }.sorted { ($0.rank ?? 1) < ($1.rank ?? 1) }
+         guard !usable.isEmpty else { throw CSMDriverRoutingError.noNavigableRoute }
+         return usable
+@@ -167,6 +170,7 @@
+     public let assessment: CSMRoadTripAssessment?
+     public let knownClosures: CSMKnownRoadClosures?
+     public let mappedProfileAssessment: CSMMappedProfileAssessment?
++    public let arrival: CSMUserSelectedArrival?
+ 
+     public var isNavigable: Bool {
+         guard geometry.isValid, distanceM.isFinite, distanceM > 0,
+@@ -257,6 +261,9 @@
+ }
+ 
+ public enum CSMDriverRoutingError: LocalizedError {
++    case restrictionsRelaxationRequired
++    case invalidUserSelectedArrival
++    case unsupportedUserSelectedArrival
+     case invalidCoordinates
+     case invalidVehicle
+     case invalidTrip
+@@ -266,6 +273,9 @@
+     case noNavigableRoute
+     public var errorDescription: String? {
+         switch self {
++        case .restrictionsRelaxationRequired: "Trasu nelze vypočítat bez uvolnění požadovaných omezení. Žádná taková trasa nebyla použita."
++        case .invalidUserSelectedArrival: "Příjezd nebyl platně ověřen pro tuto trasu. Obnovte výpočet."
++        case .unsupportedUserSelectedArrival: "Výslovně zvolený příjezd nyní není podporovaný nebo je příliš vzdálený."
+         case .invalidCoordinates: "Pro výpočet trasy není dostupná platná poloha."
+         case .invalidMappedProfile: "Navigační profil nebyl platně ověřen pro tuto trasu. Náhradní neomezená trasa není povolena."
+         case .invalidTrip: "Parametry cesty nejsou úplné nebo platné."
+@@ -296,7 +306,7 @@
+                 vehicle: vehicle
+             )
+         let raw = try await driverReportService.drivingRoutes(request)
+-        let response = try await Task.detached { try raw.verifyingKnownClosures(for: request).verifyingMappedProfile(request) }.value
++        let response = try await Task.detached { try raw.verifyingKnownClosures(for: request).verifyingMappedProfile(request).verifyingUserSelectedArrival(request) }.value
+         // Preserve a typed outside-coverage/empty result so the host can start
+         // real MapKit routing rather than losing the reason in a generic error.
+         if !response.requiresMapKitFallback {
+--- a/Sources/CSMCommunicationKit/CSMMappedVehicleProfile.swift
++++ b/Sources/CSMCommunicationKit/CSMMappedVehicleProfile.swift
+@@ -3,6 +3,7 @@
+ struct CSMMappedRouteFeature: Codable, Sendable {
+     struct Properties: Codable, Sendable {
+         let mappedProfileAssessment: CSMMappedProfileAssessment?
++        let arrival: CSMUserSelectedArrival?
+     }
+     let id: String
+     let type: String
+@@ -168,7 +169,7 @@
+             includeRoadAttributes: true, vehicle: nil, vehicleProfile: vehicleProfile)
+         let raw = try await driverReportService.drivingRoutes(request)
+         let response = try await Task.detached {
+-            try raw.verifyingKnownClosures(for: request).verifyingMappedProfile(request)
++            try raw.verifyingKnownClosures(for: request).verifyingMappedProfile(request).verifyingUserSelectedArrival(request)
+         }.value
+         _ = try response.navigationRoutes()
+         return response
+--- a/Sources/CSMCommunicationKit/CSMRoadTrip.swift
++++ b/Sources/CSMCommunicationKit/CSMRoadTrip.swift
+@@ -163,7 +163,8 @@
+ public extension CSMDriverRouteResponse {
+     /// Strict trips never grant an Apple/unconstrained fallback. Revalidate after route selection and as validity expires.
+     func navigationRoutes(for trip: CSMRoadTrip, at now: Date = .now) throws -> [CSMDriverRoute] {
+-        guard !hasKnownClosures, trip.isValid, !routes.isEmpty, routes.count <= 3,
++        guard !hasKnownClosures, routes.allSatisfy({ $0.arrival == nil }),
++              !(features?.contains(where: { $0.properties.arrival != nil }) ?? false), trip.isValid, !routes.isEmpty, routes.count <= 3,
+               routes.allSatisfy({ $0.isNavigable && $0.assessment?.satisfies(trip, coverage: coverage, at: now) == true })
+         else { throw CSMDriverRoutingError.safetyRequirementsUnavailable }
+         return routes.sorted { ($0.rank ?? 1) < ($1.rank ?? 1) }
+@@ -188,6 +189,7 @@
+     public let warnings: [String]
+     public let capabilities: CSMRoadTripCapabilities?
+     public let mappedProfiles: CSMMappedProfileCapabilities?
++    public let userSelectedArrival: CSMUserSelectedArrivalCapabilities?
+ }
+ public struct CSMDriverRoutingProfile: Codable, Sendable {
+     public let profileId: String
+--- a/Sources/CSMCore/ProductionCopAPIClient.swift
++++ b/Sources/CSMCore/ProductionCopAPIClient.swift
+@@ -8,7 +8,10 @@
+     }
+ 
+     func drivingRoutes(_ request: CSMDriverRouteRequest) async throws -> CSMDriverRouteResponse {
+-        try await http.post("/api/v1/routing/route", body: request)
++        do { return try await http.post("/api/v1/routing/route", body: request) }
++        catch let failure as HTTPResponseFailure where failure.statusCode == 422 && failure.code == "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED" {
++            throw CSMDriverRoutingError.restrictionsRelaxationRequired
++        }
+     }
+ 
+     func bootstrap(seconds: Int) async throws -> MobileBootstrap {
+--- a/Tests/CSMCommunicationKitTests/HTTPClientTests.swift
++++ b/Tests/CSMCommunicationKitTests/HTTPClientTests.swift
+@@ -7,6 +7,30 @@
+     override func tearDown() {
+         PressureURLProtocol.reset()
+         super.tearDown()
++    }
++
++    func testRoutesTypeOnlyTheExact422RestrictionsRelaxationCode() async {
++        for (status, code) in [(422, "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED"),
++                               (502, "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED"),
++                               (422, "ROUTING_TARGET_NOT_ROUTABLE"), (401, "UNAUTHORIZED")] {
++            PressureURLProtocol.configure { _ in (status, "{\"error\":{\"code\":\"\(code)\"}}") }
++            let client = ProductionCopAPIClient(http: HTTPClient(baseURL: URL(string: "https://cop.test")!, session: makeSession()))
++            do {
++                _ = try await client.drivingRoutes(.init(from: .init(latitude: 50, longitude: 14),
++                    to: .init(latitude: 50.1, longitude: 14.1), alternatives: 1))
++                XCTFail("Expected refusal")
++            } catch {
++                if status == 422 && code == "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED" {
++                    guard case .restrictionsRelaxationRequired? = error as? CSMDriverRoutingError else {
++                        XCTFail("Exact refusal must remain typed"); continue
++                    }
++                } else {
++                    XCTAssertFalse(error is CSMDriverRoutingError)
++                    XCTAssertTrue(error.localizedDescription.contains(code))
++                }
++            }
++            XCTAssertEqual(PressureURLProtocol.requestCount, 1)
++        }
+     }
+ 
+     func testRegistrationDiagnosticContainsOnlyStatusAndKnownErrorCategory() {

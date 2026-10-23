@@ -1,3 +1,4 @@
+import { validateUserArrivalRequest, verifyUserArrivalResponse, verifiedUserArrivalCapabilities, type UserArrivalRequest, type UserArrival, type UserArrivalCapabilities } from "./routing-user-arrival.js";
 import { validateVehicleProfileRequest, verifiedMappedCapabilities, verifyMappedProfileResponse, type MappedVehicleProfile, type MappedProfileAssessment, type MappedProfileCapabilities } from "./routing-vehicle-profile.js";
 import { verifyKnownClosuresResponse, type KnownClosures } from "./routing-known-closures.js";
 import { validateRoadTripRequest, verifyRoadTripResponse, verifiedCapabilities, type RoadTripCapabilities, validRoundabout, type RoadTrip, type RoadTripAssessment, type RoadTripRoundabout } from "./routing-trip.js";
@@ -19,6 +20,7 @@ export interface RoutingPoint {
 }
 
 export interface RoutingRouteRequest {
+  arrival?: UserArrivalRequest;
   alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
@@ -38,6 +40,7 @@ export interface RoutingRouteRequest {
 }
 
 export interface RoutingProfilesResponse {
+  userSelectedArrival?: UserArrivalCapabilities;
   capabilities?: RoadTripCapabilities;
   mappedProfiles?: MappedProfileCapabilities;
   contractVersion?: string;
@@ -123,6 +126,7 @@ export interface RoutingStep extends Record<string, unknown> {
 }
 
 export interface RoutingRoute extends Record<string, unknown> {
+  arrival?: UserArrival;
   assessment?: RoadTripAssessment;
   mappedProfileAssessment?: MappedProfileAssessment;
   knownClosures?: KnownClosures;
@@ -240,7 +244,7 @@ export class RoutingSourceAdapter implements RoutingSource {
 
 function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRouteRequest {
   if (!isRecord(request)) throw new Error("Routing request must be an object.");
-  rejectUnknownFields(request, ["alternatives", "avoid", "from", "to", "includeRoadAttributes", "includeSteps", "profileId", "vehicle", "trip", "vehicleProfile", "via", "departureTime", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"], "request");
+  rejectUnknownFields(request, ["arrival", "alternatives", "avoid", "from", "to", "includeRoadAttributes", "includeSteps", "profileId", "vehicle", "trip", "vehicleProfile", "via", "departureTime", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"], "request");
   for (const field of ["includeRoadAttributes", "includeSteps", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"] as const) {
     if (request[field] !== undefined && typeof request[field] !== "boolean") {
       throw new Error(`Routing ${field} must be a boolean.`);
@@ -254,6 +258,7 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
     !request.avoid.every((item) => typeof item === "string" && item.length > 0 && item.length <= 80))) {
     throw new Error("Routing avoid must contain at most 20 nonempty restriction names.");
   }
+  validateUserArrivalRequest(request);
   validateVehicleProfileRequest(request);
   validateRoadTripRequest(request);
   if (request.via !== undefined && (!Array.isArray(request.via) || request.via.length > 12)) {
@@ -272,6 +277,7 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
       ? { avoid: request.avoid.flatMap((item) => optionalString(item) ?? []).slice(0, 20) }
       : {}),
     from,
+    ...(request.arrival !== undefined ? { arrival: structuredClone(request.arrival) } : {}),
     ...(request.includeElevationProfile !== undefined ? { includeElevationProfile: request.includeElevationProfile } : {}),
     ...(request.includeWeatherOnRoute !== undefined ? { includeWeatherOnRoute: request.includeWeatherOnRoute } : {}),
     ...(request.includeHazardsOnRoute !== undefined ? { includeHazardsOnRoute: request.includeHazardsOnRoute } : {}),
@@ -333,6 +339,7 @@ function normalizeRoutingProfilesResponse(value: unknown): RoutingProfilesRespon
   }
   const rawProfiles = Array.isArray(value.profiles) ? value.profiles : Array.isArray(value.items) ? value.items : [];
   return {
+    ...(value.userSelectedArrival !== undefined ? { userSelectedArrival: verifiedUserArrivalCapabilities(value.userSelectedArrival) } : {}),
     contractVersion: optionalString(value.contractVersion),
     generatedAt: optionalString(value.generatedAt),
     profiles: rawProfiles.filter(isRecord),
@@ -348,6 +355,7 @@ function normalizeRoutingRouteResponse(value: unknown, request?: RoutingRouteReq
   }
   const hasKnownClosures = verifyKnownClosuresResponse(value, request, now);
   verifyMappedProfileResponse(value, request, now, hasKnownClosures);
+  verifyUserArrivalResponse(value, request, now, hasKnownClosures);
   const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
   if (request?.trip) verifyRoadTripResponse({ ...value, routes: receivedRoutes } as unknown as RoutingRouteResponse, request, now);
   const routes = receivedRoutes.filter((route) => !isNonNavigableRoute(route));
