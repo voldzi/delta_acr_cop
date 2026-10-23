@@ -79,3 +79,24 @@ Jízda build results remain separate gates. No production arrival activation,
 permissions, credentials or existing snap limits were changed. Rollback for this
 candidate is to omit the opt-in and retain the existing published SDK/runtime;
 never reuse an arrival proof for another request or route.
+
+## Production preparation (23 October)
+
+The exact eight-file image-only COP candidate is built as
+`sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430`,
+from the running `251374f1...` image. Its image configuration is identical except
+for the source revision label. The build receipt and offline OCI source are on
+X5 under `/srv/x5-production/staging/cop/work/job-fa4230c846b54cd188c3ac75da93ff26`.
+The dedicated COP X5 builder was restored with the existing bounded recovery
+script; no cache prune, shared builder, volume or Docker data-root change occurred.
+
+Production is still unchanged. The current protected release contract is pinned
+to the previous image and does not permit an arbitrary image-only update.
+[Exact operator review](../account-safety/user-selected-arrival-release.review.json)
+and its adjacent patch are prepared only; the protected helper/runtime were not
+modified. Eight isolated contract tests pass. This is not full installer/root
+acceptance. The human must approve this specific review and authenticate as
+Root before installation can proceed. No erase/reset or erasure-config change
+is needed. Existing fences, accounts, roles, credentials and database settings
+are preserved. A fresh owner attestation is an exact-image operator statement,
+not a substitute for the required tests or actual SIM engine acceptance.

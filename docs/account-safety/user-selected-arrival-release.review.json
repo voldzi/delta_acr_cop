@@ -1,0 +1,22 @@
+{
+  "status": "review_only_not_authorized_or_applied",
+  "contractVersion": "cop-arrival-image-only-operator-review-v1",
+  "sourceImage": "sha256:251374f1b612dec0b0f0335250f91bb44f9e420d0d92bc2a2a3f9bf459b02a0c",
+  "targetImage": "sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430",
+  "applicationRevision": "333352a79cba641393e407e32d0a175867ca32c2",
+  "originalRuntimeSha256": "ca17f451487b53018eaf8628547dbf838fab3e01f28ccd472a1331bfce525a0f",
+  "reviewedRuntimeSha256": "166ceec7aad066a93d2edc7bdaea3facd0c94f6f8736cc58be57bbe6ec2e4766",
+  "runtimePatchSha256": "b3cb977fe28938c1c7d6ae7ec85dfc260c246bfb239ad8d02c5101ae590533d2",
+  "helperSha256": "6f0f6f8d8ad6f33fd57c1adbd6b0829c32f595da57e0df3287373792cfdaa0ad",
+  "changedEnvironmentKeys": [],
+  "erasureOperationPerformed": false,
+  "operatorConfirms": [
+    "This exact image-only transition and eight allowlisted files",
+    "Existing OIDC, fences, roles, secrets, database routing, mount and network settings remain byte-equivalent",
+    "Historical Root proofs remain immutable and are delegated to the prior hash-pinned helper",
+    "Actual SIM arrival acceptance is required before COP activation",
+    "A fresh exact-image owner attestation is created only after operator approval and required checks"
+  ],
+  "activationRequires": "Explicit human approval of this review, Root authentication, compatible accepted SIM, fresh <=15 minute evidence and standard runtime gates",
+  "productionActivated": false
+}
