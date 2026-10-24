@@ -1,0 +1,82 @@
+{
+  "contractVersion": "cop-arrival-independent-postdeploy-v1",
+  "readOnly": true,
+  "productionActivated": true,
+  "imageId": "sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430",
+  "sourceRevision": "333352a79cba641393e407e32d0a175867ca32c2",
+  "pointer": {
+    "containerId": "a60f03efabf9276a558014d3f2fc7f51f9577afb8cac6ad717b5887f2e7b2130",
+    "contractVersion": "cop-api-runtime-active-v1",
+    "generation": "6d767891c0944954a737687c178d8c94",
+    "imageId": "sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430",
+    "profileGeneration": "206c4507-5e00-458e-b0ee-4061309aa7a8",
+    "profileId": "206c4507-5e00-458e-b0ee-4061309aa7a8",
+    "releaseId": "release-5a0826a378b54d0aaa935bb28f147d95"
+  },
+  "runtimeGuardVerified": true,
+  "protectedHelpersVerified": true,
+  "fullConfigurationUnchangedExceptImageAndReleaseLabels": true,
+  "environmentValuesUnchanged": true,
+  "databaseProfileUnchanged": true,
+  "pendingOperationsAbsent": true,
+  "health": [
+    {
+      "path": "/health/live",
+      "http": 200,
+      "status": "ok"
+    },
+    {
+      "path": "/health/ready",
+      "http": 200,
+      "status": "ok"
+    },
+    {
+      "path": "/health/dependencies",
+      "http": 200,
+      "status": "ok"
+    }
+  ],
+  "operatorReceipt": "/srv/x5-production/staging/cop/work/job-fa4230c846b54cd188c3ac75da93ff26/arrival-pair-20261024/operator-result-dbbec9d1233247c19d09a8507a77bc8f.json",
+  "freshActualAdapter": {
+    "verified": true,
+    "actualProductionCopAdapterToSimToEngine": true,
+    "trafficFreshnessNotAssessed": true,
+    "anonymousAndLabRejected": true,
+    "authenticatedUserHttpAndPhoneAcceptancePending": true,
+    "original": {
+      "http": 200,
+      "fullyVerified": true
+    },
+    "capabilities": {
+      "version": "sim-user-selected-arrival-v1",
+      "availability": "requires_runtime_validation",
+      "selection": "user_selected_only",
+      "profileIds": [
+        "car"
+      ],
+      "maxRemainingDistanceM": 250,
+      "maxSnapDistanceM": 25,
+      "remainingAccess": "unverified",
+      "cachePolicy": "no_cache"
+    },
+    "variants": [
+      {
+        "distanceM": 177,
+        "durationSeconds": 49,
+        "steps": 5,
+        "remainingDistanceM": 26.790443495116186,
+        "snapDistanceM": 1.0846034126616388,
+        "graph": "sim-routing-2026-10-18-1792292102",
+        "engine": {
+          "provider": "valhalla",
+          "version": "3.8.3",
+          "fallbackUsed": false,
+          "costing": "auto"
+        },
+        "proofVerified": true
+      }
+    ]
+  },
+  "authenticatedUserHttpSdkPhoneAcceptancePending": true,
+  "checkedAt": "2026-10-24T08:48:59.045187Z"
+}

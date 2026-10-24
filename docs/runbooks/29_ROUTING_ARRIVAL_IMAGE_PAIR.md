@@ -1,8 +1,10 @@
 # COP arrival: exact image-pair release and safe reversion
 
-Status 24 October: implementation and isolated checks completed; SIM deployment
-accepted; COP read-only preflight passed. Root activation and authenticated native
-acceptance are not yet recorded here. Do not infer deployment from this runbook.
+Status 24 October: SIM and COP deployed and independently verified.
+[Production receipt](../testing/user-selected-arrival-production-20261024.json)
+records the actual active image/CAS, protected pins, unchanged configuration and
+fresh COP adapter→SIM→Valhalla acceptance. Signed-in native/iPhone acceptance is
+still pending and is not implied by server readiness.
 
 ## Authorized pair and unchanged state
 
@@ -111,5 +113,14 @@ this probe makes no independent fresh-speed or legal-access claim.
   Valhalla 3.8.3, graph `sim-routing-2026-10-18-1792292102`. Fresh routes are
   required at activation; old route timestamps are never refreshed.
 
-Record the final operator JSON and independent active image/pin/health checks
-before changing this status to deployed. TestFlight/App Review are not authorized.
+The actual operator receipt is
+`/srv/x5-production/staging/cop/work/job-fa4230c846b54cd188c3ac75da93ff26/arrival-pair-20261024/operator-result-dbbec9d1233247c19d09a8507a77bc8f.json`.
+Independent post-deploy verification confirmed image `3f0054cb…`, release
+`release-5a0826a378b54d0aaa935bb28f147d95`, generation
+`6d767891c0944954a737687c178d8c94`, all three health endpoints 200/ok, exact
+Root helper/guard metadata, no pending checkpoints and full env/config/profile
+parity except the approved image/runtime release labels. Fresh explicit arrival
+was 177m/49s, 5 maneuvers, remaining 26.79044m, snap 1.08460m, Valhalla 3.8.3
+auto without fallback. This does not prove signed-in user HTTP/SDK, physical
+arrival, legal access or fresh traffic speeds. TestFlight/App Review remain
+unauthorized.

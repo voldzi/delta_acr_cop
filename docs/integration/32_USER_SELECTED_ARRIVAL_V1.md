@@ -112,3 +112,20 @@ and subsequent actual production/native acceptance. The original fixed-address
 all original proof and SDK navigability requirements; it is never accepted by
 status alone. No runtime restrictions, user-selected limits or warning-401
 handling were weakened.
+
+## Actual production acceptance (24 October)
+
+SIM `9f0a6d78…` / `dd3a75b` and COP `3f0054cb…` / `333352a` are now deployed.
+[Independent production evidence](../testing/user-selected-arrival-production-20261024.json)
+confirms the active release/pointer, exact protected guard/worker, health 3×200/ok,
+unchanged environment/database profile/configuration and no pending operations.
+A newly executed actual production COP adapter→SIM→Valhalla request admitted the
+explicit access route with 177m/49s, 5 maneuvers and the complete typed proof;
+anonymous and lab-token HTTP requests were rejected with 401. The original POI
+request returned a fully verified ordinary route in that observation.
+
+The signed-in user's HTTP/SDK/iPhone journey is still a separate pending gate.
+Jízda was notified that the server gate for the authorized device install is met.
+No TestFlight upload, account erasure operation, credential/role/configuration
+change, traffic-freshness guarantee or legal-access claim is implied. Historical
+candidate/preflight paragraphs above describe their respective earlier stages.
