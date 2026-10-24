@@ -1,0 +1,10 @@
+{
+  "cop-api-runtime.py": "65cb657fb5349a73c4d28c977e688148e54e65e73d63780ba726c4293c7dd255",
+  "cop-arrival-release-contract-v1.py": "6f0f6f8d8ad6f33fd57c1adbd6b0829c32f595da57e0df3287373792cfdaa0ad",
+  "cop-arrival-reversion-contract-v1.py": "3844d42977343fe934b097ce87e9ff416817b88b66d2e94e1b8aecf0d1b744f5",
+  "cop-arrival-reversion-worker-v1.py": "7a29b158cddcc7883a851367dc5352aee7c8f77200e2baa75f1fdc078cdb4b10",
+  "accept-arrival-production.mjs": "1d3cb8cffe63d3d1e3ff55a492f2c1d2b11237b5a0ca6c65aa8e925aa44a8780",
+  "accept-sim-arrival-fresh.mjs": "9b24a6594a706ca12bdc428afdb3b4eb69a6d778bbdf3ee18af6ef1ff31a0a89",
+  "patch-files.json": "4cc104886ec4f6f63e8dfaa8b59dbd370c1b4c2dd48769fdce317aeeae8269f1",
+  "install-arrival-pair.py": "105580b95a272055a1a3ed8bc568e3209c3c22ee1cd2990a9939fb318b328fec"
+}

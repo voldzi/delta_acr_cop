@@ -100,3 +100,15 @@ Root before installation can proceed. No erase/reset or erasure-config change
 is needed. Existing fences, accounts, roles, credentials and database settings
 are preserved. A fresh owner attestation is an exact-image operator statement,
 not a substitute for the required tests or actual SIM engine acceptance.
+
+## Authorized pair safeguard (24 October)
+
+The exact forward and accepted/pending reversion implementation is now prepared
+and tested under the explicit human authorization of 24 October. See
+[the release/reversion runbook](../runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md).
+SIM is accepted in production; COP remains gated on the final Root operator step
+and subsequent actual production/native acceptance. The original fixed-address
+401 probe was corrected as a separate artifact: a valid ordinary 200 must pass
+all original proof and SDK navigability requirements; it is never accepted by
+status alone. No runtime restrictions, user-selected limits or warning-401
+handling were weakened.

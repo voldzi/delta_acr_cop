@@ -475,3 +475,10 @@ incidents, deletion operations or analytics scope changes were involved.
 as did web build/typecheck, scoped ESLint, analytics guard and skeleton validation.
 Handoff with the functional URL and these limits was sent to the existing web
 Košík thread on 2026-10-21.
+
+## Arrival routing image pair
+
+The bounded COP release and safe reversion of the two approved routing images,
+including retained pending evidence and unchanged erasure protections, are in
+[the operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md). A read-only
+preflight or isolated Docker test is not production/native acceptance.
