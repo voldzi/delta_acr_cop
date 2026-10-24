@@ -43,8 +43,13 @@ class ReversionTests(suite.RuntimeTests):
   self.forward_binding=self.erasure_candidate(self.initial,path,self.new)
   self.forward_dir=self.root/'releases'/self.forward_binding['releaseId']
   if pending:
-   self.docker.interrupt=before_start;self.docker.interrupt_health=not before_start
-   with self.assertRaises(KeyboardInterrupt):self.store.activate(self.forward_binding['releaseId'],self.initial['generation'])
+   if before_start:
+    with mock.patch.object(self.docker,'up',side_effect=KeyboardInterrupt('before forward creates a target')):
+     with self.assertRaises(KeyboardInterrupt):self.store.activate(self.forward_binding['releaseId'],self.initial['generation'])
+    self.assertEqual(self.docker.live_container['Image'],self.old)
+   else:
+    self.docker.interrupt_health=True
+    with self.assertRaises(KeyboardInterrupt):self.store.activate(self.forward_binding['releaseId'],self.initial['generation'])
   else:self.store.activate(self.forward_binding['releaseId'],self.initial['generation'])
   self.reverse_path,p=self.proof(self.store.pointer(),self.old,r.ARRIVAL_REVERSION_VERSION)
   actual=self.docker.current(self.forward_dir)
