@@ -144,6 +144,53 @@ def write(path,raw,replace=False):
     finally:os.close(fd)
 
 
+def web_parent_fd():
+    """The fixed existing mixed-owner path; never relax Root grant directories."""
+    fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        for name,uid,gid,mode in [('srv',0,0,0o755),('cop',1000,1000,0o755),
+                                 ('runtime',1000,1000,0o700),('clean-reset',0,1000,0o750)]:
+            child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+            try:
+                st=os.fstat(child)
+                need(stat.S_ISDIR(st.st_mode) and (st.st_uid,st.st_gid,stat.S_IMODE(st.st_mode))==(uid,gid,mode),'WEB_DIRECTORY_LAYOUT_CHANGED')
+            except BaseException:os.close(child);raise
+            os.close(fd);fd=child
+        return fd
+    except BaseException:os.close(fd);raise
+
+
+def read_web_pin(fd):
+    file=os.open('web-runtime.compose.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
+    try:
+        before=os.fstat(file)
+        need(stat.S_ISREG(before.st_mode) and before.st_uid==0 and before.st_gid==1000
+             and stat.S_IMODE(before.st_mode)==0o640 and before.st_nlink==1 and before.st_size<65536,'WEB_PIN_CUSTODY')
+        raw=os.read(file,65537);after=os.fstat(file)
+        need(len(raw)==before.st_size and (before.st_ino,before.st_mtime_ns,before.st_ctime_ns)==(after.st_ino,after.st_mtime_ns,after.st_ctime_ns),'WEB_PIN_CHANGED_DURING_READ')
+        return raw
+    finally:os.close(file)
+
+
+def write_web_pin(expected,new):
+    """Replace only the fixed public image pin using an anchored directory fd."""
+    fd=web_parent_fd();temporary='.cop-web-pin-'+uuid.uuid4().hex
+    try:
+        need(read_web_pin(fd)==expected,'WEB_PIN_CAS_CHANGED')
+        file=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o640,dir_fd=fd)
+        try:
+            os.fchown(file,0,1000);os.fchmod(file,0o640)
+            with os.fdopen(file,'wb',closefd=False) as out:out.write(new);out.flush();os.fsync(file)
+        finally:os.close(file)
+        need(read_web_pin(fd)==expected,'WEB_PIN_CAS_CHANGED')
+        os.replace(temporary,'web-runtime.compose.json',src_dir_fd=fd,dst_dir_fd=fd)
+        os.fsync(fd)
+    finally:
+        try:os.unlink(temporary,dir_fd=fd)
+        except FileNotFoundError:pass
+        os.close(fd)
+
+
 def remove_owned(path,raw):
     if not path.exists() and not path.is_symlink():return
     need(read(path)==raw,'OWNED_SEAL_ARTIFACT_CHANGED')
@@ -161,7 +208,7 @@ def cleanup_uncommitted(created,web_pin,old_pin,new_pin,pin_intended):
         for path,raw in reversed(created):remove_owned(path,raw)
         if pin_intended:
             current=read(web_pin)
-            if current==new_pin:write(web_pin,old_pin,replace=True)
+            if current==new_pin:write_web_pin(new_pin,old_pin)
             else:need(current==old_pin,'WEB_PIN_CHANGED_DURING_SEAL')
     finally:signal.pthread_sigmask(signal.SIG_SETMASK,mask)
 
@@ -275,7 +322,7 @@ def seal():
             else:
                 created.append((attestation_path,encoded(attestation)));write(attestation_path,encoded(attestation))
             created.append((proof_path,encoded(proof)));write(proof_path,encoded(proof))
-            pin_intended=True;write(web_pin,new_pin,replace=True)
+            pin_intended=True;write_web_pin(old_pin,new_pin)
             # The same Root broker lock prevents concurrent activation while
             # its index is published solely for the exact worker preflight.
             created.append((ROOT/'approved.json',index_raw));write(ROOT/'approved.json',index_raw)

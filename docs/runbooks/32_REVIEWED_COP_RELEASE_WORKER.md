@@ -32,12 +32,18 @@ Run focused source tests:
 python3 -I -B -m unittest discover -s scripts/release -p 'test_*.py'
 ```
 
-The first personal seal attempt stopped because the worker searched for the
-approval index under `releases/`; the producer writes it in the broker base
-directory. The repaired common-path test uses full absolute paths, not basename
-lookup. An isolated Linux integration reproduces the old failure and cleanup,
-then verifies actual Root publication and UID1000 package authorization at the
-correct paths. It stubs provider I/O and is not production/provider acceptance.
+The first personal seal returned a generic failure. A separate latent error was
+found in the worker's approval-index path (`releases/` instead of the broker base
+directory). The next bounded stage receipt identified the earlier publication
+failure: the generic Root writer rejected user-owned ancestors of the fixed web
+pin. The repaired common-path test uses complete absolute paths. The dedicated
+web-pin writer walks the exact observed mixed-owner directory chain with
+`O_DIRECTORY|O_NOFOLLOW`, retains an anchored parent fd, verifies existing Root
+file custody/bytes, and atomically replaces only that filename. Generic Root
+grant directory checks remain unchanged. Cleanup uses the same narrow writer.
+An isolated Linux integration now matches actual production owners and modes,
+checks both negative cases and cleanup, then verifies successful Root publication
+and UID1000 package authorization. It stubs provider I/O and is not production/provider acceptance.
 The fixture sources are in `scripts/release/tests/`; run them only in their
 disposable container, never on a host. No host mounts, socket or network are
 needed. A separate local test exercises the actual runtime guard's attestation,

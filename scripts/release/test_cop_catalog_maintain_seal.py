@@ -108,7 +108,7 @@ class SealTests(unittest.TestCase):
             with patch.object(s,'directory'),patch.object(s.os,'fchown'),patch.object(s.os,'fsync',side_effect=sync):
                 with self.assertRaises(OSError):s.write(path,b'new',replace=replace)
             self.assertEqual(path.read_bytes(),b'new')
-            with patch.object(s,'read',side_effect=lambda p,*args:p.read_bytes()),patch.object(s,'directory'),patch.object(s.os,'fchown'):
+            with patch.object(s,'read',side_effect=lambda p,*args:p.read_bytes()),patch.object(s,'directory'),patch.object(s.os,'fchown'),patch.object(s,'write_web_pin',side_effect=lambda old,new:path.write_bytes(new)):
                 s.cleanup_uncommitted([] if replace else [(path,b'new')],path,b'old',b'new',replace)
             if replace:self.assertEqual(path.read_bytes(),b'old')
             else:self.assertFalse(path.exists())
@@ -133,12 +133,42 @@ class SealTests(unittest.TestCase):
             for name in ['proof','index','commit']:
                 p=root/name;p.write_bytes(name.encode());created.append((p,name.encode()))
             pin=root/'pin';pin.write_bytes(b'new')
-            with patch.object(s,'read',side_effect=lambda p,*args:p.read_bytes()),patch.object(s,'directory'),patch.object(s.os,'fchown'):
+            with patch.object(s,'read',side_effect=lambda p,*args:p.read_bytes()),patch.object(s,'directory'),patch.object(s.os,'fchown'),patch.object(s,'write_web_pin',side_effect=lambda old,new:pin.write_bytes(new)):
                 try:raise KeyboardInterrupt()
                 except KeyboardInterrupt:
                     s.cleanup_uncommitted(created,pin,b'old',b'new',True)
             self.assertTrue(all(not p.exists() for p,_ in created))
             self.assertEqual(pin.read_bytes(),b'old')
+
+    def test_web_pin_after_replace_sync_failure_can_restore_through_same_dirfd_writer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();pin=root/'web-runtime.compose.json';pin.write_bytes(b'old')
+            calls=0;real_sync=os.fsync
+            def sync(fd):
+                nonlocal calls
+                calls+=1
+                if calls==2:raise OSError('injected directory sync failure')
+                return real_sync(fd)
+            with patch.object(s,'web_parent_fd',side_effect=lambda:os.open(root,os.O_RDONLY|os.O_DIRECTORY)),patch.object(s,'read_web_pin',side_effect=lambda fd:pin.read_bytes()),patch.object(s.os,'fchown'):
+                with patch.object(s.os,'fsync',side_effect=sync):
+                    with self.assertRaises(OSError):s.write_web_pin(b'old',b'new')
+                self.assertEqual(pin.read_bytes(),b'new')
+                s.write_web_pin(b'new',b'old')
+                self.assertEqual(pin.read_bytes(),b'old')
+
+    def test_web_directory_layout_keeps_exact_production_owners_and_modes(self):
+        stats=[type('Stat',(),{'st_mode':0o40755,'st_uid':0,'st_gid':0})(),
+               type('Stat',(),{'st_mode':0o40755,'st_uid':1000,'st_gid':1000})(),
+               type('Stat',(),{'st_mode':0o40700,'st_uid':1000,'st_gid':1000})(),
+               type('Stat',(),{'st_mode':0o40750,'st_uid':0,'st_gid':1000})()]
+        with patch.object(s.os,'open',side_effect=[100,101,102,103,104]) as opened,patch.object(s.os,'fstat',side_effect=stats),patch.object(s.os,'close'):
+            self.assertEqual(s.web_parent_fd(),104)
+            for call in opened.call_args_list:self.assertTrue(call.args[1]&os.O_NOFOLLOW)
+
+    def test_other_web_directory_owner_denied(self):
+        bad=type('Stat',(),{'st_mode':0o40755,'st_uid':1234,'st_gid':0})()
+        with patch.object(s.os,'open',side_effect=[100,101]),patch.object(s.os,'fstat',return_value=bad),patch.object(s.os,'close'):
+            with self.assertRaisesRegex(s.Stop,'WEB_DIRECTORY_LAYOUT_CHANGED'):s.web_parent_fd()
 
     def test_producer_shapes_pass_actual_runtime_consumer_locally(self):
         guard_path=Path(__file__).parents[1]/'cop-api-runtime.py'

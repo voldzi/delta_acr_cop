@@ -15,7 +15,7 @@ def enc(v):return (json.dumps(v,sort_keys=True)+'\n').encode()
 def put(path,raw,uid=0,gid=0,mode=0o640):
  p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw);p.chmod(mode);os.chown(p,uid,gid)
 
-def run_case(old_path=False):
+def run_case(old_path=False,wrong_layout=False):
  global counter
  for path in ['/etc/cop-reviewed-release','/var/lib/cop-reviewed-release','/etc/vcode-cop-api-runtime','/srv/cop','/home/voldzi/cop-catalog-maintain-final-20261025']:
   if Path(path).exists():shutil.rmtree(path)
@@ -39,7 +39,10 @@ def run_case(old_path=False):
  put(source/'runtime/api/releases'/previous['releaseId']/'release.json',enc({'accountErasureConfig':ref,'imageId':ns['OLD_API'],'sourceRevision':'c'*40}),1000,1000,0o600)
  att={'imageId':ns['OLD_API'],'profileGeneration':profile,'ownerAcceptance':True,'sourceRevision':'c'*40,'kind':'candidate'}
  put(protected/('attestation-'+ns['OLD_API'][7:]+'.json'),enc(att))
- old_pin=enc({'services':{'cop-web':{'image':ns['OLD_WEB']}}});put(source/'runtime/clean-reset/web-runtime.compose.json',old_pin)
+ old_pin=enc({'services':{'cop-web':{'image':ns['OLD_WEB']}}});put(source/'runtime/clean-reset/web-runtime.compose.json',old_pin,gid=1000)
+ source.chmod(0o755);os.chown(source,0 if wrong_layout else 1000,0 if wrong_layout else 1000)
+ (source/'runtime').chmod(0o700);os.chown(source/'runtime',1000,1000)
+ (source/'runtime/clean-reset').chmod(0o750);os.chown(source/'runtime/clean-reset',0,1000)
  historical={'contractVersion':'cop-sim-whole-clean-acceptance-v3','checkedAt':'2026-10-17T15:22:13Z','kind':'isolated_whole_provider','productionTouched':False,'deletionScope':'cop_sim_shared_identity_v1','operation':{'operationId':'synthetic','finalStatus':'deleted','finalAccountDeleted':True,'requiredOwners':sorted(ns['OWNERS'])},'resetEpoch':'synthetic','providerReadbacks':{name:{'operationId':'synthetic','resetEpoch':'synthetic','status':'completed','userARemaining':0,'userBStateBefore':'unchanged','userBStateAfter':'unchanged'} for name in ns['OWNERS']},'recoveryReadbacks':{'restored_user_data':{'restoredRows':1,'finalUserARemaining':0,'userBPreserved':True}},'candidateImages':{'cop_api':'historical-synthetic'}}
  historical_raw=enc(historical);put(source/'runtime/clean-reset/whole12-acceptance.json',historical_raw,mode=0o600)
  fresh={'contractVersion':'cop-catalog-readonly-review-v1','previous':previous,'candidateImages':{'api':ns['API'],'web':ns['WEB']},'guardSha256':ns['GUARD'],'candidateTestsPassed':43,'productionChanged':False,'freshCandidateJointAcceptance':False,'environmentMetadata':metadata,'acceptedBaselineProof':ref,'liveGates':{'ownerStatus':'ok'}}
@@ -62,7 +65,7 @@ def run_case(old_path=False):
  p=subprocess.Popen(['/usr/bin/python3','-I','-c',command],stdin=slave,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  os.close(slave);os.write(master,b'ANO\n');stdout,stderr=p.communicate(timeout=30);os.close(master)
  rows=[json.loads(line) for line in stdout.splitlines()]
- if old_path:
+ if old_path or wrong_layout:
   assert p.returncode==2,(rows,stderr.decode())
   assert not (root/'approved.json').exists()
   assert not (protected/('attestation-'+ns['API'][7:]+'.json')).exists()
@@ -84,5 +87,6 @@ def run_case(old_path=False):
  return rows[-1]
 
 negative=run_case(old_path=True)
+layout_negative=run_case(wrong_layout=True)
 positive=run_case(old_path=False)
-print(json.dumps({'contractVersion':'cop-seal-path-integration-fixture-v1','checksPassed':counter,'originalWrongPathDeniedAndCleaned':True,'fixedPathRootSealAndUid1000AuthorizationPassed':True,'missingCommitDenied':True,'productionTouched':False}))
+print(json.dumps({'contractVersion':'cop-seal-path-integration-fixture-v1','checksPassed':counter,'originalWrongPathDeniedAndCleaned':True,'fixedPathRootSealAndUid1000AuthorizationPassed':True,'exactProductionMixedOwnerLayoutPassed':True,'wrongOwnerLayoutDeniedAndCleaned':True,'missingCommitDenied':True,'productionTouched':False}))

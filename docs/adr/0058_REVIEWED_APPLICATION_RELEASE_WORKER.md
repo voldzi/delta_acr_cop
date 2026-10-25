@@ -36,4 +36,10 @@ separate runtime-guard authority. New image pairs still require a legitimate
 Root seal. This is not general passwordless sudo or autonomous approval of
 arbitrary future versions.
 
+The existing web image pin has two application-user-owned ancestors. Its writer
+therefore uses a separate fixed directory-fd walk with exact observed ownership
+and modes, final Root file custody and byte CAS. This does not relax directory
+checks for Root grants or make user-owned ancestors immutable. Subsequent path
+validation must still fail closed if that namespace changes.
+
 See [the runbook](../runbooks/32_REVIEWED_COP_RELEASE_WORKER.md).

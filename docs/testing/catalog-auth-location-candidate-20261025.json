@@ -45,7 +45,7 @@
     "publicAnalyticsGuardPassed": true,
     "browserPreview": "location pending state and timeout message visibly verified",
     "physicalDeviceLocationVerified": false,
-    "releaseWorkerUnitTestsPassed": 40,
+    "releaseWorkerUnitTestsPassed": 43,
     "liveReadOnlyWebConfigParityPassed": true,
     "liveReadOnlyApiOwnerAuthLoginGatesPassed": true,
     "imageApiTestFiles": [
@@ -61,6 +61,19 @@
     "actualLastLayerAllowlistPassed": true,
     "rootSealerSourcePeerReview": "SIM reviewed source and independently ran 38 tests; no remaining blocking finding in the reviewed source scope",
     "linuxSealPathIntegration": {
+      "checksPassed": 13,
+      "originalWrongPathDeniedAndCleaned": true,
+      "fixedPathRootSealAndUid1000AuthorizationPassed": true,
+      "exactProductionMixedOwnerLayoutPassed": true,
+      "wrongOwnerLayoutDeniedAndCleaned": true,
+      "missingCommitDenied": true,
+      "providerIo": "synthetic stub; actual authorization, Root paths/publication and UID drop",
+      "productionTouched": false,
+      "receiptSha256": "12ee4c13a7c9c0bec4b0387b3b9992849917993101a0131080d3c2d5efca3ee0",
+      "fixtureImageRemoved": true
+    },
+    "actualRuntimeProofConsumerLocalFixturePassed": true,
+    "linuxSealPathIntegrationInitialAllRootLayout": {
       "checksPassed": 9,
       "originalWrongPathDeniedAndCleaned": true,
       "fixedPathRootSealAndUid1000AuthorizationPassed": true,
@@ -69,8 +82,7 @@
       "productionTouched": false,
       "receiptSha256": "c79e15932783f2360959a713f14d07f03eb74946993d56b7c549c0482cf795c8",
       "fixtureImageRemoved": true
-    },
-    "actualRuntimeProofConsumerLocalFixturePassed": true
+    }
   },
   "deployment": {
     "productionActivated": false,
@@ -90,8 +102,14 @@
     "candidateEligibleForActivation": false,
     "rootBootstrapDoesNotRestartApplications": true,
     "automaticRollback": false,
-    "firstPersonalSealFailure": "worker looked for approved.json below releases instead of the broker base directory; new grants/index removed and old web pin restored",
-    "repairScope": "correct approval index path; add full absolute-path regression and bounded failure diagnostics; image pair unchanged"
+    "firstPersonalSealFailure": "generic failure without stage; the later stage receipt identified ROOT_DIRECTORY in web-pin publication; a wrong approval-index path was also found statically as a separate latent bug",
+    "repairScope": "keep Root-grant directory checks unchanged; use a fixed dirfd-anchored web-pin writer with exact observed mixed owners/modes, byte CAS and matching cleanup; image pair unchanged",
+    "secondPersonalSealFailure": {
+      "code": "ROOT_DIRECTORY",
+      "stage": "owned_grant_publication",
+      "productionImagesUnchanged": true,
+      "newGrantsCleaned": true
+    }
   },
   "followupCheckedAt": "2026-10-25T14:38:36.926Z",
   "webCandidateImage": "sha256:3606a7725266ca0078480fa263dac37193b45b389b8bb43e23be192d4180fafd",
