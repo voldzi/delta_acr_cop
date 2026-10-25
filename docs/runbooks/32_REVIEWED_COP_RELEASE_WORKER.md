@@ -32,6 +32,17 @@ Run focused source tests:
 python3 -I -B -m unittest discover -s scripts/release -p 'test_*.py'
 ```
 
+The first personal seal attempt stopped because the worker searched for the
+approval index under `releases/`; the producer writes it in the broker base
+directory. The repaired common-path test uses full absolute paths, not basename
+lookup. An isolated Linux integration reproduces the old failure and cleanup,
+then verifies actual Root publication and UID1000 package authorization at the
+correct paths. It stubs provider I/O and is not production/provider acceptance.
+The fixture sources are in `scripts/release/tests/`; run them only in their
+disposable container, never on a host. No host mounts, socket or network are
+needed. A separate local test exercises the actual runtime guard's attestation,
+configuration-proof and environment-binding consumers over synthetic files.
+
 If sealing fails, no API/web transition has started. The sealer compares exact
 owned bytes before removing its newly created index/proofs/commit marker or
 restoring its previous web pin. Existing attestations and baseline evidence are

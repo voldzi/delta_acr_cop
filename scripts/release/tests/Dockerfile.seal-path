@@ -1,0 +1,11 @@
+ARG BASE=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM ${BASE}
+RUN apt-get update && apt-get install -y --no-install-recommends python3 sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 voldzi && groupadd --gid 988 docker \
+    && useradd --uid 1000 --gid 1000 --groups docker --create-home --shell /bin/bash voldzi \
+    && mkdir -p /home/voldzi/cop-reviewed-bootstrap-20261025 /fixture /srv/cop
+COPY cop-catalog-maintain-seal.py cop-catalog-maintain-worker.py /fixture/source/
+COPY tests/linux-seal-path-fixture.py /fixture/fixture.py
+RUN printf 'synthetic-only-no-host-mounts\n' > /fixture/isolated-marker
+CMD ["/usr/bin/python3", "-I", "/fixture/fixture.py"]

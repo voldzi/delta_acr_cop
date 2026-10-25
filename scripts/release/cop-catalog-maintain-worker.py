@@ -50,7 +50,7 @@ def authorization(raw,require_commit=True):
  for p in (folder,*folder.parents):
   s=p.lstat();need(stat.S_ISDIR(s.st_mode) and s.st_uid==0 and not s.st_mode&0o022,'PACKAGE_DIRECTORY')
  need(read(folder/'manifest.json',0)==raw,'SEALED_MANIFEST_CHANGED')
- index=json.loads(read(ROOT/'approved.json',0))
+ index=json.loads(read(ROOT.parent/'approved.json',0))
  need(index=={'releaseId':m['releaseId'],'manifestSha256':sha(raw)},'APPROVED_INDEX_CHANGED')
  if require_commit:
   need(json.loads(read(folder/'seal-commit.json',0))=={'contractVersion':'cop-root-reviewed-seal-commit-v1','releaseId':m['releaseId'],'manifestSha256':sha(raw)},'SEAL_NOT_COMMITTED')
@@ -173,5 +173,6 @@ def main():
  print(json.dumps({'contractVersion':'cop-reviewed-release-worker-result-v1','releaseId':m['releaseId'],'stage':sys.argv[1],'passed':True,'targetImages':{'api':API,'web':WEB}},sort_keys=True))
 if __name__=='__main__':
  try:main()
- except (Stop,OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
-  print(json.dumps({'passed':False,'code':'COP_MAINTAIN_STOPPED_WITHOUT_BYPASS'}));sys.exit(2)
+ except (Stop,OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError) as error:
+  reason=str(error) if isinstance(error,Stop) and re.fullmatch('[A-Z_]{1,100}',str(error)) else 'UNCLASSIFIED_WORKER_CHECK_FAILED'
+  print(json.dumps({'passed':False,'code':'COP_MAINTAIN_STOPPED_WITHOUT_BYPASS','reason':reason}));sys.exit(2)

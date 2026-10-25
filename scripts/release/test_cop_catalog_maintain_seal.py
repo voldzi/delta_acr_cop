@@ -140,5 +140,29 @@ class SealTests(unittest.TestCase):
             self.assertTrue(all(not p.exists() for p,_ in created))
             self.assertEqual(pin.read_bytes(),b'old')
 
+    def test_producer_shapes_pass_actual_runtime_consumer_locally(self):
+        guard_path=Path(__file__).parents[1]/'cop-api-runtime.py'
+        spec=importlib.util.spec_from_file_location('local_runtime_consumer',guard_path)
+        g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();protected=root/'protected';profile=protected/s.PROFILE
+            protected.mkdir(mode=0o750);profile.mkdir(mode=0o750)
+            (root/'.env').write_bytes(b'PUBLIC_SYNTHETIC_FIXTURE=true\n');(root/'.env').chmod(0o600)
+            store=g.Store(root=root/'runtime',source=root,uid=os.geteuid(),protected_uid=os.geteuid(),protected_gid=os.getegid(),protected_root=protected)
+            previous={'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'releaseId':'release-'+'b'*32,'profileId':s.PROFILE,'profileGeneration':s.PROFILE,'imageId':s.OLD_API,'containerId':'c'*64}
+            target={'imageId':s.API,'sourceRevision':'07664a77cf19e9433bd6fe4b1267e395616f1985','profileGeneration':s.PROFILE}
+            binding={**target,'profileId':s.PROFILE,'kind':'candidate','previousReleaseId':previous['releaseId']}
+            driver={'poolMode':'transaction','streamMode':'memory','mainEnvAndMigrations':'direct','frontend':'unix','socketPath':str(g.SOCKET),'socketPort':6432,'supplementaryGid':982,'caPath':str(g.CA),'caSha256':'d'*64,'leasePath':'direct_verify_full','backendBudget':10,'clientBudget':80}
+            att={'contractVersion':'cop-api-runtime-attestation-v1','application':'cop','service':'cop-api',**target,'kind':'candidate','ownerAcceptance':True,'driverContract':driver,'checks':{'x5RuntimeGuard':True,'sharpConversion':True,'databaseRouting':True,'acceptedBaselineRollback':False},'legacyContainerId':None,'legacyEnvPresence':None}
+            att_path=profile/('attestation-'+s.API[7:]+'.json');att_path.write_bytes(s.encoded(att));att_path.chmod(0o640)
+            _,contract,_,_=store.attestation(att_path,binding);binding['driverContract']=contract
+            transition='11111111-1111-4111-8111-111111111111'
+            proof={'contractVersion':'cop-api-account-erasure-clean-config-v1','transitionId':transition,'operation':'maintain','previous':previous,'target':target,'changedKeys':[],'environmentMetadata':g.environment_metadata(root/'.env',os.geteuid()),'composeHashes':{name:'e'*64 for name in g.FILES},'ownerAcceptance':True,'cleanReset':{'resetEpoch':'22222222-2222-4222-8222-222222222222','tokensNotBefore':1,'receiptSha256':'f'*64},'checks':{name:True for name in g.CLEAN_ERASURE_PROOF_CHECKS}}
+            proof_path=profile/('account-erasure-'+transition+'.json');proof_path.write_bytes(s.encoded(proof));proof_path.chmod(0o640)
+            digest,accepted=store.erasure_config_proof(proof_path,binding)
+            self.assertEqual(accepted['operation'],'maintain')
+            binding['accountErasureConfig']={'path':str(proof_path),'sha256':digest,'cleanScope':'cop_sim_shared_identity_v1'}
+            store.assert_erasure_environment(binding)
+
 
 if __name__=='__main__':unittest.main()

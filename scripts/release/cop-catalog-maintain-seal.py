@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import signal
@@ -31,7 +32,7 @@ WEB='sha256:3606a7725266ca0078480fa263dac37193b45b389b8bb43e23be192d4180fafd'
 OLD_API='sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430'
 OLD_WEB='sha256:d6cf225150d721fbb5d0f236c2b921064a2e5906b30b396ad55f85d5fce3770c'
 GUARD='65cb657fb5349a73c4d28c977e688148e54e65e73d63780ba726c4293c7dd255'
-WORKER='ee55520b1dc25045816b0045207b01340d56110a663dbd7f68b4096cf7824468'
+WORKER='f882c217b3e0131c493cbaaac8a04a58db15d36206240624a5b23b45e356dc7a'
 REVIEWER='75f53cb86e03532a1b5aca7064ff3515e9a5dacdaf9167457d3fa9571265aa81'
 BROKER='7c307d88c75f12679792618ebf310de7a6c6dd575918974f2334a645ae1fa6fd'
 HISTORICAL='66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a'
@@ -42,6 +43,7 @@ OWNERS={'keycloak','cop_sessions_profiles','cop_devices','messaging_matrix','voi
  'backup_restore','sim_user_data'}
 ENV={'PATH':'/usr/local/bin:/usr/bin:/bin','LANG':'C','PYTHONDONTWRITEBYTECODE':'1',
      'DOCKER_HOST':'unix:///var/run/docker.sock'}
+STAGE='initialization'
 
 
 class Stop(Exception):pass
@@ -49,6 +51,9 @@ def need(ok,code):
     if not ok:raise Stop(code)
 def sha(raw):return hashlib.sha256(raw).hexdigest()
 def encoded(value):return (json.dumps(value,sort_keys=True)+'\n').encode()
+def stage(value):
+    global STAGE
+    STAGE=value
 
 
 def directory(path):
@@ -162,6 +167,7 @@ def cleanup_uncommitted(created,web_pin,old_pin,new_pin,pin_intended):
 
 
 def seal():
+    stage('operator_confirmation')
     need(os.geteuid()==0 and socket.gethostname().split('.')[0]=='docker' and len(sys.argv)==1,'PERSONAL_ROOT_DOCKER')
     # The operator must explicitly accept this real limitation. A password is
     # authentication, not a substitute for the release decision.
@@ -170,6 +176,7 @@ def seal():
           'není povolen. Neproběhne reset ani mazání účtů. Pro schválení napište ANO:',
           file=sys.stderr,flush=True)
     need(sys.stdin.isatty() and sys.stdin.readline().strip()=='ANO','OPERATOR_RELEASE_NOT_APPROVED')
+    stage('exact_sources')
     for p in (ROOT,STATE,PROTECTED):directory(p)
     need(sha(read(Path('/usr/local/sbin/cop-reviewed-release')))==BROKER,'BROKER_NOT_READY')
     worker=read(INPUT/'cop-catalog-maintain-worker.py',1000,65536)
@@ -181,6 +188,7 @@ def seal():
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         need(not (ROOT/'approved.json').exists() and not (ROOT/'approved.json').is_symlink()
              and not list(STATE.glob('journal-*.json')),'UNARMED_BROKER_REQUIRED')
+        stage('historical_lineage')
         history=historical(read(SOURCE/'runtime/clean-reset/whole12-acceptance.json'))
         base_raw=read(PROTECTED/'account-erasure-23f72509-10df-4217-9365-4f7cc89e1f73.json')
         need(sha(base_raw)==BASE_PROOF,'BASELINE_PROOF_CHANGED')
@@ -188,7 +196,9 @@ def seal():
         reset=read(SOURCE/'runtime/clean-reset/reset-result.json')
         need(sha(reset)==RESET and base['cleanReset']['receiptSha256']==RESET
              and json.loads(reset)['resetEpoch']==base['cleanReset']['resetEpoch'],'RESET_RECEIPT_CHANGED')
+        stage('fresh_readonly_review')
         fresh=execute_unprivileged(reviewer,INPUT/'cop-catalog-maintain-review.py',worker)
+        stage('accepted_baseline_binding')
         previous=fresh['previous']
         need(previous['imageId']==OLD_API and previous['profileGeneration']==PROFILE
              and previous['generation']=='6d767891c0944954a737687c178d8c94','BASELINE_CHANGED')
@@ -223,6 +233,7 @@ def seal():
             'ownerAcceptance':True,'cleanReset':base['cleanReset'],
             'checks':{'jointSyntheticAcceptance':True,'providerClosureVerified':True,
                 'sharedIdentityDeletionApproved':True,'cleanResetVerified':True,'restoreReplayVerified':True}}
+        stage('package_preparation')
         release=uuid.uuid4().hex;folder=ROOT/'releases'/release
         os.mkdir(folder,0o750);os.chown(folder,0,1000);os.chmod(folder,0o750)
         web_pin=SOURCE/'runtime/clean-reset/web-runtime.compose.json'
@@ -259,6 +270,7 @@ def seal():
         pin_intended=False
         committed=False
         try:
+            stage('owned_grant_publication')
             if attestation_path.exists():need(read(attestation_path)==encoded(attestation),'EXISTING_ATTESTATION_CHANGED')
             else:
                 created.append((attestation_path,encoded(attestation)));write(attestation_path,encoded(attestation))
@@ -272,12 +284,21 @@ def seal():
             program=('import base64,sys;sys.dont_write_bytecode=True;sys.argv=["worker","seal-preflight"];'
                 'b=base64.b64decode('+repr(base64.b64encode(worker).decode())+');'
                 'exec(compile(b,"worker","exec"),{"__name__":"__main__","__file__":"worker"})')
+            stage('sealed_worker_preflight')
             r=subprocess.run(['/usr/bin/python3','-I','-B','-c',program],input=encoded(manifest),capture_output=True,
                 timeout=180,env=ENV,cwd=SOURCE,user=1000,group=1000,extra_groups=[1000,988],umask=0o077)
-            need(r.returncode==0,'SEALED_WORKER_PREFLIGHT_FAILED')
+            if r.returncode!=0:
+                reason='SEALED_WORKER_PREFLIGHT_FAILED'
+                try:
+                    failure=json.loads(r.stdout)
+                    candidate=failure.get('reason')
+                    if failure.get('passed') is False and isinstance(candidate,str) and re.fullmatch('[A-Z_]{1,80}',candidate):reason='WORKER_'+candidate
+                except (ValueError,TypeError):pass
+                raise Stop(reason)
             result=json.loads(r.stdout)
             need(result=={'contractVersion':'cop-reviewed-release-worker-result-v1','releaseId':release,
                 'stage':'seal-preflight','passed':True,'targetImages':{'api':API,'web':WEB}},'SEALED_WORKER_RESULT')
+            stage('commit_marker')
             created.append((folder/'seal-commit.json',commit_raw));write(folder/'seal-commit.json',commit_raw)
             committed=True
         finally:
@@ -291,6 +312,7 @@ if __name__=='__main__':
     def cancelled(signum,frame):raise Stop('OPERATOR_CANCELLED')
     for sig in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):signal.signal(sig,cancelled)
     try:seal()
-    except (Stop,OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
-        print(json.dumps({'phase':'release_not_armed','code':'ROOT_MAINTAIN_SEAL_REQUIRES_REVIEW'}))
+    except (Stop,OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError) as error:
+        code=str(error) if isinstance(error,Stop) and re.fullmatch('[A-Z_]{1,100}',str(error)) else 'ROOT_MAINTAIN_SEAL_REQUIRES_REVIEW'
+        print(json.dumps({'phase':'release_not_armed','code':code,'stage':STAGE}))
         sys.exit(2)

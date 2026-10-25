@@ -4,7 +4,6 @@ from pathlib import Path
 import types
 import unittest
 from unittest.mock import patch
-from unittest.mock import MagicMock
 import stat
 
 spec = importlib.util.spec_from_file_location('worker', Path(__file__).with_name('cop-catalog-maintain-worker.py'))
@@ -122,17 +121,26 @@ class WorkerTests(unittest.TestCase):
                'seal-commit.json':json.dumps({'contractVersion':'cop-root-reviewed-seal-commit-v1','releaseId':m['releaseId'],'manifestSha256':w.sha(raw)}).encode(),
                'worker.py':b'worker','review-record.json':b'review',**{k+'-evidence.json':v for k,v in evidence.items()}}
         if tamper:files['provider-evidence.json']=b'changed'
-        folder=MagicMock();folder.parents=[]
-        folder.lstat.return_value=types.SimpleNamespace(st_mode=stat.S_IFDIR|0o755,st_uid=0)
-        folder.__truediv__.side_effect=lambda name:Path('/sealed')/name
-        root=MagicMock();root.__truediv__.side_effect=lambda name:folder if name==m['releaseId'] else Path('/sealed')/name
-        return raw,files,root
+        folder=Path('/etc/cop-reviewed-release/releases')/m['releaseId']
+        absolute={str(folder/name):value for name,value in files.items() if name!='approved.json'}
+        absolute['/etc/cop-reviewed-release/approved.json']=files['approved.json']
+        return raw,absolute
 
     def fixture_authorization(self,**kwargs):
-        raw,files,root=self.authorized_fixture(**kwargs)
+        raw,files=self.authorized_fixture(**kwargs)
         now=w.datetime.fromisoformat('2026-10-25T12:05:00+00:00').timestamp()
-        with patch.object(w,'ROOT',root),patch.object(w,'read',side_effect=lambda p,*args:files[p.name]),patch.object(w.time,'time',return_value=now):
+        root_stat=types.SimpleNamespace(st_mode=stat.S_IFDIR|0o755,st_uid=0)
+        with patch.object(Path,'lstat',return_value=root_stat),patch.object(w,'read',side_effect=lambda p,*args:files[str(p)]),patch.object(w.time,'time',return_value=now):
             return w.authorization(raw)
+
+    def test_worker_and_sealer_use_same_absolute_approval_path(self):
+        spec=importlib.util.spec_from_file_location('sealer_path_contract',Path(__file__).with_name('cop-catalog-maintain-seal.py'))
+        sealer=importlib.util.module_from_spec(spec);spec.loader.exec_module(sealer)
+        self.assertEqual(w.ROOT.parent/'approved.json',sealer.ROOT/'approved.json')
+        _,files=self.authorized_fixture()
+        self.assertIn(str(sealer.ROOT/'approved.json'),files)
+        self.assertNotIn(str(w.ROOT/'approved.json'),files)
+        self.fixture_authorization()
 
     def test_direct_worker_requires_valid_root_sealed_review(self):
         m,a=self.fixture_authorization()
