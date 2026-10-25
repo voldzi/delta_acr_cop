@@ -56,13 +56,45 @@
       "oldHostConfigAvailable": false,
       "changedKeyNames": null,
       "classification": "UNPROVEN_BASELINE_UNAVAILABLE"
+    },
+    "actualCommOldContainerProbe": {
+      "oldContainerPresent": false,
+      "newContainerPresent": true,
+      "hostConfigComparisonComplete": false
     }
   },
   "tests": {
     "copSafetyVoiceRollbackPassed": 19,
     "configurationBoundaryPassed": 8,
-    "transportBoundaryPassed": 4
+    "transportBoundaryPassed": 4,
+    "transportBoundaryPassedInProductionNodeWithMockNetwork": 4
   },
-  "sdkCanonicalTransfer": "in_progress_on_published_ack_base",
-  "physicalAcceptance": "not_performed"
+  "sdkCanonicalTransfer": {
+    "revision": "74d8a1b172180d0a85fa6be87cae47012d38804e",
+    "branch": "codex/communication62-published-ack",
+    "publishedHeadIndependentlyVerified": true,
+    "base": "7bf711ea881fe563a25e5aaad5fb4729cb0d619e",
+    "sdkTests": 217,
+    "sdkSkipped": 2,
+    "hostUnitTests": 30,
+    "hostUiSmokeTests": 5,
+    "accessibilityAudits": 2,
+    "fullCheckExit": 0,
+    "toolchainBuild": "27A9275",
+    "humanToolchainApprovalIndependentlyVerified": true,
+    "vendorUpstreamReviewIntegration": {
+      "complete": true,
+      "sdkTests": 379,
+      "skipped": 2,
+      "failures": 0,
+      "inventoryPaths": 166,
+      "unchangedOtherPaths": 162,
+      "reviewManifestSha256": "94e6fcc324d1a2873502c4b8efa6778456f8a104be039df69aee9366ac77d633",
+      "newSignedBinaryBuiltAfterReview": false,
+      "testFlightUploaded": false,
+      "phonesChanged": false
+    }
+  },
+  "physicalAcceptance": "not_performed",
+  "finalFollowupAtUtc": "2026-10-25T17:21:11Z"
 }

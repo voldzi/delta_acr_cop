@@ -16,7 +16,9 @@ running before the repair:
 (source `6908586125b6610416a20257e0eb5899fc61ee2c`). The previous effective pin
 resolved to `e0ac7f6…`; restarting from it would have changed code accidentally.
 Only the Messaging API was recreated. No token, Matrix key, account, message,
-blocking choice, erasure setting, network or live-media service was changed.
+blocking choice or erasure setting was changed. No network change was requested;
+full container HostConfig parity remains unproven as described below. Matrix and
+live-media service start times precede this repair, confirming they were not restarted.
 
 The finite helper in `scripts/communication/enable-messaging-policy.py` is bound
 to the original container and overlay digest. It is historical, single-use
@@ -42,7 +44,9 @@ current container or restore the stale image pin.
   exact old HostConfig difference was not retained. This attempt is not reported
   as a fully successful deployment transaction. Independent functional checks
   above passed; the infrastructure reviewer found no exact old-container baseline. The difference
-  remains unproven; the safety comparison was not relaxed. No blind retry
+  remains unproven; the safety comparison was not relaxed. A final targeted
+  inspection on COMM confirms that Docker no longer has the original container
+  and cannot supply that missing baseline. No blind retry
   or rollback was performed.
 
 The read-only transport readiness check is
@@ -64,7 +68,29 @@ exact per-part Matrix acknowledgement journal. Selective canonical adoption
 uses published `7bf711e` on `codex/matrix-send-ack-safety`, preserving that
 journal and all account/session fences. Do not replace the package with the
 whole Jízda Vendor snapshot or introduce heuristic content/time acknowledgements.
-Canonical transfer and publication are still pending in the coordinated work.
+Canonical transfer is published as
+`74d8a1b172180d0a85fa6be87cae47012d38804e` on
+[`codex/communication62-published-ack`](https://github.com/voldzi/COP-Mobile/tree/codex/communication62-published-ack).
+Its full check passed: 217 SDK tests (2 explicit skips, zero failures), 30 host
+unit tests, 5 UI smoke tests and 2 accessibility audits. The directly approved
+installed Xcode 27.1 build 27A9275 was verified using its explicit override;
+default pins and dependency versions were preserved. Existing accessibility
+actor-isolation warnings remain.
+
+Independent source review also removed arbitrary public error logging from call
+start failure and added typed-only live-cache provenance. A legitimate message
+exactly matching a legacy error string must replace an older edited text rather
+than be treated as an unavailable-content snapshot. A regression verifies that
+case, ACK identity and absence of an extra send. These two additional review
+corrections are now integrated into the prepared Jízda candidate without
+replacing its other host changes. The follow-up Vendor suite passed 379 tests
+(2 explicit skips, zero failures). A 166-path inventory proves that only the two
+source files, the regression test and provenance changed; the other 162 paths
+are byte-identical. The original 21-file manifest is preserved. A separate
+review manifest has SHA256
+`94e6fcc324d1a2873502c4b8efa6778456f8a104be039df69aee9366ac77d633`.
+The Jízda app has not been rebuilt as a signed binary after these final review
+changes, installed on a phone or uploaded to TestFlight.
 
 Phone/TestFlight delivery is separate. No phone was updated during the server
 repair. Two-phone acceptance must still demonstrate one encrypted message each
