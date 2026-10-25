@@ -1,7 +1,7 @@
 # ADR 0058: Reviewed application release worker
 
-Status: source candidate; the infrastructure broker is installed unarmed, and
-the application package is not yet installed or activated.
+Status: implemented; the exact application pair is running and accepted by the
+API runtime guard. The outer broker's final success/journal closure remains open.
 
 COP owns application fixes, candidate builds, compatibility checks, release
 workers and live verification. Infrastructure owns installation of the narrow

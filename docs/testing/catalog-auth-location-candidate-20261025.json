@@ -85,15 +85,14 @@
     }
   },
   "deployment": {
-    "productionActivated": false,
-    "newRootAttestationCreated": false,
-    "newRootErasureProofCreated": false,
+    "productionActivated": true,
+    "newRootAttestationCreated": true,
+    "newRootErasureProofCreated": true,
     "approvedInfrastructureHandoff": true,
     "existingGenericMaintainCompatibility": "reviewed conditionally; complete env/config parity and fresh legitimate Root evidence required",
     "unresolved": [
-      "personal authenticated exact broker correction and candidate seal not yet run",
-      "production activation and post-activation checks not yet performed",
-      "signed-in browser profile and successful physical-device GPS remain distinct owner checks"
+      "Root broker returned exit 2 after both services switched; its final journal state is not readable under the installed narrow operations and closure is unverified. API guard has committed and has no pending transition. Do not retry activation or rewrite the original record.",
+      "future arbitrary image pairs still require a legitimate Root seal; the broker is not general passwordless sudo"
     ],
     "restrictedBrokerInstalled": true,
     "restrictedBrokerArmed": false,
@@ -109,7 +108,10 @@
       "stage": "owned_grant_publication",
       "productionImagesUnchanged": true,
       "newGrantsCleaned": true
-    }
+    },
+    "brokerActivationExitCode": 2,
+    "brokerSuccessReceiptReceived": false,
+    "independentApplicationAcceptancePassed": true
   },
   "followupCheckedAt": "2026-10-25T14:38:36.926Z",
   "webCandidateImage": "sha256:3606a7725266ca0078480fa263dac37193b45b389b8bb43e23be192d4180fafd",
@@ -149,5 +151,34 @@
     "cliAvailable": false,
     "observedError": "native retrieval is restricted to projects selected in the app",
     "fallback": "selected source and runbook inspection"
+  },
+  "productionVerification": {
+    "apiImage": "sha256:c06c6080c87c4f88a74be359d459143ac25aef55cf60e6a8e11e4555bb62affa",
+    "webImage": "sha256:3606a7725266ca0078480fa263dac37193b45b389b8bb43e23be192d4180fafd",
+    "apiReleaseId": "release-9be5b80706d741de9de24af6e9607eee",
+    "apiActiveGeneration": "dcc8ddb231b24ba7854467300e8427a6",
+    "apiGuardValidatePassed": true,
+    "apiPendingAbsent": true,
+    "apiRunningHealthy": true,
+    "apiRestartsSinceActivation": 0,
+    "webRunning": true,
+    "webRestartsSinceActivation": 0,
+    "liveReadyDependenciesHttp": 200,
+    "ownersReady": true,
+    "publicHomeHttp": 200,
+    "publicDemoHttp": 200,
+    "anonymousProfileHttp": 401,
+    "publicLoginHttp": 302,
+    "loginRedirectOfficialIssuer": true,
+    "readOnlyHealthCapturePassedAfterDeployment": true,
+    "browserReloadedProduction": true,
+    "browserAuthenticatedAccountVisible": true,
+    "browserLocationReturnedAndMapMoved": true,
+    "preciseCoordinatesCommitted": false,
+    "physicalIPhoneLocationTestPerformed": false,
+    "checkedAtUtc": "2026-10-25T16:21:42Z",
+    "outerBrokerJournalRead": false,
+    "outerBrokerFailureCauseConfirmed": false,
+    "infrastructureReadOnlyReview": "Installed status/evidence operations do not expose the Root journal or support reconciliation; defer any new Root operation to separately reviewed maintenance."
   }
 }

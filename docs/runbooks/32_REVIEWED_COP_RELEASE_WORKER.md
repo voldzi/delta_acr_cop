@@ -4,6 +4,19 @@ Current status is recorded in
 [the candidate report](../testing/catalog-auth-location-candidate-20261025.json).
 Source/test success is not production activation.
 
+The exact API/web pair is now running in production. The API runtime guard has
+committed `release-9be5b80706d741de9de24af6e9607eee`; its pending state is absent.
+Independent checks confirm health/readiness, public home/demo, anonymous rejection,
+official login redirect and a real browser location result/map movement. No
+coordinates or user content are committed to this evidence.
+
+The outer broker nevertheless returned its fixed rejection after both services
+had switched. Its final success/journal closure is not claimed. Preserve that
+attempt unchanged; the cause is not proven and the Root journal is not readable
+through the installed narrow operations. Any reconciliation requires separately
+reviewed infrastructure maintenance; do not rerun activation, clear its journal, rewrite old acceptance or
+roll back the accepted API merely to obtain a green launcher result.
+
 The 25 October candidate pair is API `c06c6080…` (source `07664a7`) and web
 `3606a772…` (source `8afa082`). The earlier full-source API `f9f9081…` is rejected:
 its launch metadata/provenance differed from the accepted runtime. Do not arm it.

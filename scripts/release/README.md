@@ -28,7 +28,10 @@ Run the focused tests with:
 python3 -I -B scripts/release/test_cop_catalog_maintain_worker.py
 ```
 
-This worker is not yet installed or armed. See
+The worker was Root-sealed and executed for the exact pair. Both services are
+now running, with the API guard committed and no pending transition. The outer
+broker rejected the final result; its success/journal closure is not claimed.
+See
 `docs/testing/catalog-auth-location-candidate-20261025.json` for the bounded
 verification results and remaining production gates. A failed generic API
 transition may remain pending and require an explicitly reviewed recovery;
