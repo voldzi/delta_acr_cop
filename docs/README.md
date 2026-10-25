@@ -41,6 +41,9 @@ Odstranění lab přístupu zatím není produkčně dokončené.
 
 ## Maintenance
 
+Jízda communication policy production repair and shared SDK acceptance:
+[integration 44](integration/44_JIZDA_COMMUNICATION_REPAIR.md).
+
 COP security, performance and compatible dependency audit:
 [code health evidence](runbooks/20_COP_CODE_HEALTH.md),
 [standalone chat release and SIM acceptance](runbooks/22_COP_CHAT_RELEASE_20261010.md),

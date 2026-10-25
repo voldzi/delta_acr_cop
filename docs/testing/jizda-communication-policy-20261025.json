@@ -1,0 +1,68 @@
+{
+  "checkedAtUtc": "2026-10-25T16:59:36Z",
+  "cause": "Messaging policy flag absent while COP guard enabled",
+  "simChangeRequired": false,
+  "before": {
+    "messagingPolicyEnabled": false,
+    "matrixConfigured": true,
+    "matrixReady": true,
+    "invalidSelfPairHttp": 503,
+    "configuredImage": "sha256:e0ac7f6efb33ce1c0daa7d0a7a076a9241d778ecfc999e37f9848d79a242d35f",
+    "containerId": "94a89c2304e95693fe5f4d00ad96172aff86bfc500f4bc083947ac8b49d945b0",
+    "overlaySha256": "7c3aef4eb679230e4f4202f6e7a3cc3758e3a23f3fd59e9fbb22724efc00cc76"
+  },
+  "after": {
+    "image": "sha256:531a5282d086300df960f270e5e17d4aa928abc3180af4d14a23d3edc18d9d25",
+    "sourceRevision": "6908586125b6610416a20257e0eb5899fc61ee2c",
+    "containerId": "21b58c8ddb0d1090817f82ba11115a4056dc1e751f372542443da3ab95773371",
+    "overlaySha256": "c08941fb56c74884dbbebf5f15ad762f278f7afeaa77dc7d2a87a9f34959122f",
+    "healthy": true,
+    "restartCount": 1,
+    "runtimeFlag": true,
+    "composeFlag": true,
+    "composeMatchesRuntimeImage": true,
+    "containerUnchangedAfterDryRun": true,
+    "invalidTokenHttp": 401,
+    "invalidSelfPairHttp": 400,
+    "existingPair": {
+      "forwardHttp": 200,
+      "reverseHttp": 200,
+      "validContract": true,
+      "forwardAllowed": true,
+      "reverseAllowed": true
+    },
+    "identitiesPrinted": false,
+    "contentPrinted": false,
+    "realCallCreated": false,
+    "realMessageCreated": false,
+    "copLiveReadyDependenciesHttp": 200,
+    "copAccountErasureOwners": "ok",
+    "peerStartedAtUtc": {
+      "synapse": "2026-10-19T18:44:53.977947394Z",
+      "livekit": "2026-10-08T13:52:28.144111562Z",
+      "livekitErasureProxy": "2026-10-15T18:27:55.304276729Z"
+    },
+    "messagingStartedAtUtc": "2026-10-25T16:52:12.871178287Z"
+  },
+  "deploymentHelper": {
+    "executedSourceSha256": "55298b26a4721109a4fa3588685a7cc927bc1ee7d907b173de3c6bd142e618da",
+    "exitCode": 2,
+    "failure": "HOST_CONFIG_DRIFT",
+    "completeTransactionSuccessClaimed": false,
+    "oldHostConfigDifferenceRetained": false,
+    "imageConfigEnvironmentParityPassedBeforeFailure": true,
+    "infrastructureBaselineReview": {
+      "comparisonComplete": false,
+      "oldHostConfigAvailable": false,
+      "changedKeyNames": null,
+      "classification": "UNPROVEN_BASELINE_UNAVAILABLE"
+    }
+  },
+  "tests": {
+    "copSafetyVoiceRollbackPassed": 19,
+    "configurationBoundaryPassed": 8,
+    "transportBoundaryPassed": 4
+  },
+  "sdkCanonicalTransfer": "in_progress_on_published_ack_base",
+  "physicalAcceptance": "not_performed"
+}

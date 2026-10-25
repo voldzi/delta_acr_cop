@@ -511,3 +511,12 @@ This report is not a Root attestation or a production activation receipt.
 The bounded deployment worker and current limitations are documented in
 [runbook 32](runbooks/32_REVIEWED_COP_RELEASE_WORKER.md) and
 [ADR 0058](adr/0058_REVIEWED_APPLICATION_RELEASE_WORKER.md).
+
+
+## Jízda communication policy readiness
+
+The 25 October COP–Messaging policy flag/pin repair and its bounded production
+checks are recorded in [integration 44](integration/44_JIZDA_COMMUNICATION_REPAIR.md).
+After a Messaging release, verify the canonical policy transport as well as
+container health. A disabled policy must remain a visible 503; never bypass it
+for calls or translate dependency failure into an allowed call.
