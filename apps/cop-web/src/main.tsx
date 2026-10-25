@@ -361,6 +361,7 @@ import {
   type WorkspaceSkin
 } from "./user-preferences";
 import { shouldMaintainUserLocationWatch } from "./map-location-policy";
+import { readCurrentUserLocation, userLocationFromPosition } from "./user-location";
 import {
   builtInViewProfiles,
   normalizeWorkspaceModule,
@@ -1303,6 +1304,7 @@ export function App() {
         : "Poloha není zaměřená."
   );
   const [isLocating, setIsLocating] = React.useState(false);
+  const userLocationRequestGenerationRef = React.useRef(0);
   const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(
     initialPreferences.proximityAlertEnabled ?? false
   );
@@ -4698,14 +4700,15 @@ export function App() {
         cancelled = true;
       };
     }
+    const generation = userLocationRequestGenerationRef.current;
     readCurrentUserLocation()
       .then((location) => {
-        if (!cancelled) {
+        if (!cancelled && generation === userLocationRequestGenerationRef.current) {
           applyLiveUserLocation(location);
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!cancelled && generation === userLocationRequestGenerationRef.current) {
           setLocationStatus("Poloha není zaměřená.");
         }
       });
@@ -5793,6 +5796,8 @@ export function App() {
   );
 
   function locateUser(routeTarget?: EmergencyRouteTarget, options: { follow?: boolean } = {}) {
+    if (isLocating) return;
+    userLocationRequestGenerationRef.current += 1;
     const rawRouteTarget = routeTarget === undefined && !options.follow ? pendingRouteTarget : routeTarget;
     const requestedRouteTarget = normalizeEmergencyRouteTarget(rawRouteTarget);
     if (rawRouteTarget && !requestedRouteTarget) {
@@ -5806,13 +5811,13 @@ export function App() {
       return;
     }
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      const message = "Prohlížeč neposkytuje geolokaci.";
+      const message =
+        "Tento prohlížeč neposkytuje polohu. Otevřete COP například v Safari nebo Chrome se zapnutými polohovými službami.";
       setLocationStatus(message);
       if (options.follow) {
         userLocationFollowEnabledRef.current = false;
         setUserLocationFollowEnabled(false);
       }
-      focusDefaultMapCenter();
       if (requestedRouteTarget) {
         setPendingRouteTarget(null);
         setEmergencyRouteStatus("error");
@@ -5822,6 +5827,7 @@ export function App() {
     }
 
     setIsLocating(true);
+    setLocationStatus("Zaměřuji polohu zařízení…");
     readCurrentUserLocation()
       .then((location) => {
         if (!isValidMapPoint(location)) {
@@ -5831,7 +5837,6 @@ export function App() {
             userLocationFollowEnabledRef.current = false;
             setUserLocationFollowEnabled(false);
           }
-          focusDefaultMapCenter();
           if (requestedRouteTarget) {
             routeRequestIdRef.current += 1;
             setPendingRouteTarget(null);
@@ -5872,7 +5877,6 @@ export function App() {
           userLocationFollowEnabledRef.current = false;
           setUserLocationFollowEnabled(false);
         }
-        focusDefaultMapCenter();
         if (requestedRouteTarget) {
           setPendingRouteTarget(null);
           setEmergencyRouteStatus("error");
@@ -8342,6 +8346,8 @@ export function App() {
                   sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : emptySketchDrawings}
                   sketchMode={sketchMode}
                   userLocation={userLocation}
+                  userLocationStatus={locationStatus}
+                  userLocationRequestPending={isLocating}
                   userLocationFollowEnabled={userLocationFollowEnabled}
                   zoneCreationActive={zoneCreationMode}
                 />
@@ -23870,88 +23876,6 @@ function navigationRouteCacheStateFromServiceWorkerMessage(
     },
     routeId
   };
-}
-
-function readCurrentUserLocation(): Promise<UserLocation> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return Promise.reject(new Error("Prohlížeč neposkytuje geolokaci."));
-  }
-  return readCurrentUserLocationOnce({ maximumAge: 0, timeout: 8_000 }).catch(() =>
-    readCurrentUserLocationFromWatch({ maximumAge: 0, timeout: 16_000 })
-  );
-}
-
-function readCurrentUserLocationOnce(options: PositionOptions): Promise<UserLocation> {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        try {
-          resolve(userLocationFromPosition(position));
-        } catch (error) {
-          reject(error);
-        }
-      },
-      (error) => reject(new Error(error.message || "Polohu se nepodařilo zaměřit.")),
-      {
-        enableHighAccuracy: true,
-        ...options
-      }
-    );
-  });
-}
-
-function readCurrentUserLocationFromWatch(options: PositionOptions): Promise<UserLocation> {
-  if (!navigator.geolocation.watchPosition) {
-    return readCurrentUserLocationOnce({ maximumAge: 10_000, timeout: 12_000 });
-  }
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let watchId: number | undefined;
-    const finish = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      window.clearTimeout(timeoutId);
-      if (watchId !== undefined) {
-        navigator.geolocation.clearWatch?.(watchId);
-      }
-      callback();
-    };
-    const timeoutId = window.setTimeout(() => {
-      finish(() => reject(new Error("Polohu se nepodařilo zaměřit v časovém limitu.")));
-    }, options.timeout ?? 16_000);
-    watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        try {
-          const location = userLocationFromPosition(position);
-          finish(() => resolve(location));
-        } catch (error) {
-          finish(() => reject(error));
-        }
-      },
-      (error) => finish(() => reject(new Error(error.message || "Polohu se nepodařilo zaměřit."))),
-      {
-        enableHighAccuracy: true,
-        ...options
-      }
-    );
-  });
-}
-
-function userLocationFromPosition(position: GeolocationPosition): UserLocation {
-  const location: UserLocation = {
-    accuracyM: position.coords.accuracy,
-    headingDeg: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
-    lat: position.coords.latitude,
-    lon: position.coords.longitude,
-    speedMps: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
-    updatedAt: new Date().toISOString()
-  };
-  if (!isValidMapPoint(location)) {
-    throw new Error("Poloha zařízení nemá platné souřadnice.");
-  }
-  return location;
 }
 
 function createNavigationSessionId(): string {

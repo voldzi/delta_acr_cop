@@ -65,6 +65,8 @@ vi.mock("./CopMap", async () => {
       selectedSituationFeatureId,
       situationFeatures,
       userLocation,
+      userLocationStatus,
+      userLocationRequestPending,
       userLocationFollowEnabled
     }: {
       autoFit?: boolean;
@@ -114,6 +116,8 @@ vi.mock("./CopMap", async () => {
       selectedSituationFeatureId?: string;
       situationFeatures?: { features?: Array<{ properties?: { featureId?: string; label?: string } }> };
       userLocation?: { lat: number; lon: number } | null;
+      userLocationStatus?: string;
+      userLocationRequestPending?: boolean;
       userLocationFollowEnabled?: boolean;
     }) =>
       React.createElement(
@@ -131,6 +135,8 @@ vi.mock("./CopMap", async () => {
           "data-emergency-route-message": emergencyRouteMessage ?? "",
           "data-emergency-route-status": emergencyRouteStatus ?? "idle",
           "data-user-location": userLocation ? `${userLocation.lon.toFixed(5)},${userLocation.lat.toFixed(5)}` : "",
+          "data-user-location-status": userLocationStatus ?? "",
+          "data-user-location-pending": String(Boolean(userLocationRequestPending)),
           "data-user-location-follow-enabled": String(Boolean(userLocationFollowEnabled)),
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
           "data-selected-situation-feature-id": selectedSituationFeatureId ?? "",
@@ -1120,6 +1126,54 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-user-location-request")).toBe("0");
+  });
+
+  it("reports denied location access and ignores a late startup fix without moving the map", async () => {
+    installMatchMedia(true);
+    let startupSuccess: PositionCallback | undefined;
+    let manualError: PositionErrorCallback | null | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback, error?: PositionErrorCallback | null) => {
+      if (!startupSuccess) startupSuccess = success;
+      else manualError = error;
+    });
+    const watchPosition = vi.fn();
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition, watchPosition }
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/health/ready")) return jsonResponse({ status: "ok" });
+        if (url.includes("/api/v1/map/catalog")) return jsonResponse(testMapCatalogResponse());
+        if (url.includes("/api/v1/map/features")) return jsonResponse(emptyMapQueryResponse([]));
+        return jsonResponse({ items: [] });
+      })
+    );
+    render(<App />);
+    await waitFor(() => expect(startupSuccess).toBeDefined());
+    const map = screen.getByTestId("cop-map");
+    const center = map.getAttribute("data-focus-center");
+    fireEvent.click(screen.getByTestId("map-request-user-location"));
+    await waitFor(() => expect(manualError).toBeDefined());
+    expect(map.getAttribute("data-user-location-pending")).toBe("true");
+    await act(async () => {
+      manualError?.({ code: 1 } as GeolocationPositionError);
+    });
+    await waitFor(() =>
+      expect(map.getAttribute("data-user-location-status")).toContain("Přístup k poloze je zakázaný")
+    );
+    expect(map.getAttribute("data-user-location-pending")).toBe("false");
+    await act(async () => {
+      startupSuccess?.({
+        coords: { latitude: 50, longitude: 15, accuracy: 10, heading: null, speed: null }
+      } as GeolocationPosition);
+    });
+    expect(map.getAttribute("data-user-location-status")).toContain("Přístup k poloze je zakázaný");
+    expect(map.getAttribute("data-focus-center")).toBe(center);
+    expect(map.getAttribute("data-focus-view-request")).toBe("0");
+    expect(watchPosition).not.toHaveBeenCalled();
   });
 
   it("loads the device location on startup without enabling map follow", async () => {

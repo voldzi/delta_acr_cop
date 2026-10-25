@@ -11,6 +11,7 @@ import {
   Droplets,
   HelpCircle,
   MapPin,
+  LoaderCircle,
   Maximize2,
   Minimize2,
   Minus,
@@ -830,6 +831,8 @@ interface CopMapProps {
   onPickRadioPoint?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
   userLocationFollowEnabled: boolean;
+  userLocationStatus?: string;
+  userLocationRequestPending?: boolean;
   radioPointPickActive?: boolean;
   radioPointPickLabel?: string;
   sketchDrawings?: SketchDrawingFeature[];
@@ -1017,6 +1020,8 @@ function CopMapComponent({
   editingZoneId = null,
   userLocation,
   userLocationFollowEnabled,
+  userLocationStatus,
+  userLocationRequestPending = false,
   onCancelZoneEditing,
   onUpdateZonePolygon,
   onPickRadioPoint,
@@ -1062,6 +1067,7 @@ function CopMapComponent({
     startY: number;
     width: number;
   } | null>(null);
+  const [userLocationFeedbackOpen, setUserLocationFeedbackOpen] = React.useState(false);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const situationRasterOverlayIdsRef = React.useRef<Set<string>>(new Set());
   const objectsRef = React.useRef(objects);
@@ -6189,11 +6195,20 @@ function CopMapComponent({
             <button
               aria-label="Přejít na moji polohu"
               className="map-control-button"
-              onClick={() => onRequestUserLocation()}
-              title="Přejít na moji polohu"
+              aria-busy={userLocationRequestPending}
+              disabled={userLocationRequestPending}
+              onClick={() => {
+                setUserLocationFeedbackOpen(true);
+                onRequestUserLocation();
+              }}
+              title={userLocationRequestPending ? "Zaměřuji polohu zařízení…" : "Přejít na moji polohu"}
               type="button"
             >
-              <MapPin size={16} strokeWidth={2.2} />
+              {userLocationRequestPending ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <MapPin size={16} strokeWidth={2.2} />
+              )}
               <span>Poloha</span>
             </button>
             <button
@@ -6228,6 +6243,20 @@ function CopMapComponent({
             </button>
           </>
         )}
+        {userLocationFeedbackOpen ? (
+          <div
+            className={`map-location-feedback ${mapControlsPosition && mapControlsPosition.x < 330 ? "on-right" : ""}`}
+          >
+            <p role="status" aria-live="polite">
+              {userLocationRequestPending
+                ? "Zaměřuji polohu zařízení…"
+                : (userLocationStatus ?? "Poloha není dostupná.")}
+            </p>
+            <button aria-label="Zavřít stav polohy" onClick={() => setUserLocationFeedbackOpen(false)} type="button">
+              <X size={16} />
+            </button>
+          </div>
+        ) : null}
       </div>
       {selectionCard && selectionPopupPoint && selectionPopoverStyle ? (
         <div

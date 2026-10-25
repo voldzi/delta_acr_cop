@@ -494,3 +494,12 @@ login and liveness, can continue. The regression in `map-catalog-routes.test.ts`
 covers both a rejecting and a nonresponding provider with a denied audit write.
 This change requires a new reviewed API image through the existing runtime
 profile release process; it does not change configuration, data, or permissions.
+
+The web location control must display request progress and any permission or
+availability error beside its map controls. A denied permission is not retried;
+a GPS timeout/unavailability may try a coarse-capable browser fix. Both attempts
+have application-owned deadlines, including browsers that invoke no callback.
+All temporary watches are cleared, late fixes are ignored, and a failed request
+keeps the current map camera rather than presenting the default center as the
+user's position. A late startup fix cannot overwrite a subsequent explicit
+request. No new location storage, sharing or API endpoint is introduced.

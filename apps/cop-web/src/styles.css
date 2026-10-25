@@ -12370,3 +12370,45 @@ dd {
   color: var(--muted);
   margin-top: 6px;
 }
+
+.map-control-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.map-location-feedback {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: min(290px, calc(100vw - 90px));
+  padding: 12px;
+  border: 1px solid rgba(148, 169, 188, 0.4);
+  border-radius: 10px;
+  background: rgba(17, 26, 35, 0.97);
+  color: #edf6ff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.map-location-feedback p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.map-location-feedback button {
+  flex: 0 0 auto;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.map-location-feedback.on-right {
+  right: auto;
+  left: calc(100% + 8px);
+}
