@@ -6,6 +6,8 @@ import {
   createTakGatewaySourceSystem
 } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
+import { ContentErasureStoreError } from "./content-erasure.js";
+import type { CopState } from "./types.js";
 import type {
   SafetyDataPublicConfig,
   SafetyDataSource,
@@ -575,6 +577,35 @@ describe("map catalog route", () => {
     expect(body.layers.map((layer) => layer.layerId)).toContain("public.safety.warnings");
     expect(body.warnings.join(" ")).toContain("Situation data catalog provider timed out");
   });
+
+  it.each(["rejection", "timeout"] as const)(
+    "keeps the API alive when a catalog %s cannot write its guarded audit record",
+    async (failure) => {
+      vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+      vi.stubEnv("COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS", "20");
+      const source = new HangingSituationDataSource();
+      if (failure === "rejection") {
+        source.fetchCatalog = async () => { throw new Error("synthetic provider outage"); };
+      }
+      const app = buildServer({ situationDataSource: source, safetyDataSource: new FakeSafetyDataSource() });
+      await app.ready();
+      const state = app.getDecorator<CopState>("copState");
+      const audit = vi.spyOn(state.auditEvents, "push").mockImplementation(() => {
+        throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+      });
+      try {
+        const response = await app.inject({ url: "/api/v1/map/catalog" });
+        expect(response.statusCode).toBe(503);
+        expect(response.json().error.code).toBe("CONTENT_PROJECTION_UNAVAILABLE");
+        expect((await app.inject({ url: "/health/live" })).statusCode).toBe(200);
+        // Let discarded provider promises and their callbacks settle before teardown.
+        await new Promise(resolve => setTimeout(resolve, 30));
+      } finally {
+        audit.mockRestore();
+        await app.close();
+      }
+    }
+  );
 
   it("does not let a slow messaging provider block dependency health", async () => {
     vi.stubEnv("COP_HEALTH_DEPENDENCY_TIMEOUT_MS", "20");

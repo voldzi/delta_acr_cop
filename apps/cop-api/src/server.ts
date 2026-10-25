@@ -12590,8 +12590,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
         settled = true;
         app.log.warn({ providerId, timeoutMs }, "Map catalog provider timed out; returning degraded catalog slice.");
-        appendAudit(state, "MAP_CATALOG_PROVIDER_TIMEOUT", { providerId, timeoutMs });
-        resolve(fallback());
+        try {
+          appendAudit(state, "MAP_CATALOG_PROVIDER_TIMEOUT", { providerId, timeoutMs });
+          resolve(fallback());
+        } catch (error) {
+          // Timer callbacks must reject the request, never throw into the process.
+          reject(error);
+        }
       }, timeoutMs);
 
       operation.then(
@@ -12617,8 +12622,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             { error, providerId },
             "Map catalog provider rejected before timeout; returning degraded catalog slice."
           );
-          appendAudit(state, "MAP_CATALOG_PROVIDER_REJECTED", { error: errorMessage(error), providerId });
-          resolve(fallback());
+          try {
+            appendAudit(state, "MAP_CATALOG_PROVIDER_REJECTED", { error: errorMessage(error), providerId });
+            resolve(fallback());
+          } catch (auditError) {
+            // Preserve write fences without leaving an unhandled rejected child promise.
+            reject(auditError);
+          }
         }
       );
     });

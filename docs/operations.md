@@ -482,3 +482,15 @@ The bounded COP release and safe reversion of the two approved routing images,
 including retained pending evidence and unchanged erasure protections, are in
 [the operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md). A read-only
 preflight or isolated Docker test is not production/native acceptance.
+
+## Catalog callback failures and login availability
+
+Catalog timeouts and provider rejections may encounter an unavailable account
+projection guard while recording their audit event. Both asynchronous callbacks
+must reject the catalog request when that write or fallback fails; they must not
+throw outside the request promise. A `CONTENT_PROJECTION_UNAVAILABLE` response
+remains HTTP 503, with no unguarded audit write. Other requests, including BFF
+login and liveness, can continue. The regression in `map-catalog-routes.test.ts`
+covers both a rejecting and a nonresponding provider with a denied audit write.
+This change requires a new reviewed API image through the existing runtime
+profile release process; it does not change configuration, data, or permissions.
