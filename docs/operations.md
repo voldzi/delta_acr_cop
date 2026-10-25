@@ -503,3 +503,7 @@ All temporary watches are cleared, late fixes are ignored, and a failed request
 keeps the current map camera rather than presenting the default center as the
 user's position. A late startup fix cannot overwrite a subsequent explicit
 request. No new location storage, sharing or API endpoint is introduced.
+
+Candidate build/test evidence and the still-open production gates are recorded
+in [the 25 October candidate report](testing/catalog-auth-location-candidate-20261025.json).
+This report is not a Root attestation or a production activation receipt.

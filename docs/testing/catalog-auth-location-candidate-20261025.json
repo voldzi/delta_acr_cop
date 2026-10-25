@@ -1,0 +1,55 @@
+{
+  "contractVersion": "cop-catalog-auth-location-candidate-v1",
+  "checkedAt": "2026-10-25T11:23:23.443261+00:00",
+  "apiSourceRevision": "07664a77cf19e9433bd6fe4b1267e395616f1985",
+  "webSourceRevision": "8afa082",
+  "apiCandidateImage": "sha256:f9f9081f9187149f75a5bcace82b2ce0e3e648cd99467f386cd8939662ea6bfc",
+  "build": {
+    "builder": "cop-x5",
+    "x5Verified": true,
+    "source": "git archive of exact API revision",
+    "dockerfileOverride": "pin both node:24-alpine FROM instructions to node:24.22.0-alpine",
+    "dockerfileSha256": "6d81820dd139904afd30521e6842b6c88bcca0752c10db3a1962e7f10ac6d202",
+    "nodeVersion": "24.22.0",
+    "architecture": "amd64"
+  },
+  "imageComparison": {
+    "environmentChangedKeys": [],
+    "configChangedKeys": [
+      "ArgsEscaped",
+      "Labels"
+    ],
+    "fullBuiltModuleAndDependencyParityVerified": false
+  },
+  "tests": {
+    "localTestsPassed": 167,
+    "imageApiTestsPassed": 52,
+    "imageApiTestIsolation": {
+      "network": "none",
+      "readOnly": true,
+      "productionSecrets": false,
+      "productionMounts": false,
+      "publishedPorts": false
+    },
+    "apiBuildPassed": true,
+    "webBuildPassed": true,
+    "changedFilesEslintPassed": true,
+    "skeletonPassed": true,
+    "publicAnalyticsGuardPassed": true,
+    "browserPreview": "location pending state and timeout message visibly verified",
+    "physicalDeviceLocationVerified": false
+  },
+  "deployment": {
+    "productionActivated": false,
+    "newRootAttestationCreated": false,
+    "newRootErasureProofCreated": false,
+    "approvedInfrastructureHandoff": true,
+    "existingGenericMaintainCompatibility": "reviewed conditionally; complete env/config parity and fresh legitimate Root evidence required",
+    "unresolved": [
+      "personal operator authentication for Root-only operations",
+      "read and verify applicable historical joint/provider/restore evidence; do not renew old acceptance timestamps",
+      "full candidate module/config and driver compatibility",
+      "review exact supported recovery for this candidate"
+    ]
+  }
+}
