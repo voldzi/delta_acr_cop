@@ -1,5 +1,9 @@
 # Documentation Map
 
+The reviewed application release worker is described in
+[runbook 32](runbooks/32_REVIEWED_COP_RELEASE_WORKER.md); its deployment status
+and unresolved gates remain explicit in the linked candidate report.
+
 This repository keeps an established numbered documentation convention. The
 central application standards are satisfied through the mapping below; the
 flat files in this directory are stable entry points that point to the detailed

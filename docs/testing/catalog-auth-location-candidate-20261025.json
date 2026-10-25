@@ -3,27 +3,34 @@
   "checkedAt": "2026-10-25T11:23:23.443261+00:00",
   "apiSourceRevision": "07664a77cf19e9433bd6fe4b1267e395616f1985",
   "webSourceRevision": "8afa082",
-  "apiCandidateImage": "sha256:f9f9081f9187149f75a5bcace82b2ce0e3e648cd99467f386cd8939662ea6bfc",
+  "apiCandidateImage": "sha256:c06c6080c87c4f88a74be359d459143ac25aef55cf60e6a8e11e4555bb62affa",
   "build": {
     "builder": "cop-x5",
     "x5Verified": true,
-    "source": "git archive of exact API revision",
-    "dockerfileOverride": "pin both node:24-alpine FROM instructions to node:24.22.0-alpine",
-    "dockerfileSha256": "6d81820dd139904afd30521e6842b6c88bcca0752c10db3a1962e7f10ac6d202",
-    "nodeVersion": "24.22.0",
+    "baseImage": "sha256:3f0054cb10e7c563c47cb010a7ea7cfbf4ff5a738e1261d77434be283baab430",
+    "source": "verified compiled server.js and map-catalog-routes.test.js from 07664a7 full-source build",
+    "copiedRuntimeFiles": [
+      "/app/apps/cop-api/dist/server.js"
+    ],
+    "serverJsSha256": "9c8c1c61acb051a08d5d1f053374cbae52917262e641a14b0f3af68bbd9ff8be",
+    "baseRootfsPreservedAsExactPrefix": true,
+    "launchAndEnvironmentInherited": true,
     "architecture": "amd64"
   },
   "imageComparison": {
     "environmentChangedKeys": [],
     "configChangedKeys": [
-      "ArgsEscaped",
       "Labels"
     ],
-    "fullBuiltModuleAndDependencyParityVerified": false
+    "labelsChangedKeys": [
+      "org.opencontainers.image.revision"
+    ],
+    "actualGuardRuntimeParityPassed": true,
+    "nativeSharpAndX5ImageGuardPassed": true
   },
   "tests": {
     "localTestsPassed": 167,
-    "imageApiTestsPassed": 52,
+    "imageApiTestsPassed": 43,
     "imageApiTestIsolation": {
       "network": "none",
       "readOnly": true,
@@ -37,7 +44,22 @@
     "skeletonPassed": true,
     "publicAnalyticsGuardPassed": true,
     "browserPreview": "location pending state and timeout message visibly verified",
-    "physicalDeviceLocationVerified": false
+    "physicalDeviceLocationVerified": false,
+    "releaseWorkerUnitTestsPassed": 38,
+    "liveReadOnlyWebConfigParityPassed": true,
+    "liveReadOnlyApiOwnerAuthLoginGatesPassed": true,
+    "imageApiTestFiles": [
+      "map-catalog-routes.test.js",
+      "web-session-bff.test.js"
+    ],
+    "harnessCorrections": [
+      "use Vitest for compiled Vitest tests, not node --test",
+      "write Vitest runtime token/cache only to ephemeral tmpfs via XDG_DATA_HOME/cacheDir"
+    ],
+    "actualFinalReadOnlyReviewPassed": true,
+    "actualGenericMaintainEnvironmentParityPassed": true,
+    "actualLastLayerAllowlistPassed": true,
+    "rootSealerSourcePeerReview": "SIM reviewed source and independently ran 38 tests; no remaining blocking finding in the reviewed source scope"
   },
   "deployment": {
     "productionActivated": false,
@@ -46,10 +68,55 @@
     "approvedInfrastructureHandoff": true,
     "existingGenericMaintainCompatibility": "reviewed conditionally; complete env/config parity and fresh legitimate Root evidence required",
     "unresolved": [
-      "personal operator authentication for Root-only operations",
-      "read and verify applicable historical joint/provider/restore evidence; do not renew old acceptance timestamps",
-      "full candidate module/config and driver compatibility",
-      "review exact supported recovery for this candidate"
-    ]
+      "personal authenticated exact broker correction and candidate seal not yet run",
+      "production activation and post-activation checks not yet performed",
+      "signed-in browser profile and successful physical-device GPS remain distinct owner checks"
+    ],
+    "restrictedBrokerInstalled": true,
+    "restrictedBrokerArmed": false,
+    "passwordlessStatusAndEvidenceVerified": true,
+    "candidateRuntimeParityPassed": true,
+    "candidateEligibleForActivation": false,
+    "rootBootstrapDoesNotRestartApplications": true,
+    "automaticRollback": false
+  },
+  "followupCheckedAt": "2026-10-25T14:38:36.926Z",
+  "webCandidateImage": "sha256:3606a7725266ca0078480fa263dac37193b45b389b8bb43e23be192d4180fafd",
+  "rejectedFullSourceCandidate": {
+    "imageId": "sha256:f9f9081f9187149f75a5bcace82b2ce0e3e648cd99467f386cd8939662ea6bfc",
+    "runtimeParityFailure": "live_label_parity_mismatch",
+    "eligibleForActivation": false,
+    "build": {
+      "builder": "cop-x5",
+      "x5Verified": true,
+      "source": "git archive of exact API revision",
+      "dockerfileOverride": "pin both node:24-alpine FROM instructions to node:24.22.0-alpine",
+      "dockerfileSha256": "6d81820dd139904afd30521e6842b6c88bcca0752c10db3a1962e7f10ac6d202",
+      "nodeVersion": "24.22.0",
+      "architecture": "amd64"
+    },
+    "imageComparison": {
+      "environmentChangedKeys": [],
+      "configChangedKeys": [
+        "ArgsEscaped",
+        "Labels"
+      ],
+      "fullBuiltModuleAndDependencyParityVerified": false,
+      "runtimeModuleParity": "315 compiled JS/JSON/dependency files compared; only server.js runtime change; remaining differences are tests",
+      "argsEscapedTransition": {
+        "oldPresent": false,
+        "newValue": true
+      },
+      "labelsChangedKeys": [
+        "cop.continuity.refresh.base",
+        "org.opencontainers.image.revision"
+      ]
+    },
+    "isolatedTestsPassed": 52
+  },
+  "retrieval": {
+    "cliAvailable": false,
+    "observedError": "native retrieval is restricted to projects selected in the app",
+    "fallback": "selected source and runbook inspection"
   }
 }

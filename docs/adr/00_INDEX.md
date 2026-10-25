@@ -82,3 +82,5 @@ published paths are preserved for integration references.
 - [0056 — Clean user reset and shared identity deletion](0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md)
 
 - [0057: Explicit user-selected road arrival](0057_USER_SELECTED_ARRIVAL.md): compatible candidate, independent proof admission and pending production/device acceptance.
+
+- [0058: Reviewed application release worker](0058_REVIEWED_APPLICATION_RELEASE_WORKER.md): narrow broker, application-owned worker and explicit historical/fresh evidence boundary.

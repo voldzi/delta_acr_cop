@@ -507,3 +507,7 @@ request. No new location storage, sharing or API endpoint is introduced.
 Candidate build/test evidence and the still-open production gates are recorded
 in [the 25 October candidate report](testing/catalog-auth-location-candidate-20261025.json).
 This report is not a Root attestation or a production activation receipt.
+
+The bounded deployment worker and current limitations are documented in
+[runbook 32](runbooks/32_REVIEWED_COP_RELEASE_WORKER.md) and
+[ADR 0058](adr/0058_REVIEWED_APPLICATION_RELEASE_WORKER.md).
