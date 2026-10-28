@@ -56,6 +56,40 @@ describe("ordinary immutable mapped vehicle profiles", () => {
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).vehicleProfile).toEqual(f.request.vehicleProfile);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it("admits an explicitly requested single mapped route with unchanged profile and complete bound proofs", async () => {
+    const f = fixture("car");
+    f.request.alternatives = 1;
+    f.response.query.alternatives = 1;
+    f.response.routes = f.response.routes.slice(0, 1);
+    f.response.features = f.response.features.filter((feature: any) => feature.properties.routeId === f.response.routes[0].routeId);
+    const requestHash = routingHash(f.response.query);
+    f.response.routes[0].knownClosures.requestHash = requestHash;
+    f.response.routes[0].mappedProfileAssessment.requestHash = requestHash;
+    f.response.features[0].properties.knownClosures = structuredClone(f.response.routes[0].knownClosures);
+    f.response.features[0].properties.mappedProfileAssessment = structuredClone(f.response.routes[0].mappedProfileAssessment);
+    const original = structuredClone(f.request);
+    const fetch = vi.fn(async (_url: unknown, _init?: RequestInit) => Response.json(f.response));
+    vi.stubGlobal("fetch", fetch);
+    const result = await adapter().route(f.request, now);
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual(original);
+    expect(f.request).toEqual(original);
+    expect(result.routes).toHaveLength(1);
+    expect(result.routes[0]?.mappedProfileAssessment).toEqual(f.response.routes[0].mappedProfileAssessment);
+    expect(result.routes[0]?.knownClosures).toEqual(f.response.routes[0].knownClosures);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("never retries a single-route restriction rejection with another profile or route count", async () => {
+    const f = fixture("car"); f.request.alternatives = 1;
+    const original = structuredClone(f.request);
+    const fetch = vi.fn(async (_url: unknown, _init?: RequestInit) => Response.json({
+      error: { code: "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED", message: "Synthetic multipass rejection." }
+    }, { status: 422 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(adapter().route(f.request, now)).rejects.toMatchObject({ status: 422, code: "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED" });
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual(original);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(f.request).toEqual(original);
+  });
   it.each([
     ["missing acknowledgement", (p: any) => { delete p.coverageAcknowledged; }],
     ["unknown field", (p: any) => { p.ignore_access = true; }],

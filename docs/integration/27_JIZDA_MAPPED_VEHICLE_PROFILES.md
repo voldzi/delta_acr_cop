@@ -123,6 +123,22 @@ for that explicit start, profile and destination. It does not explain the prior
 422 from the phone's approximate position or establish acceptance of that start.
 No further automatic phone requests were made.
 
+### Approximate-origin planning candidate
+
+The subsequent authorized indoor-planning investigation first uses the existing
+`alternatives: 1` contract, requested from the outset only for the approximate-
+origin planning preview. This is not a retry after a rejected three-variant
+request. It preserves the actual start, destination, vehicle profile, snap limits,
+closure policy and all returned evidence validation. Exact/manual-origin planning
+and active navigation remain separate client flows. No origin-estimate contract,
+automatic access substitution or acceptance of native warning 401 is introduced.
+COP already admits this request; no production API update is necessary.
+
+The COP mapped-profile suite passes 40 tests, including complete bound proofs
+for a single returned route and propagation of a single-route 422 without another
+request, profile substitution or changed route count. This is synthetic adapter
+verification, not physical-phone proof that the approximate-origin issue is fixed.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
