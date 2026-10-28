@@ -98,7 +98,7 @@ describe("ordinary immutable mapped vehicle profiles", () => {
     vi.stubGlobal("fetch", fetch);
     if (fresh) {
       const result = await adapter().route(f.request, now);
-      expect(result.query.from).toEqual(original.from);
+      expect(result.query?.from).toEqual(original.from);
       expect(result.routes[0]?.mappedProfileAssessment?.appliedProfile).toEqual(original.vehicleProfile);
     } else await expect(adapter().route(f.request, now)).rejects.toThrow();
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual(original);

@@ -265,7 +265,8 @@ describe("routing routes", () => {
         from: expect.objectContaining({ lat: 50.12, lon: 17.36 }),
         to: expect.objectContaining({ lat: 50.15077, lon: 17.37303 })
       }),
-      new Date("2026-07-05T17:00:00.000Z")
+      new Date("2026-07-05T17:00:00.000Z"),
+      { correlationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu) }
     );
     expect(response.json()).toMatchObject({
       providerId: "sim.situation-data.routing",
@@ -415,7 +416,8 @@ describe("routing routes", () => {
     expect(alternatives.statusCode).toBe(200);
     expect(routingSource.alternatives).toHaveBeenCalledWith(
       expect.objectContaining({ alternatives: 3, includeSteps: true, profileId: "walking" }),
-      new Date("2026-07-05T17:00:00.000Z")
+      new Date("2026-07-05T17:00:00.000Z"),
+      { correlationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu) }
     );
     expect(alternatives.json()).toMatchObject({ routes: [{ rank: 1 }, { rank: 2 }] });
 

@@ -325,7 +325,7 @@ import { combineSimSearchPages, simSearchHealthMetadata } from "./sim-search-pag
 import { copPgErrorCode, readCopPgPoolDiagnostics, setCopPgPoolErrorSink } from "./cop-pg-pool.js";
 import { VehicleProfileVerificationError } from "./routing-vehicle-profile.js";
 import { KnownClosureVerificationError } from "./routing-known-closures.js";
-import { createRoutingSourceFromEnv, RoutingHttpError, type RoutingRouteRequest, type RoutingSource } from "./routing-source.js";
+import { createRoutingSourceFromEnv, createRoutingRequestContext, RoutingHttpError, type RoutingRouteRequest, type RoutingSource } from "./routing-source.js";
 import {
   buildSketchDrawingCollection,
   createSketchDrawingStoreFromEnv,
@@ -9312,6 +9312,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  const logRoutingRejection = (routingCorrelationId: string, error: RoutingHttpError): void => {
+    try {
+      app.log.info({ routingCorrelationId, upstreamStatus: error.status,
+        routingCode: error.code === "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED" ? error.code : "OTHER_REJECTION" }, "SIM routing requirements rejected.");
+    } catch {
+      // Diagnostic transport failure must not replace the original routing rejection.
+    }
+  };
   registerRoutingRoutes(app, {
     profiles: async (request, reply) => {
       const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
@@ -9328,6 +9336,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     },
     route: async (request, reply) => {
       const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const routingContext = createRoutingRequestContext(correlationId);
       const requestNow = now();
       if (!routingSource) {
         return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
@@ -9336,7 +9345,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 400, "VALIDATION_ERROR", "Routing route requires a JSON object body.", correlationId);
       }
       try {
-        return await routingSource.route(request.body as unknown as RoutingRouteRequest, requestNow);
+        return await routingSource.route(request.body as unknown as RoutingRouteRequest, requestNow, routingContext);
       } catch (error) {
         const message = errorMessage(error);
         if (error instanceof UserArrivalRequestError) return sendError(reply, 422, error.code, error.message, correlationId);
@@ -9344,6 +9353,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return sendError(reply, 400, "VALIDATION_ERROR", message, correlationId);
         }
         if (error instanceof RoutingHttpError && [400, 422, 429, 503].includes(error.status)) {
+          logRoutingRejection(routingContext.correlationId, error);
           if (error.retryAfter) reply.header("Retry-After", error.retryAfter);
           return sendError(reply, error.status, error.code ?? "ROUTING_REQUIREMENTS_UNAVAILABLE", "SIM cannot currently satisfy the requested routing requirements.", correlationId);
         }
@@ -9353,6 +9363,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     },
     alternatives: async (request, reply) => {
       const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const routingContext = createRoutingRequestContext(correlationId);
       const requestNow = now();
       if (!routingSource) {
         return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
@@ -9367,7 +9378,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       try {
-        return await routingSource.alternatives(request.body as unknown as RoutingRouteRequest, requestNow);
+        return await routingSource.alternatives(request.body as unknown as RoutingRouteRequest, requestNow, routingContext);
       } catch (error) {
         const message = errorMessage(error);
         if (error instanceof UserArrivalRequestError) return sendError(reply, 422, error.code, error.message, correlationId);
@@ -9375,6 +9386,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return sendError(reply, 400, "VALIDATION_ERROR", message, correlationId);
         }
         if (error instanceof RoutingHttpError && [400, 422, 429, 503].includes(error.status)) {
+          logRoutingRejection(routingContext.correlationId, error);
           if (error.retryAfter) reply.header("Retry-After", error.retryAfter);
           return sendError(reply, error.status, error.code ?? "ROUTING_REQUIREMENTS_UNAVAILABLE", "SIM cannot currently satisfy the requested routing requirements.", correlationId);
         }

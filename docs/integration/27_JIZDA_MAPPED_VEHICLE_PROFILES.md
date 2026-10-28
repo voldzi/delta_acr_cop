@@ -171,6 +171,35 @@ query-bound closure/profile evidence for a changed explicit start and rejection
 of evidence retained from the former start. Client implementation, installation
 and a physical-phone test of this explicit selection flow remain separate gates.
 
+### Correlated rejection diagnostics candidate
+
+A subsequent user-selected street point near home also returned 422 on Jízda
+1.2 (70), at 2026-10-28 20:39 UTC. That request retained the mapped profile and
+requested three variants. Neither manual selection nor the earlier single-variant
+attempt has therefore established a fix for the home-area route.
+
+The COP source candidate now passes a separate, server-only context to SIM for
+route and alternatives calls. It forwards only the documented opaque UUID
+`X-Correlation-Id`, never identity credentials, request labels or profile values
+as diagnostic headers. Invalid/legacy non-UUID values receive a fresh UUID
+internally; the existing public error correlation echo remains compatible.
+Tracing context does not enter the routing body, request hashes or route proofs.
+
+Upstream 400/422/429/503 rejections produce a structured operational event with
+only `routingCorrelationId`, `upstreamStatus` and a fixed classification:
+`ROUTING_RESTRICTIONS_RELAXATION_REQUIRED` or `OTHER_REJECTION`. Provider messages,
+arbitrary error codes, request bodies, positions and vehicle/identity values are
+not included. No route acceptance rule changes. Detailed short-lived SIM
+diagnostics are separately bounded and do not report an actual algorithm or
+specific multipass cause unless the engine supplies that evidence.
+
+Candidate verification: 83 tests across correlation, mapped-profile and arrival
+suites; API TypeScript build and scoped ESLint pass. This paragraph records source
+verification, not production activation or a successful home-origin route.
+The broader routing regression run passes 158 tests with two existing opt-in
+integration tests skipped. The two route-handler expectations now explicitly
+check the additional opaque server context; request-body assertions remain intact.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
@@ -301,3 +330,7 @@ exemptions and trailer articulation/specific bans remain explicitly unsupported.
 Chroma retrieval was available for the primary managed repository. Reindexing the
 release worktree was rejected because this MCP root is not managed; no successful
 release index update is claimed. Selected current files were inspected directly.
+
+Diagnostic logger failure is tested separately for both route endpoints: it cannot
+replace the original 422, alter its public correlation echo or trigger another
+upstream call. Only the new diagnostic emission is caught, not routing failures.

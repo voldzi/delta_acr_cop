@@ -13,6 +13,16 @@ export interface RoutingSourceConfig {
   timeoutMs: number;
 }
 
+/** Opaque tracing only; never place identity, coordinates or provider options here. */
+export interface RoutingRequestContext { correlationId: string }
+const routingCorrelationPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+function validRoutingCorrelation(value: unknown): value is string {
+  return typeof value === "string" && value.length === 36 && routingCorrelationPattern.test(value);
+}
+export function createRoutingRequestContext(value: string): RoutingRequestContext {
+  return { correlationId: validRoutingCorrelation(value) ? value : crypto.randomUUID() };
+}
+
 export interface RoutingPoint {
   label?: string;
   lat: number;
@@ -173,8 +183,8 @@ export interface RoutingTraffic extends Record<string, unknown> {
 export interface RoutingSource {
   readonly config: RoutingSourceConfig;
   fetchProfiles(requestNow: Date): Promise<RoutingProfilesResponse>;
-  route(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse>;
-  alternatives(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse>;
+  route(request: RoutingRouteRequest, requestNow: Date, context?: RoutingRequestContext): Promise<RoutingRouteResponse>;
+  alternatives(request: RoutingRouteRequest, requestNow: Date, context?: RoutingRequestContext): Promise<RoutingRouteResponse>;
   isochrone(request: Record<string, unknown>, requestNow: Date): Promise<Record<string, unknown>>;
   nearestAccess(request: Record<string, unknown>, requestNow: Date): Promise<Record<string, unknown>>;
 }
@@ -217,18 +227,18 @@ export class RoutingSourceAdapter implements RoutingSource {
     );
   }
 
-  async route(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
+  async route(request: RoutingRouteRequest, requestNow: Date, context?: RoutingRequestContext): Promise<RoutingRouteResponse> {
     const normalized = normalizeRoutingRouteRequest({ ...request, alternatives: request.alternatives ?? 1 });
     const started = performance.now();
-    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow);
+    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow, context);
     const receivedAt = new Date(requestNow.getTime() + Math.max(0, performance.now() - started));
     return normalizeRoutingRouteResponse(response, normalized, receivedAt);
   }
 
-  async alternatives(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
+  async alternatives(request: RoutingRouteRequest, requestNow: Date, context?: RoutingRequestContext): Promise<RoutingRouteResponse> {
     const normalized = normalizeRoutingRouteRequest(request);
     const started = performance.now();
-    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow);
+    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow, context);
     const receivedAt = new Date(requestNow.getTime() + Math.max(0, performance.now() - started));
     return normalizeRoutingRouteResponse(response, normalized, receivedAt);
   }
@@ -493,11 +503,14 @@ async function postRoutingJson(
   config: RoutingSourceConfig,
   path: string,
   body: unknown,
-  requestNow: Date
+  requestNow: Date,
+  context?: RoutingRequestContext
 ): Promise<unknown> {
   return fetchJson(routingUrl(config, path), config, requestNow, {
     body: JSON.stringify(body),
-    method: "POST"
+    method: "POST",
+    ...(context && validRoutingCorrelation(context.correlationId)
+      ? { headers: { "X-Correlation-ID": context.correlationId } } : {})
   });
 }
 

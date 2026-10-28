@@ -7825,6 +7825,9 @@
         ],
         "summary": "Calculate a SIM route through COP.",
         "operationId": "runEmergencyRoute",
+        "parameters": [
+          { "$ref": "#/components/parameters/CorrelationIdHeader" }
+        ],
         "description": "Calculates a primary route between two points through the server-side SIM routing provider. COP renders returned GeoJSON features as a temporary operational overlay and displays ETA, distance, quality, traffic and warnings. Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing.",
         "requestBody": {
           "required": true,
@@ -7917,6 +7920,9 @@
         ],
         "summary": "Calculate SIM emergency route alternatives through COP.",
         "operationId": "runEmergencyRouteAlternatives",
+        "parameters": [
+          { "$ref": "#/components/parameters/CorrelationIdHeader" }
+        ],
         "requestBody": {
           "required": true,
           "content": {
