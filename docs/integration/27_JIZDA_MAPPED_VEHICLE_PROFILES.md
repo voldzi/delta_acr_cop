@@ -62,6 +62,31 @@ It does not create a legal or physical guarantee. Trailer-specific bans,
 articulation and turning clearance are not evaluated. No synthetic vehicle default
 is presented as an actual measured vehicle parameter.
 
+### WAF compatibility
+
+The 2026-10-28 investigation confirmed that CRS 4.29.0 rule 930120 treated
+the JSON argument **name** `json.vehicleProfile.coverageAcknowledged` as an
+LFI match because its static dictionary contains `.coverage`. This is distinct
+from rejection of a profile value by COP or SIM. Keep the wire field and its
+validation unchanged.
+
+The reviewed correction excludes only that argument name from rule 930120,
+only for the COP host, exact `POST /api/v1/routing/route` URI and JSON content
+type. Values, cookies, other argument names and other routes remain inspected.
+The installed native engine passed 30 before/after rule-boundary checks,
+including LFI values, cookies, other names, SQL injection and XSS. This isolated
+result does not establish nginx deployment or authenticated phone acceptance;
+record those separately in the operational release evidence.
+
+Root installed rule 1000961 on 2026-10-28 at 18:30:51 UTC. The installation
+receipt confirms valid nginx configuration, reload only, a protected original
+backup and unchanged other configuration and authentication. Authenticated
+Jízda route acceptance remains a separate check.
+The external post-deployment probe reached COP authentication with the benign
+field (401 without a session); an LFI value in the same field and the request
+outside the exact route scope still received 403. These probes used synthetic
+data and do not establish acceptance of an authenticated route.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
