@@ -87,6 +87,19 @@ field (401 without a session); an LFI value in the same field and the request
 outside the exact route scope still received 403. These probes used synthetic
 data and do not establish acceptance of an authenticated route.
 
+The single subsequent physical-phone check with Jízda 1.2 (68), at
+2026-10-28 19:39 UTC, fetched profiles successfully (200) and sent the selected
+stored vehicle profile. The route request reached the application and returned
+422 `ROUTING_RESTRICTIONS_RELAXATION_REQUIRED`, rather than WAF 403. This confirms
+the WAF correction for that request, **not successful route acceptance**.
+The start was the phone's approximate location, not the earlier public fixture.
+No arrival/access point was selected. SIM's deployed code maps native warning
+401 to this rejection; the bounded log check did not find correlated upstream
+evidence. The affected point, edge or restriction therefore remains unknown.
+Do not attribute the rejection to the Penny endpoint from historical tests.
+The ordinary-car-only user-selected-arrival contract cannot be combined with
+`vehicleProfile`; dropping the profile or relaxing restrictions is not a fix.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
