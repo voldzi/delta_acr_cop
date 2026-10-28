@@ -200,6 +200,31 @@ The broader routing regression run passes 158 tests with two existing opt-in
 integration tests skipped. The two route-handler expectations now explicitly
 check the additional opaque server context; request-body assertions remain intact.
 
+### COP production deployment on 2026-10-28
+
+The correlation change is deployed from source
+`ff3220d83995e1fd49906cb9fb8015c03c9306cf`, image
+`sha256:8ffcf1270e12a9a63828790f6dba5ccbcdad39e7a2cba7e36c348aaafad4788c`,
+release `release-03cc24beaa954798aff155bfd67b39ae`. Independent post-deployment
+checks confirmed the exact running image, healthy API with zero restarts,
+HTTP 200 for live/readiness/dependencies and HTTP 401 for an unauthenticated
+routing request. The installed runtime guard successfully reads the new active
+release; its narrowly extended source preserves the historical account-erasure
+and PostgreSQL proof chain. Configuration, credentials, networks and database
+state were not changed by this image transition.
+
+The initial global peer comparison failed because three unrelated AKB containers
+restarted independently. That failed observation remains preserved. Their image,
+container identity, configuration and networking stayed unchanged; subsequent
+independent COP application acceptance passed. This is not a claim of global
+infrastructure acceptance. Private evidence is retained in the infrastructure
+workspace under `reports/cop-routing-off-6403ba7b-2bcf-4225-a3dd-5414738db933/`.
+
+Detailed SIM diagnostics remain off at this COP acceptance point. This deployment
+provides correlation evidence; it does not fix or validate the route from the
+phone's approximate home position. No additional phone query or TestFlight
+publication was performed for this deployment.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
