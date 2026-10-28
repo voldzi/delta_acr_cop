@@ -139,6 +139,38 @@ for a single returned route and propagation of a single-route 422 without anothe
 request, profile substitution or changed route count. This is synthetic adapter
 verification, not physical-phone proof that the approximate-origin issue is fixed.
 
+The subsequent physical Jízda 1.2 (70) check at 2026-10-28 20:19 UTC confirmed
+`approximateOrigin=true`, one requested variant and the stored mapped profile,
+but again returned 422 `ROUTING_RESTRICTIONS_RELAXATION_REQUIRED`. Recording was
+off and no automatic retry followed. Requesting only one route therefore does
+not resolve this incident; the original multipass cause remains unknown.
+
+### Explicit planning-start handoff after the unsuccessful indoor check
+
+COP and SIM support the smallest compatible recovery without a new server
+contract: the user selects a planning start on the map and explicitly confirms
+it before a new request. Existing `from` is that selected point; the actual stored
+vehicle profile, avoid options and every route safety check remain unchanged.
+Label the result as a plan from the user's selected point. Keep the measured
+approximate position and its uncertainty separately in local client state.
+Never replace device GPS, start guidance automatically, assert lawful access or
+join the unverified gap to the routed geometry/ETA. Cancelling selection sends
+no request. Confirmation permits one new request; a typed rejection still has
+no automatic retry or weaker fallback. Changed account, profile, target or start
+must invalidate a pending result and require newly bound evidence.
+
+Do not use `/routing/nearest-access` as an automatic substitute: its generic
+request lacks a mapped vehicle profile and reviewed-closure binding. Even its
+optional directed-edge/map match is not a profile/closure or legal-access proof.
+Do not send extra origin-estimate/accuracy/provenance fields in the existing
+strict mapped route request. No snap-limit, API schema or production runtime
+change is required for a user-selected `from`.
+
+The COP mapped-profile suite now passes 42 tests, including acceptance of fresh
+query-bound closure/profile evidence for a changed explicit start and rejection
+of evidence retained from the former start. Client implementation, installation
+and a physical-phone test of this explicit selection flow remain separate gates.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version

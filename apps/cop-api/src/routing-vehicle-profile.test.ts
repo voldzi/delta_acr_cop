@@ -30,6 +30,19 @@ function fixture(intent: MappedVehicleProfile["intent"] = "car") {
   return { request, response };
 }
 const adapter = () => new RoutingSourceAdapter({ baseUrl: "https://fixture.invalid/api/v1", enabled: true, timeoutMs: 1000 });
+function singleRouteFixture() {
+  const f = fixture("car");
+  f.request.alternatives = 1;
+  f.response.query.alternatives = 1;
+  f.response.routes = f.response.routes.slice(0, 1);
+  f.response.features = f.response.features.filter((feature: any) => feature.properties.routeId === f.response.routes[0].routeId);
+  const requestHash = routingHash(f.response.query);
+  f.response.routes[0].knownClosures.requestHash = requestHash;
+  f.response.routes[0].mappedProfileAssessment.requestHash = requestHash;
+  f.response.features[0].properties.knownClosures = structuredClone(f.response.routes[0].knownClosures);
+  f.response.features[0].properties.mappedProfileAssessment = structuredClone(f.response.routes[0].mappedProfileAssessment);
+  return f;
+}
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe("ordinary immutable mapped vehicle profiles", () => {
   it("accepts the exact serialized SIM fixture for all four intents and both genuine synthetic variants", async () => {
@@ -57,16 +70,7 @@ describe("ordinary immutable mapped vehicle profiles", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("admits an explicitly requested single mapped route with unchanged profile and complete bound proofs", async () => {
-    const f = fixture("car");
-    f.request.alternatives = 1;
-    f.response.query.alternatives = 1;
-    f.response.routes = f.response.routes.slice(0, 1);
-    f.response.features = f.response.features.filter((feature: any) => feature.properties.routeId === f.response.routes[0].routeId);
-    const requestHash = routingHash(f.response.query);
-    f.response.routes[0].knownClosures.requestHash = requestHash;
-    f.response.routes[0].mappedProfileAssessment.requestHash = requestHash;
-    f.response.features[0].properties.knownClosures = structuredClone(f.response.routes[0].knownClosures);
-    f.response.features[0].properties.mappedProfileAssessment = structuredClone(f.response.routes[0].mappedProfileAssessment);
+    const f = singleRouteFixture();
     const original = structuredClone(f.request);
     const fetch = vi.fn(async (_url: unknown, _init?: RequestInit) => Response.json(f.response));
     vi.stubGlobal("fetch", fetch);
@@ -77,6 +81,29 @@ describe("ordinary immutable mapped vehicle profiles", () => {
     expect(result.routes[0]?.mappedProfileAssessment).toEqual(f.response.routes[0].mappedProfileAssessment);
     expect(result.routes[0]?.knownClosures).toEqual(f.response.routes[0].knownClosures);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([true, false])("requires fresh proofs for an explicitly changed planning start (fresh=%s)", async fresh => {
+    const f = singleRouteFixture();
+    f.request.from = { ...f.request.from, lat: f.request.from.lat + 0.00001 };
+    f.response.query.from = structuredClone(f.request.from);
+    if (fresh) {
+      const hash = routingHash(f.response.query);
+      f.response.routes[0].knownClosures.requestHash = hash;
+      f.response.routes[0].mappedProfileAssessment.requestHash = hash;
+      f.response.features[0].properties.knownClosures = structuredClone(f.response.routes[0].knownClosures);
+      f.response.features[0].properties.mappedProfileAssessment = structuredClone(f.response.routes[0].mappedProfileAssessment);
+    }
+    const original = structuredClone(f.request);
+    const fetch = vi.fn(async (_url: unknown, _init?: RequestInit) => Response.json(f.response));
+    vi.stubGlobal("fetch", fetch);
+    if (fresh) {
+      const result = await adapter().route(f.request, now);
+      expect(result.query.from).toEqual(original.from);
+      expect(result.routes[0]?.mappedProfileAssessment?.appliedProfile).toEqual(original.vehicleProfile);
+    } else await expect(adapter().route(f.request, now)).rejects.toThrow();
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual(original);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(f.request).toEqual(original);
   });
   it("never retries a single-route restriction rejection with another profile or route count", async () => {
     const f = fixture("car"); f.request.alternatives = 1;
