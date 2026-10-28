@@ -100,6 +100,17 @@ Do not attribute the rejection to the Penny endpoint from historical tests.
 The ordinary-car-only user-selected-arrival contract cannot be combined with
 `vehicleProfile`; dropping the profile or relaxing restrictions is not a fix.
 
+Source review of [Valhalla 3.8.3 multipass](https://github.com/valhalla/valhalla/blob/a60c7cbfc83e073f50887cd27e0109d02e6b64e5/src/thor/route_action.cc#L424-L475)
+shows that warning 401 accompanies an expanded second search pass, including
+candidate edges, hierarchy limits and destination-only handling. It does not
+identify a prohibited road or prove that the route is safe. The warning is
+request-scoped; the current protective rejection also covers warnings from
+alternatives. No evidence establishes whether requesting only one variant would
+change the physical-phone result. The COP/SIM profile mapping review found no
+automatic car-to-truck conversion or enabled `ignore_*` flags. No isolated Czech
+Penny graph was available for a real-engine comparison, and synthetic fixtures
+must not be presented as that comparison.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
