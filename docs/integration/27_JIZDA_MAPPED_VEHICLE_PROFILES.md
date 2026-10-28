@@ -111,6 +111,18 @@ automatic car-to-truck conversion or enabled `ignore_*` flags. No isolated Czech
 Penny graph was available for a real-engine comparison, and synthetic fixtures
 must not be presented as that comparison.
 
+### Subsequent physical-phone public-start acceptance
+
+At 2026-10-28 19:49 UTC, the user changed only the start to the explicit public
+fixture point, retaining the same stored vehicle profile and Penny destination.
+Jízda 1.2 (68) received a fresh COP route response (200), and SDK validation
+succeeded at 19:49:10.904 UTC. The displayed route was approximately 190 m / two
+minutes. Recording remained off; no arrival opt-in, provider fallback or profile
+substitution was used. This is successful authenticated physical-phone acceptance
+for that explicit start, profile and destination. It does not explain the prior
+422 from the phone's approximate position or establish acceptance of that start.
+No further automatic phone requests were made.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
