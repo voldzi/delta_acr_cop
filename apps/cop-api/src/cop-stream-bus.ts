@@ -110,6 +110,9 @@ export class PostgresCopStreamBus implements CopStreamBus {
   private initializing: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
   private closed = false;
+  private recoveryEnabled = false;
+  private recoveryTimer: NodeJS.Timeout | undefined;
+  private recoveryAttempts = 0;
   private localDeliveriesTotal = 0;
   private readonly pool: PgPool;
   private readonly projectionGuard: boolean;
@@ -133,6 +136,7 @@ export class PostgresCopStreamBus implements CopStreamBus {
     this.pool.on("error", () => {
       this.lastError = "STREAM_POOL_UNAVAILABLE";
       this.poolReady = false;
+      this.scheduleRecovery();
     });
   }
 
@@ -158,9 +162,25 @@ export class PostgresCopStreamBus implements CopStreamBus {
     this.initializing = initializing;
     try {
       await initializing;
+      this.recoveryEnabled = true;
+      this.recoveryAttempts = 0;
+      if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = undefined;
     } finally {
       if (this.initializing === initializing) this.initializing = undefined;
     }
+  }
+
+  private scheduleRecovery(): void {
+    if (this.closed || !this.recoveryEnabled || this.recoveryTimer) return;
+    const base = Math.min(10000, 500 * 2 ** Math.min(this.recoveryAttempts++, 5));
+    const delay = Math.min(10000, base + Math.floor(Math.random() * base * 0.1));
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      // Re-establish transport only. Never replay publications or transactions.
+      void this.init().catch(() => this.scheduleRecovery());
+    }, delay);
+    this.recoveryTimer.unref();
   }
 
   private async initialize(): Promise<void> {
@@ -210,6 +230,7 @@ export class PostgresCopStreamBus implements CopStreamBus {
       if (this.listener === listener) {
         this.lastError = "STREAM_LISTENER_UNAVAILABLE";
         this.listenerReady = false;
+        this.scheduleRecovery();
       }
     };
     this.listenerCancellations.set(listener, lost);
@@ -235,6 +256,8 @@ export class PostgresCopStreamBus implements CopStreamBus {
   async close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
     this.subscribers.clear();
     this.listenerReady = false;
     this.poolReady = false;

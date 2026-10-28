@@ -1,5 +1,9 @@
 # Runbook
 
+For interrupted PostgreSQL connections and LISTEN recovery, see the
+[isolated candidate verification and release boundary](testing/cop-pg-disconnect-20261028.md).
+Never retry a write solely because its COMMIT acknowledgement was lost.
+
 This is the standard runbook entry point for COP. Detailed operational
 procedures remain in the established runbook set:
 

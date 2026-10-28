@@ -87,6 +87,41 @@ describe("COP stream bus", () => {
 });
 
 describe("PostgreSQL COP stream lifecycle", () => {
+  it("automatically resubscribes with one bounded recovery flight and retries a failed reconnect", async () => {
+    vi.useFakeTimers();
+    const bus = new PostgresCopStreamBus({});
+    try {
+      await bus.init();
+      pgState.onClientCreated = client => { if (pgState.clients.length === 2) client.connect.mockRejectedValueOnce(new Error("synthetic unavailable")); };
+      pgState.clients[0]!.emit("error", new Error("synthetic disconnect"));
+      pgState.clients[0]!.emit("end");
+      expect(bus.metrics.ready).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(pgState.clients).toHaveLength(2);
+      expect(bus.metrics.ready).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1200);
+      expect(pgState.clients).toHaveLength(3);
+      expect(bus.metrics.ready).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(pgState.clients[0]!.end).toHaveBeenCalledOnce();
+      expect(pgState.clients[1]!.end).toHaveBeenCalledOnce();
+    } finally { await bus.close(); vi.useRealTimers(); }
+  });
+
+  it("cancels pending recovery on close without creating another listener", async () => {
+    vi.useFakeTimers();
+    const bus = new PostgresCopStreamBus({});
+    try {
+      await bus.init(); pgState.clients[0]!.emit("end");
+      expect(vi.getTimerCount()).toBe(1);
+      await bus.close(); await vi.advanceTimersByTimeAsync(20000);
+      expect(pgState.clients).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(bus.metrics.ready).toBe(false);
+    } finally { await bus.close(); vi.useRealTimers(); }
+  });
   beforeEach(() => {
     pgState.pools.length = 0;
     pgState.clients.length = 0;

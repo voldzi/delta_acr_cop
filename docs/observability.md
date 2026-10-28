@@ -1,5 +1,10 @@
 # Observability
 
+The PostgreSQL disconnect candidate observes both pool and physical-client error
+events using fixed component/source codes only. Error counts represent events,
+not distinct incidents; no SQL, DSN or raw pg errors are logged by the observer.
+See [candidate evidence and deployment status](testing/cop-pg-disconnect-20261028.md).
+
 Automatic safety notifications expose `safety-notification-worker` through
 `/health/dependencies`. Its state distinguishes disabled/idle/running/degraded
 and includes aggregate examined/accepted/skipped/failed counts and bounded

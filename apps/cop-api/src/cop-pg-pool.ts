@@ -16,7 +16,11 @@ export type CopPgComponent =
   | "sketch"
   | "openai-mcp"
   | "voice-call"
-  | "driver-consent";
+  | "driver-consent"
+  | "account-safety-guard"
+  | "account-safety-target"
+  | "media-settlement-guard"
+  | "media-settlement-target";
 
 interface PoolRecord {
   component: CopPgComponent;
@@ -44,6 +48,7 @@ export function copPgErrorCode(error: unknown): string {
     "08003",
     "08004",
     "08006",
+    "08P01",
     "28P01",
     "42501",
     "ECONNRESET",
@@ -84,13 +89,14 @@ export function createCopPgPool(component: CopPgComponent, config: PoolConfig): 
   currentRecords();
   if (records.size < maximumRecords) records.add(record);
   else untrackedPools += 1;
-  pool.on("error", (error: unknown) => {
+  const reportError = (source: "client" | "pool", error: unknown) => {
     record.errorCount += 1;
     record.lastErrorAt = new Date().toISOString();
     record.lastErrorCode = copPgErrorCode(error);
     try {
       errorSink?.({
         component,
+        source,
         reasonCode: record.lastErrorCode,
         errorCount: record.errorCount,
         occurredAt: record.lastErrorAt,
@@ -101,6 +107,15 @@ export function createCopPgPool(component: CopPgComponent, config: PoolConfig): 
     } catch {
       // Diagnostic failure must not turn an already removed idle client into an API crash.
     }
+  };
+  pool.on("error", (error: unknown) => reportError("pool", error));
+  // pg-pool removes its idle error listener while a client is checked out.
+  // A disconnect between queries must not become an unhandled EventEmitter error.
+  // Keep one listener for the physical connection, including after release. pg
+  // still rejects the failed/pending query and discards its non-queryable client.
+  // Never retry a transaction here: the outcome of COMMIT may be unknown.
+  pool.on("connect", (client) => {
+    client.on("error", (error: unknown) => reportError("client", error));
   });
   return pool;
 }

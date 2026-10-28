@@ -41,6 +41,20 @@ afterEach(() => {
 });
 
 describe("owned COP PostgreSQL pool diagnostics", () => {
+  it("observes checked-out client errors once per physical connection without query or retry", () => {
+    const pool = fixture();
+    const sink = vi.fn();
+    setCopPgPoolErrorSink(sink);
+    createCopPgPool("account-safety-guard", {});
+    const client = new EventEmitter();
+    pool.emit("connect", client);
+    for (let i = 0; i < 3; i++) { pool.emit("acquire", client); pool.emit("release", undefined, client); }
+    expect(client.listenerCount("error")).toBe(1);
+    expect(() => client.emit("error", Object.assign(new Error("secret SQL"), { code: "57P01" }))).not.toThrow();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ source: "client", reasonCode: "57P01" }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain("secret SQL");
+    expect(pool.query).not.toHaveBeenCalled();
+  });
   it("labels default application names without changing limits, SSL or query rejection", async () => {
     const pool = fixture();
     const config = {

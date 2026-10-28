@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { Pool } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import type { AccountErasureContinuity } from "./account-erasure-continuity.js";
 import { PostgresAccountErasureContinuity } from "./account-erasure-continuity-postgres.js";
 import { readCopDatabasePoolMode, resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
@@ -72,8 +72,8 @@ function databaseContinuity(): AccountErasureContinuity {
   catch { throw new Error("ERASURE_CONTINUITY_DATABASE_CA_UNAVAILABLE"); }
   const config = { max: 2, connectionTimeoutMillis: 3000, query_timeout: 5000,
     ssl: { rejectUnauthorized: true, ca }, application_name: "cop-account-safety-v2" };
-  const guard = new Pool({ ...config, connectionString: guardUrl });
-  const target = new Pool({ ...config, connectionString: targetUrl });
+  const guard = createCopPgPool("account-safety-guard", { ...config, connectionString: guardUrl });
+  const target = createCopPgPool("account-safety-target", { ...config, connectionString: targetUrl });
   // No raw pg error event (which can carry connection details) reaches logging.
   guard.on("error", () => undefined); target.on("error", () => undefined);
   try {

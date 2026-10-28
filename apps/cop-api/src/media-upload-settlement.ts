@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { databaseContinuityEndpoints } from "./account-erasure-continuity-production.js";
 import { contentOwnerKey, contentTransaction } from "./content-erasure.js";
 import type { MediaUploadSettlementVerifier } from "./media-storage.js";
@@ -114,7 +115,8 @@ export function createMediaUploadSettlementFromEnv(env: Record<string, string | 
     credentialFingerprint: mediaCredentialFingerprint(env.COP_MEDIA_S3_ACCESS_KEY_ID ?? "", env.COP_MEDIA_S3_SECRET_ACCESS_KEY ?? ""),
     applicationStoreId: env.COP_ACCOUNT_SAFETY_STORE_ID ?? "", incarnationId: env.COP_ACCOUNT_SAFETY_INCARNATION_ID ?? "" };
   const config = { max: 2, connectionTimeoutMillis: 3000, query_timeout: 5000, ssl: { rejectUnauthorized: true, ca }, application_name: "cop-media-settlement-v1" };
-  const guard = new Pool({ ...config, connectionString: guardUrl }), target = new Pool({ ...config, connectionString: targetUrl });
+  const guard = createCopPgPool("media-settlement-guard", { ...config, connectionString: guardUrl });
+  const target = createCopPgPool("media-settlement-target", { ...config, connectionString: targetUrl });
   guard.on("error", () => undefined); target.on("error", () => undefined);
   try { return new PostgresMediaUploadSettlement(guard, target, expected); }
   catch { void guard.end(); void target.end(); throw new Error("MEDIA_UPLOAD_CLOSURE_CONFIGURATION"); }

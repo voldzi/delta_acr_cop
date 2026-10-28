@@ -7,6 +7,9 @@ numbered documents.
 
 Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPENAPI.md).
 
+PostgreSQL disconnect handling candidate and isolated acceptance (not deployed):
+[2026-10-28 evidence and release boundary](testing/cop-pg-disconnect-20261028.md).
+
 Frontendové výchozí hodnoty přihlášení a bezpečný přechod veřejného API bez lab
 přístupu jsou popsány v [konfiguraci](runbooks/03_ENVIRONMENT_CONFIGURATION.md#výchozí-přihlášení-při-sestavení)
 a [Keycloak runbooku](runbooks/08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristupu).
