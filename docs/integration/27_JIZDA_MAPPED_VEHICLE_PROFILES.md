@@ -225,6 +225,43 @@ provides correlation evidence; it does not fix or validate the route from the
 phone's approximate home position. No additional phone query or TestFlight
 publication was performed for this deployment.
 
+### Joint server acceptance with detailed diagnostics off
+
+SIM situation-data API is deployed from
+`09cd702ddc6ab27c714d2897eb56ec0e893e4cbe`, image
+`sha256:e7175d383a4956f8ea64d5b80b23d1583d4ddca5904e87ee865a591c7fe6b569`.
+Independent Root acceptance is `READY_OFF`, recorded at 2026-10-28 23:27:25 UTC
+(2026-10-29 CET). The API is healthy with zero restarts. Live health and the
+seven-profile catalog returned 200; the protected geo-routing endpoint rejected
+an unauthenticated request with 401. DNS resolution and the configured native
+Valhalla `/status` request succeeded, reporting version 3.8.3. These probes made
+zero routing requests and zero provider-refresh requests.
+
+The initial strict Docker configuration comparison remains recorded as failed.
+Two original configuration files were read from the existing VM backup only in
+Proxmox RAM. Their complete hashes exactly matched the pre-deployment inventory.
+The independent witness accounts for every difference: generated container/image
+metadata, reordered environment entries with identical unique key/value mappings,
+empty DNS arrays represented as null, and a proven permutation of the same six
+mounts. All other resource/security fields, effective mounts, networks and ports
+match. Root and the SIM owner accepted only this exact representation-equivalent
+case; no general comparison relaxation was introduced. No production VM or data
+was restored, and the temporary backup reader was shut down.
+
+The five original SIM Compose files and environment file stayed unchanged. The
+additional persistent, application-owned image override is
+`/srv/sim/docker-compose.routing-off-5a37914a-8a11-4ea7-9269-612350e77eee.json`;
+future deployment must preserve its selection and the required image selectors.
+The Root acceptance receipt is retained under
+`/srv/x5-production/root-routing-off-release-5a37914a-8a11-4ea7-9269-612350e77eee/sim-independent-acceptance.json`
+with SHA-256 `a231a8358bba75de28ab375996856d35488bcbe1235949482955682b54e3b007`.
+
+Detailed diagnostics remain off. No physical iPhone acceptance, successful
+approximate-origin route, actual native algorithm, multipass cause or new traffic
+freshness guarantee follows from these server checks. A fresh user-controlled
+request and a separately bounded diagnostic window remain necessary. No TestFlight
+publication is authorized by this server release.
+
 ## Capabilities and assessment
 
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
