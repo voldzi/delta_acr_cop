@@ -523,3 +523,7 @@ login and liveness, can continue. The regression in `map-catalog-routes.test.ts`
 covers both a rejecting and a nonresponding provider with a denied audit write.
 This change requires a new reviewed API image through the existing runtime
 profile release process; it does not change configuration, data, or permissions.
+
+### Cold startup and projection continuity
+
+Persisted-history reads and track persistence may outlive the five-second account-erasure continuity observation. The API revalidates the actual durable frontier immediately before projection admission and again after the affected database await. Startup conflict-evidence hydration follows the same rule. This does not extend the observation, bypass projection fences, retry a write, or adopt an advanced/unavailable frontier. A synthetic cold-start regression uses the actual account-erasure controller and a six-second history-read port, with unavailable and advanced-frontier negatives; it performs no real database write. Image startup with erasure disabled is insufficient acceptance for this production path.
