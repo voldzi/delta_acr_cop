@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 describe("planning release resources and public contract", () => {
   it("includes the runtime schema in both image stages", () => {
@@ -8,6 +9,14 @@ describe("planning release resources and public contract", () => {
     expect(docker).toMatch(/^COPY --from=build \/app \.\/$/mu);
     const schemas = JSON.parse(readFileSync(new URL("../../../docs/api/schemas/planning-origin-v1.schemas.json", import.meta.url), "utf8"));
     expect(schemas.components.schemas.PreviewAssessment.required).toContain("knownClosuresEvidence");
+  });
+  it("passes only the default-off planning configuration to the API service", () => {
+    const compose = parse(readFileSync(new URL("../../../docker-compose.yml", import.meta.url), "utf8"));
+    expect(compose.services["cop-api"].environment.COP_ROUTING_PLANNING_ENABLED).toBe("${COP_ROUTING_PLANNING_ENABLED:-false}");
+    expect(compose.services["cop-api"].environment.COP_ROUTING_PLANNING_SERVICE_TOKEN).toBe("${COP_ROUTING_PLANNING_SERVICE_TOKEN:-}");
+    for (const [name, service] of Object.entries(compose.services)) if (name !== "cop-api") {
+      expect((service as { environment?: Record<string, unknown> }).environment).not.toHaveProperty("COP_ROUTING_PLANNING_SERVICE_TOKEN");
+    }
   });
   it("keeps runtime/public schemas identical without exposing SIM service authentication as browser input", () => {
     const runtime = JSON.parse(readFileSync(new URL("../../../docs/api/schemas/planning-origin-v1.schemas.json", import.meta.url), "utf8"));

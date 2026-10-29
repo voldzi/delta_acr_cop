@@ -501,6 +501,9 @@ other token. Only production secret files may hold the provisioned geo credentia
 The existing routing base URL/timeout apply; no public port or network change is
 introduced. SIM applies its geo requests-per-minute limit to both service and
 opaque actor (default 60), across both operations; counters are bounded and ephemeral.
+The canonical COP Compose file forwards the two planning settings only to `cop-api`
+with false/empty defaults. Protected production profiles must include that same
+explicit pass-through; editing `.env` alone does not inject a new container variable.
 
 COP bounds request bodies to 32 KiB and response bodies to 2 MiB, rejects redirects,
 and retains its timeout throughout response reading. Final validity is rechecked
@@ -523,7 +526,7 @@ flag and SIM planning allowlist, then restores the accepted image selectors; ord
 routing remains unchanged. Keep the approved prior images/configuration available.
 
 Source verification on 2026-10-29: routing/identity/privacy regression 216 passed
-with two existing opt-in skips; two packaging/contract-copy tests passed; contract
+with two existing opt-in skips; three packaging/configuration/contract-copy tests passed; contract
 suite 29 passed. API TypeScript build, scoped ESLint, JSON Schema validation,
 skeleton and diff checks passed. OpenAPI lint succeeded with 32 non-fatal warnings
 (including inherited conditional-schema composition diagnostics). All pre-existing
