@@ -225,3 +225,21 @@ acceptance. Missing package pins stop compilation; dependencies are resolved
 and installed only inside a separately admitted disposable environment. Root
 remains the sole operator. Compilation, linking and route execution were **not
 performed by COP** during this source review.
+
+### Build correction after actual compiler evidence
+
+Root's first actual build (`b7b5690f-a44c-4e4b-86ab-88c4530d72de`)
+failed before native execution. Its compiler log
+`0df496ebdba9ef0913e2e6c746d8465ca4d683593b40c5c6a6fd1dba94177298`
+showed that the installed headers require C++20 (`format_string`, ranges and
+span). The pinned upstream CMake configuration also explicitly requires C++20.
+The initial recipe's C++17 choice was incorrect; this failure does not establish
+header/source divergence.
+
+The separate corrected package `search-incremental-build-v2/manifest.json`
+(SHA-256 `7e9bb105fcb85b934be2e31cc73d6f9027f7e74a0419a3794e69888d2606aefa`)
+changes only the common language-standard token to C++20 in the driver and lock
+template. COP independently checked these exact diffs and repeated all 13 pure
+tests successfully. The original package and failed receipt remain preserved.
+This is source/build preparation evidence, not a completed native comparison or
+production route acceptance.
