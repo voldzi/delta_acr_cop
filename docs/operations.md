@@ -489,6 +489,14 @@ for rollback. See [contract and deployment state](integration/27_JIZDA_MAPPED_VE
 and [ADR 0058](adr/0058_ASSISTED_PLANNING_ORIGIN.md). Source tests do not establish
 physical phone acceptance; Jízda owns its separate SDK/UI delivery.
 
+The API image starts the compiled server directly using
+`node scripts/start-cop-api.mjs`; the launcher preserves the former pnpm package
+working directory. Cold startup therefore does not download a package manager or
+require a writable Corepack cache. Runtime user, image WORKDIR, environment,
+mounts and networks are unchanged; the exact CMD difference must be included in
+the protected release review. Build tooling may still use pnpm. Attach the true
+source revision label when building; a label alone does not replace build evidence.
+
 The bounded COP release and safe reversion of the two approved routing images,
 including retained pending evidence and unchanged erasure protections, are in
 [the operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md). A read-only

@@ -1,8 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { fileURLToPath } from "node:url";
+import { startCopApi, copApiDirectory } from "../../../scripts/start-cop-api.mjs";
 
 describe("planning release resources and public contract", () => {
+  it("starts the same compiled API from the previous package cwd without a runtime package manager", async () => {
+    const docker = readFileSync(new URL("../../../Dockerfile.api", import.meta.url), "utf8");
+    expect(docker).toContain('CMD ["node", "scripts/start-cop-api.mjs"]');
+    expect(copApiDirectory).toBe(fileURLToPath(new URL("./", import.meta.url)).replace(/src\/$/u, ""));
+    const calls: string[] = [];
+    await startCopApi({ changeDirectory: (path: string) => { calls.push(path); }, loadApi: async () => { calls.push("load-api"); } });
+    expect(calls).toEqual([copApiDirectory, "load-api"]);
+  });
   it("includes the runtime schema in both image stages", () => {
     const docker = readFileSync(new URL("../../../Dockerfile.api", import.meta.url), "utf8");
     expect(docker).toMatch(/^COPY docs docs$/mu);
