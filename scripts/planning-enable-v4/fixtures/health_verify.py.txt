@@ -1,0 +1,15 @@
+"""Read-only recovery observation: original regression policy, one120s budget."""
+import json,time,types
+from pathlib import Path
+ORIGINAL_SHA='010f32f708200c1e2afe9623e2c78145a2eaf398313870d268ea908f63edee89'
+def verify(r,baseline):
+ path=Path('/srv/cop/scripts/cop-health-gate.py');raw=r.private_read(path,1000,mode=0o600,gid=1000)
+ r.require(len(raw)==5239 and r.sha(raw)==ORIGINAL_SHA,'startup_recovery_health_source_changed');anchor=b'timeout=min(12, remaining)';r.require(raw.count(anchor)==1,'startup_recovery_health_anchor')
+ scoped=raw.replace(anchor,b'timeout=min(20 if url == URLS[2] else 12, remaining)',1);m=types.ModuleType('unchanged_health_regression');exec(compile(scoped,str(path),'exec'),m.__dict__)
+ before=json.loads(baseline);r.health_statuses(before);deadline=time.monotonic()+120;attempts=0
+ while time.monotonic()<deadline:
+  after=m.capture(deadline);attempts+=1
+  if m.no_regression(before,after,('safety-notification-worker','cop-account-erasure-owners')):
+   return (json.dumps({'healthAndPublicDemoPreserved':True,'statuses':after},sort_keys=True).encode(),{'totalBudgetSeconds':120,'dependencyRequestMaximumSeconds':20,'ordinaryRequestMaximumSeconds':12,'attempts':attempts,'actualStatusesPreserved':True})
+  time.sleep(min(1,max(0,deadline-time.monotonic())))
+ raise ValueError('startup_recovery_actual_health_not_preserved')

@@ -94,7 +94,7 @@ This is an observability gap, not evidence that ignoring warning 401 is safe.
 Six targeted local SIM regression tests passed; they confirm rejection and no
 retry, not successful production routing.
 
-## Remaining work
+## Historical remaining work after the initial rejected previews
 
 `COP_ROUTING_PLANNING_ENABLED` remains false; no enable-acceptance document was
 created. Provisioning and successful discovery do not establish usable planning.
@@ -105,3 +105,34 @@ privacy-safe evidence plan; do not waive warning 401 or silently change the
 candidate, profile or destination. All maintenance holds were released.
 Preserve the failure evidence and accepted images; do not rerun provisioning or
 repeat a committed recovery to obtain a cleaner receipt.
+
+## Current follow-up, 2026-10-30
+
+The initial 422 results above remain historical failures. Subsequent native
+diagnosis and SIM source `84b85cd94051095eb6038f8501ca8f411e1cc37e` corrected
+current-departure semantics in the shared accepted-road path without waiving
+warning 401, mapped restrictions, snap or closure checks. SIM image is now
+`sha256:d33daddc75101cf1e137545ca76613fc861497066197b39eed75e8c96ba7a489`.
+
+Actual installed COP adapter ordinary requests (one and three requested
+alternatives) both succeeded, each returning one fully accepted route. Result
+SHA `14455a18b5e07ae06a0a393af06983b7ffcf9f74e522cbcd35bbafffb8b13ced`;
+runner receipt `3ed3963ce2afbd7adaf53c9f51d31c589271f1b93a621976193fed05ed999f72`.
+These do not prove the public user HTTP/auth path.
+
+Root C5 then completed two candidate and two preview operations, all HTTP 200
+with both previews accepted. API receipt
+`6ee9c7822a7ea4d6875a19a3218a9e61b94fb194c132abdf35c9fbb2747f52ad`;
+result `6f50e60c64d594db9b8df7a52cebc85c230a70d90bdd2e538eaf3c31fa9b9cec`.
+Its complete global frame counted 18 actions within the unchanged 36 limit,
+including background and markers. The earlier ordinary 20-count frame remains
+failed; no combined-64 PASS or caller attribution is claimed.
+
+After a separate fresh V4 authority, Root E941 reports COP planning enabled,
+same COP image 6cdf/source 7c43, CID
+`73dd42a369db2ee118fdc0a98bc01e7dd1faac89e5968c55c2eda18acd5a43df`,
+healthy/zero restarts, no pending transition and strict unchanged peers.
+See [the exact source, evidence boundary and return protocol](cop-planning-enable-v4-20261030.md).
+Positive public OIDC and the owner's actual phone-origin/explicit-selection flow
+remain separate acceptance. No private coordinate replay or TestFlight release
+is established by these server results.

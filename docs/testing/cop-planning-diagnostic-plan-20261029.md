@@ -369,8 +369,12 @@ fabricating credentials.
 
 For an accepted known-closure ordinary request, source code makes one native
 route call and two status checks, plus one trace and one status check per returned
-road-attribute variant. Thus the two ordinary cases have a structural upper bound
-of fourteen native calls (five for one variant, nine for three); concurrent
+road-attribute variant. The structural base bound is fourteen native fetches
+for the pair (five for one variant, nine for three). If the returned live-speed
+state is `current`, `checkedTrafficRoute` adds one direct status fetch per
+request: at most sixteen for the pair, or twelve if each returns one variant.
+The coordinator's local `status()` only reads its report, but the separately
+activated updater may run concurrently. Concurrent
 background traffic checks and the independently pinned planning kernel's probes
 must be counted separately by Root's native envelope. No penalty-alternative
 calls are made on this guarded branch. Unknown/native overflow, expired proofs,
@@ -383,8 +387,22 @@ and route calls (two actions). Only after explicit user action may one candidate
 request follow (two dataset-status calls and one locate), then one confirmed
 preview (two outer dataset-status calls, two inner status calls and one route).
 The preview query has road attributes disabled. Thus that specific three-request
-flow has at most ten native HTTP actions; an ordinary success with three variants
-has at most nine. This excludes independent startup, health and background
+flow has a base bound of ten native fetches, or eleven with the extra live-speed
+status validation in the preview. An ordinary success with three variants has a
+base bound of nine, or ten with that status validation. These are at most three
+routing POST operations, not all client HTTP calls: the native SDK separately
+fetches capabilities/profiles and performs its authentication lifecycle. This
+excludes independent startup, capability/profile, health and background
 traffic checks, which Root must account for separately. No private coordinate or
 route body is exported as evidence. A row selection alone is not confirmation,
 and neither a retry nor another destination may be silently substituted.
+
+These source bounds count calls to the native fetch helper, not generic engine
+log lines. Internal processing stages and background callers may also appear in
+a global interval. A complete calibrated frame of completed HTTP access records
+is needed to establish actual native HTTP counts; neither per-caller attribution
+nor a successful budget check may be inferred from method-line totals. The
+ordinary native helper has no application retry loop but uses fetch's default
+redirect behavior, so the direct native endpoint must also be verified before
+equating helper invocations with physical HTTP requests. The original failed
+counting frame remains failed.

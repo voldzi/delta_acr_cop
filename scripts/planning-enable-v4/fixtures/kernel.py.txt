@@ -1,0 +1,203 @@
+"""Finite COP planning configuration predicates/byte plans, SOURCE ONLY.
+No host calls, credential provisioning, writes or authority publication.
+The credential adapter is independently Root-pinned server-only code, never a
+caller-selected token, path, or a placeholder equality boolean.
+"""
+import copy,json,re,uuid
+from pathlib import Path
+from contextlib import contextmanager
+PROFILE='206c4507-5e00-458e-b0ee-4061309aa7a8'
+IMAGE='sha256:6cdf302ea305e7fa58a11a1f9139deccd9f5b70cd0982a7ce87cd6b70d9d5c30'
+SOURCE='7c43b690edf687fefc04e17533894d118f457276'
+BASE_GUARD_SHA='2c519dc721760adb31a1e708baec550730e97c99af01015c22939dcf3d230f75'
+VERSION='cop-planning-config-v3'
+CASE='cop-planning-config-case-v3'
+FLAG='COP_ROUTING_PLANNING_ENABLED';TOKEN='COP_ROUTING_PLANNING_SERVICE_TOKEN'
+KEYS=frozenset({FLAG,TOKEN})
+STAGES=frozenset({'provision','enable','disable','remove'})
+ADAPTER_API='cop-planning-existing-cop-credential-adapter-v1'
+COMPOSE_LINES=b'      COP_ROUTING_PLANNING_ENABLED: "${COP_ROUTING_PLANNING_ENABLED:-false}"\n      COP_ROUTING_PLANNING_SERVICE_TOKEN: "${COP_ROUTING_PLANNING_SERVICE_TOKEN:-}"\n'
+ANCHOR=b'      COP_PUBLIC_URL: "${COP_PUBLIC_URL:-https://cop.zeleznalady.cz}"\n'
+ENV_PREFIX=b'COP_ROUTING_PLANNING_ENABLED=false\n'
+class Rejected(Exception):pass
+def need(test,code):
+ if not test:raise Rejected(code)
+def digest(v):return isinstance(v,str)and re.fullmatch('[0-9a-f]{64}',v)is not None
+def metadata(v):return isinstance(v,dict)and set(v)=={'device','inode','size','mtimeNs','ctimeNs'}and all(type(x)is int and x>=0 for x in v.values())
+def pointer(r,p):
+ need(isinstance(p,dict)and set(p)=={'contractVersion','generation','releaseId','profileId','profileGeneration','imageId','containerId'},'POINTER_SHAPE')
+ need(p['contractVersion']=='cop-api-runtime-active-v1'and r.GENERATION.fullmatch(p['generation'])and r.ID.fullmatch(p['releaseId'])and p['profileId']==p['profileGeneration']==PROFILE and p['imageId']==IMAGE and digest(p['containerId']),'POINTER_BINDING')
+def reference(r,p):
+ need(isinstance(p,dict)and set(p)=={'path','sha256'}and isinstance(p['path'],str)and Path(p['path']).parent==r.PROFILES/PROFILE and re.fullmatch('account-erasure-[0-9a-f-]{36}\\.json',Path(p['path']).name)and digest(p['sha256']),'PARENT_REFERENCE')
+def environment_keys(raw):
+ need(isinstance(raw,bytes)and len(raw)<=1048576 and b'\0'not in raw,'ENV_BYTES')
+ names=[]
+ for line in raw.splitlines():
+  if line.lstrip().startswith(b'#'):continue
+  found=re.match(rb'^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=',line)
+  if found:names.append(found[1].decode('ascii'))
+ return names
+
+def compose_plan(r,before,after,stage):
+ need(isinstance(before,dict)and isinstance(after,dict)and set(before)==set(after)==set(r.FILES),'COMPOSE_FILES')
+ for name in r.FILES:
+  need(isinstance(before[name],bytes)and isinstance(after[name],bytes)and len(before[name])<=65536 and len(after[name])<=65536,'COMPOSE_BYTES')
+  if name!='docker-compose.yml' or stage in{'enable','disable'}:
+   need(before[name]==after[name],'OTHER_COMPOSE_CHANGED');continue
+  a,b=(after[name],before[name])if stage=='remove'else(before[name],after[name])
+  need(a.startswith(b'services:\n  cop-api:\n') and a.count(ANCHOR)==1 and FLAG.encode()not in a and TOKEN.encode()not in a,'COMPOSE_ANCHOR')
+  # Require the insertion to occur inside cop-api, not another service.
+  at=a.index(ANCHOR);next_service=re.search(rb'(?m)^  [a-zA-Z0-9_-]+:\s*$',a[len(b'services:\n  cop-api:\n'):])
+  need(next_service is None or at<len(b'services:\n  cop-api:\n')+next_service.start(),'COMPOSE_WRONG_SERVICE')
+  need(b==a.replace(ANCHOR,ANCHOR+COMPOSE_LINES,1),'COMPOSE_EXACT_TWO_LINES')
+ return True
+
+def token_line(adapter):
+ need(getattr(adapter,'CONTRACT',None)==ADAPTER_API and getattr(adapter,'SERVICE_ACTOR',None)=='cop','ROOT_CREDENTIAL_ADAPTER_REQUIRED')
+ # The independently Root-owned adapter reads its fixed actual producer itself.
+ # This interface has no token/path parameter. Its return stays server RAM only.
+ line=adapter.encoded_existing_cop_assignment()
+ need(isinstance(line,bytes)and line.startswith(TOKEN.encode()+b'=')and b'\n'not in line and b'\r'not in line and b'\0'not in line and len(line)<=16448 and len(line)>len(TOKEN)+1,'ROOT_ASSIGNMENT_SHAPE')
+ return line
+
+def toggle_flag(raw,stage):
+ need(stage in{'enable','disable'},'TOGGLE_STAGE')
+ old,new=(b'true',b'false')if stage=='disable'else(b'false',b'true')
+ expression=re.compile(rb'(?m)^'+FLAG.encode()+b'='+old+b'\n')
+ found=list(expression.finditer(raw));need(len(found)==1,'EXACT_FLAG_LINE')
+ match=found[0]
+ return raw[:match.start()]+FLAG.encode()+b'='+new+b'\n'+raw[match.end():]
+
+def env_plan(before,after,stage,adapter):
+ need(stage in STAGES,'STAGE')
+ names_before=environment_keys(before);names_after=environment_keys(after)
+ need(all(names_before.count(k)<=1 and names_after.count(k)<=1 for k in KEYS),'DUPLICATE_PLANNING_KEY')
+ if stage in{'provision','remove'}:
+  a,b=(after,before)if stage=='remove'else(before,after)
+  need(not(KEYS&set(environment_keys(a))),'EXISTING_PLANNING_CONFIGURATION')
+  line=token_line(adapter);separator=b''if not a or a.endswith(b'\n')else b'\n'
+  need(b==a+separator+ENV_PREFIX+line+b'\n','ENV_EXACT_APPEND_OR_INVERSE')
+ else:
+  need(names_before.count(FLAG)==names_after.count(FLAG)==1 and names_before.count(TOKEN)==names_after.count(TOKEN)==1,'PROVISIONED_KEYS_REQUIRED')
+  need(after==toggle_flag(before,stage),'ENV_EXACT_FLAG_TOGGLE')
+ return True
+
+def protected_render(before,after,stage,adapter):
+ need(isinstance(before,dict)and isinstance(after,dict)and set(before)==set(after),'RENDER_TOP_LEVEL')
+ need(set(before.get('services',{}))==set(after.get('services',{}))and'cop-api'in before['services'],'RENDER_SERVICES')
+ a,b=copy.deepcopy(before),copy.deepcopy(after)
+ old=a['services']['cop-api'].pop('environment',{});new=b['services']['cop-api'].pop('environment',{})
+ need(a==b,'RENDER_NON_ENV_CHANGED')
+ effective_delta(old,new,stage,adapter)
+ return True
+
+def effective_delta(actual,desired,stage,adapter):
+ need(stage in STAGES and isinstance(actual,dict)and isinstance(desired,dict),'ENVIRONMENT_SHAPE')
+ delta={k for k in set(actual)|set(desired)if(k in actual)!=(k in desired)or actual.get(k)!=desired.get(k)}
+ need(delta==({FLAG}if stage in{'enable','disable'}else KEYS),'ENVIRONMENT_DELTA')
+ if stage=='provision':need(not(KEYS&set(actual))and desired.get(FLAG)=='false'and isinstance(desired.get(TOKEN),str)and bool(desired[TOKEN]),'PROVISION_EFFECTIVE')
+ if stage=='enable':need(actual.get(FLAG)=='false'and desired.get(FLAG)=='true','ENABLE_EFFECTIVE')
+ if stage=='disable':need(actual.get(FLAG)=='true'and desired.get(FLAG)=='false','DISABLE_EFFECTIVE')
+ if stage=='remove':need(actual.get(FLAG)=='false'and not(KEYS&set(desired)),'REMOVE_EFFECTIVE')
+ need(desired.get('COP_AUTH_MODE')=='oidc'and desired.get('COP_ALLOW_LAB_TOKEN')=='false'and desired.get('COP_ACCOUNT_ERASURE_ENABLED')=='true'and desired.get('COP_ACCOUNT_SAFETY_GUARD_REQUIRED')=='true','EXISTING_AUTH_ERASURE_REQUIRED')
+ need(getattr(adapter,'CONTRACT',None)==ADAPTER_API and getattr(adapter,'SERVICE_ACTOR',None)=='cop','ROOT_CREDENTIAL_ADAPTER_REQUIRED')
+ # No success boolean is admitted. The Root adapter must raise on failed actual
+ # origin equality/custody; no caller-supplied assertion replaces that check.
+ need(adapter.assert_target_matches_existing_cop(actual if stage=='remove'else desired)is None,'ROOT_EQUALITY_API_NO_BOOLEAN')
+
+def case(r):
+ raw=r.private_read(r.PROFILES/PROFILE/'planning-config-v3-case.json',0,mode=0o640,gid=1000);v=json.loads(raw)
+ fields={'contractVersion','caseId','profile','imageId','sourceRevision','guardSha256','sourcePointer','parentProof','cleanReset','sourceEnvironmentMetadata','sourceComposeHashes','credentialAdapterSha256','checkedAt','expiresAt'}
+ need(isinstance(v,dict)and set(v)==fields and v['contractVersion']==CASE and r.PROFILE_UUID.fullmatch(v['caseId'])and v['profile']==PROFILE and v['imageId']==IMAGE and v['sourceRevision']==SOURCE and v['guardSha256']==BASE_GUARD_SHA and digest(v['credentialAdapterSha256']) and v['credentialAdapterSha256']==r.PLANNING_CONFIG_V3_CREDENTIAL_SHA256,'CASE_BINDING')
+ pointer(r,v['sourcePointer']);reference(r,v['parentProof']);need(metadata(v['sourceEnvironmentMetadata'])and set(v['sourceComposeHashes'])==set(r.FILES)and all(digest(x)for x in v['sourceComposeHashes'].values()),'CASE_METADATA')
+ need(0<r.fenced_timestamp(v['expiresAt'])-r.fenced_timestamp(v['checkedAt'])<=3600,'CASE_LIFETIME')
+ return v,r.sha(raw)
+
+def schema(r,p):
+ v,sha=case(r)
+ fields={'contractVersion','transitionId','operation','stage','previous','target','changedKeys','environmentMetadata','sourceEnvironmentMetadata','composeHashes','sourceComposeHashes','ownerAcceptance','checks','cleanReset','parentProof','caseSha256','checkedAt','expiresAt','sourceSpecSha256','baselineSha256','originCustody','stageEvidence'}
+ need(isinstance(p,dict)and set(p)==fields and p['contractVersion']==VERSION and r.PROFILE_UUID.fullmatch(p['transitionId'])and p['operation']=='maintain'and p['stage']in STAGES and p['ownerAcceptance']is True and p['caseSha256']==sha,'PROOF_SHAPE')
+ need(p['transitionId']==str(uuid.uuid5(uuid.UUID(v['caseId']),p['stage'])),'EXACT_STAGE_NONCE')
+ pointer(r,p['previous']);reference(r,p['parentProof'])
+ need(p['target']=={'imageId':IMAGE,'sourceRevision':SOURCE,'profileGeneration':PROFILE}and p['cleanReset']==v['cleanReset'],'PROOF_TARGET_RESET')
+ need(p['changedKeys']==sorted({FLAG}if p['stage']in{'enable','disable'}else KEYS)and metadata(p['environmentMetadata'])and metadata(p['sourceEnvironmentMetadata']),'PROOF_DELTA_METADATA')
+ for k in('composeHashes','sourceComposeHashes'):need(isinstance(p[k],dict)and set(p[k])==set(r.FILES)and all(digest(x)for x in p[k].values()),'PROOF_COMPOSE')
+ need(digest(p['sourceSpecSha256'])and digest(p['baselineSha256']),'PROOF_EVIDENCE_REF')
+ need(isinstance(p['checks'],dict)and p['checks']and all(type(x)is bool and x for x in p['checks'].values()),'PROOF_CHECK_TYPES')
+ need(r.fenced_timestamp(v['checkedAt'])<=r.fenced_timestamp(p['checkedAt'])<r.fenced_timestamp(p['expiresAt'])<=r.fenced_timestamp(v['expiresAt'])and r.fenced_timestamp(p['expiresAt'])-r.fenced_timestamp(p['checkedAt'])<=900,'PROOF_LIFETIME')
+ origin=p['originCustody']
+ need(isinstance(origin,dict)and set(origin)=={'contractVersion','adapterSha256','producerMetadata','targetMetadata','sourcePointer','rootEvidenceReference'}and origin['contractVersion']=='cop-existing-service-origin-custody-v1'and origin['adapterSha256']==v['credentialAdapterSha256']and metadata(origin['producerMetadata'])and origin['targetMetadata']==p['environmentMetadata']and origin['sourcePointer']==p['previous'],'ORIGIN_CUSTODY_BINDING')
+ # Root must publish an actual protected witness document. A caller boolean is
+ # structurally invalid and cannot substitute for verified origin equality.
+ witness=origin['rootEvidenceReference'];need(isinstance(witness,dict)and set(witness)=={'path','sha256'}and Path(witness['path']).parent==r.PROFILES/PROFILE and re.fullmatch('planning-config-v3-origin-[0-9a-f-]{36}\\.json',Path(witness['path']).name)and digest(witness['sha256']),'ORIGIN_WITNESS_REFERENCE')
+ raw=r.private_read(Path(witness['path']),0,mode=0o640,gid=1000);need(r.sha(raw)==witness['sha256'],'ORIGIN_WITNESS_CHANGED')
+ need(json.loads(raw)=={k:origin[k]for k in('contractVersion','adapterSha256','producerMetadata','targetMetadata','sourcePointer')},'ORIGIN_WITNESS_FIELDS')
+ if p['stage']=='provision':need(p['previous']==v['sourcePointer']and p['parentProof']==v['parentProof']and p['sourceEnvironmentMetadata']==v['sourceEnvironmentMetadata']and p['sourceComposeHashes']==v['sourceComposeHashes']and p['stageEvidence']is None,'PROVISION_SOURCE')
+ elif p['stage']=='enable':
+  proof=p['stageEvidence'];need(isinstance(proof,dict)and set(proof)=={'path','sha256'}and Path(proof['path'])==r.PROFILES/PROFILE/'planning-config-v3-public-acceptance.json'and digest(proof['sha256']),'ENABLE_ACCEPTANCE_REFERENCE')
+  data=r.private_read(Path(proof['path']),0,mode=0o640,gid=1000);need(r.sha(data)==proof['sha256'],'ENABLE_ACCEPTANCE_CHANGED');a=json.loads(data)
+  need(isinstance(a,dict)and set(a)=={'contractVersion','caseSha256','simImageId','copImageId','publicCaseIds','workflowResults','wafReceiptSha256','nativeCountReceiptSha256','checkedAt','expiresAt'}and a['contractVersion']=='cop-planning-public-enable-acceptance-v2'and a['caseSha256']==sha and a['copImageId']==IMAGE and a['simImageId']=='sha256:224dd9af156cc3a3f9cf8ce06007acfe82e20b1a9d18db46eda1c840fea64249'and a['publicCaseIds']==['public-mnichov-stop','previous-public-center-control']and a['workflowResults']==['PASS','PASS']and digest(a['wafReceiptSha256'])and digest(a['nativeCountReceiptSha256']),'ENABLE_ACCEPTANCE_BINDING')
+  need(r.fenced_timestamp(a['checkedAt'])<=r.fenced_timestamp(p['checkedAt'])<r.fenced_timestamp(p['expiresAt'])<=r.fenced_timestamp(a['expiresAt']),'ENABLE_ACCEPTANCE_TIME')
+ else:need(p['stageEvidence']is None,'REVERSE_UNEXPECTED_EVIDENCE')
+ return p
+
+def evidence(r,p,fresh=True):
+ schema(r,p)
+ if fresh:need(r.fenced_timestamp(p['checkedAt'])<=r.datetime.now(r.timezone.utc).timestamp()<=r.fenced_timestamp(p['expiresAt']),'MUTATION_EXPIRED')
+ return p
+
+def read_proof(r,store,path,raw,binding):
+ p=json.loads(raw);schema(r,p)
+ need(Path(path)==r.PROFILES/PROFILE/('account-erasure-'+p['transitionId']+'.json')and all(binding[k]==p['target'][k]for k in p['target'])and binding['profileId']==PROFILE and binding['previousReleaseId']==p['previous']['releaseId']and('composeHashes'not in binding or binding['composeHashes']==p['composeHashes']),'BINDING')
+ origin=json.loads(r.private_read(store.root/'releases'/p['previous']['releaseId']/'release.json',store.uid))
+ need(origin['imageId']==IMAGE and origin['sourceRevision']==SOURCE and origin['profileId']==PROFILE and origin['accountErasureConfig']['path']==p['parentProof']['path']and origin['accountErasureConfig']['sha256']==p['parentProof']['sha256'],'PARENT_LINEAGE')
+ _,parent=store.erasure_config_proof(Path(p['parentProof']['path']),origin,p['parentProof']['sha256'])
+ expected={'provision':'cop-planning-bootstrap-forward-v3','enable':VERSION,'disable':VERSION,'remove':VERSION}[p['stage']]
+ need(parent['contractVersion']==expected and parent['cleanReset']==p['cleanReset']and parent['environmentMetadata']==p['sourceEnvironmentMetadata']and parent['composeHashes']==p['sourceComposeHashes']and parent['checks']==p['checks'],'PARENT_PROTECTIONS')
+ if p['stage']!='provision':need(parent['stage']in{'enable':{'provision'},'disable':{'enable'},'remove':{'disable','provision'}}[p['stage']]and parent['caseSha256']==p['caseSha256'],'STAGE_ORDER')
+ return r.sha(raw),p
+
+def environment(r,actual,desired,p):
+ evidence(r,p,True)
+ adapter=r.Store(uid=1000).planning_config_v3_credential_module()
+ effective_delta(actual,desired,p['stage'],adapter)
+
+HEALTH_MODULE_SHA='e7eb01a0b41dcbbcfda0652a4d322c5f0d5d0eb4b6c411e1e6db174d8a596066'
+@contextmanager
+def health_scope(r,store,p):
+    """Only one finite forward uses original regression policy at a fixed budget.
+    The Root-bound source snapshot remains byte-identical; fresh actual source
+    verification precedes the recreation. No URL or health script is caller-set.
+    """
+    import types
+    evidence(r,p,True)
+    r.require(p['contractVersion']==VERSION and p['stage']in STAGES and getattr(store.docker,'planning_config_v3_health_scope',None)is None,'planning_config_v3_health_scope')
+    baseline_path=r.PROFILES/PROFILE/('planning-config-v3-source-health-'+p['transitionId']+'.json')
+    baseline=r.private_read(baseline_path,0,mode=0o640,gid=1000);r.require(r.sha(baseline)==p['baselineSha256'],'planning_config_v3_health_baseline_changed');r.health_statuses(json.loads(baseline))
+    health_path=r.PROFILES/PROFILE/('planning-config-v3-health-'+HEALTH_MODULE_SHA+'.py');raw=r.private_read(health_path,0,mode=0o640,gid=1000);r.require(r.sha(raw)==HEALTH_MODULE_SHA,'planning_config_v3_health_source_changed')
+    health=types.ModuleType('fixed_planning_v3_health');exec(compile(raw,str(health_path),'exec'),health.__dict__)
+    original=store.docker.health;prior=store.docker.__dict__.get('health');had='health'in store.docker.__dict__;calls=[]
+    def scoped(action,path):
+        r.require((action=='capture'and path is None and calls==[])or(action=='verify'and Path(path)==store.root/'pending-health.json'and calls==['capture']),'planning_config_v3_health_call_order')
+        if action=='verify':r.require(r.sha(r.private_read(path,store.uid))==p['baselineSha256'],'planning_config_v3_pending_baseline_changed')
+        started=__import__('time').monotonic();verified,observation=health.verify(r,baseline)
+        if action=='verify':
+            pending=r.private_json(store.root/'pending.json',store.uid)
+            r.require(pending['previous']==p['previous'],'planning_config_v3_health_pending_cas')
+            directory,binding,profile=store.binding(pending['targetReleaseId'])
+            actual=store.docker.current(directory)
+            # HTTP readiness can precede Docker's first healthcheck. Wait only
+            # by observing this exact non-restarting target, within the SAME
+            # 120s total budget; never recreate/restart or accept an unhealthy one.
+            while actual['State'].get('Health',{}).get('Status')=='starting':
+                r.require(actual['Id']==pending['targetContainerId']and actual['Image']==IMAGE and actual['RestartCount']==0 and actual['State']['Running']is True and __import__('time').monotonic()<started+120,'planning_config_v3_cold_target_wait_failed')
+                __import__('time').sleep(min(1,max(0,started+120-__import__('time').monotonic())));actual=store.docker.current(directory)
+            r.require(binding['imageId']==IMAGE and binding['sourceRevision']==SOURCE and actual['Id']==pending['targetContainerId']and actual['Image']==IMAGE and actual['RestartCount']==0 and actual['State']['Running']is True and actual['State'].get('Health',{}).get('Status')=='healthy','planning_config_v3_actual_cold_start_unproven')
+        store.write(store.root/('planning-config-v3-'+p['transitionId']+'-'+action+'-health-observation.json'),r.encoded(observation));calls.append(action)
+        return baseline if action=='capture'else verified
+    store.docker.planning_config_v3_health_scope=p;store.docker.health=scoped
+    try:yield
+    finally:
+        if had:store.docker.health=prior
+        else:del store.docker.health
+        store.docker.planning_config_v3_health_scope=None

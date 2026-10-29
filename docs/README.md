@@ -89,8 +89,9 @@ Jízda road-trip server deployment and remaining activation blockers: [productio
 Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integration/26_JIZDA_KNOWN_CLOSURES.md); ordinary release active with incomplete coverage; physical acceptance pending.
 
 - [27. Jízda mapped vehicle profiles](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md): typed ordinary intents, route-bound evidence and separate assisted planning-origin contract (ordinary server release deployed; new planning deployment and mobile acceptance separate).
-- [Assisted planning server acceptance, 2026-10-29](testing/cop-planning-origin-20261029.md): accepted image/provisioning; both public previews rejected with 422, so activation is withheld; native and phone acceptance remain separate.
-- [Source-only diagnostic follow-up](testing/cop-planning-diagnostic-plan-20261029.md): minimal preview CID proposal and limited ordinary alternative; shared diagnostic scope and operational admission remain unresolved, with no runtime change.
+- [Assisted planning server acceptance](testing/cop-planning-origin-20261029.md): original rejected previews preserved; current ordinary and assisted public workflows passed and Root enabled COP planning. Positive user HTTP/auth and phone acceptance remain separate.
+- [Routing diagnostic evidence](testing/cop-planning-diagnostic-plan-20261029.md): actual native mechanism, current-departure comparison, installed COP adapter boundary and separately counted phone flow.
+- [Fresh planning enable V4](testing/cop-planning-enable-v4-20261030.md): exact one-flag successor, retained legacy proofs, frozen source, Root protocol and bounded return; source tests are separate from production and phone acceptance.
 
 Public demo analytics: [integration and release gate](analytics/integration.md), [CZ/EN notice proposal](analytics/privacy-review.md); disabled pending acceptance.
 
