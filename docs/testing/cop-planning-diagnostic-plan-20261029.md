@@ -296,3 +296,53 @@ unchanged, and this result grants no permission to enable COP planning. The
 next targeted comparison must use a new public source-equivalent 41dd payload:
 normal speed types, no usable live overlay and no forced prioritization, changing
 only absent departure time to explicit current departure time.
+
+## Ordinary COP adapter acceptance boundary
+
+The installed COP `RoutingSourceAdapter.route` forwards `/routing/route` to SIM
+`/routing/alternatives`. Its source hash is identical in overlay `7c43b690` and
+this checkout (`5d23dd26fd41e8645d89ac82abcfdb17f1389f1a3138513745674c3543ea8d66`).
+It preserves explicitly supplied ISO departure, arrival, trip and mapped profile
+fields; an omitted departure remains omitted. Ordinary transport sends no bearer
+credential in this revision. Planning transport separately uses its service
+credential; do not inject that credential into an ordinary canary.
+
+`scripts/cop-ordinary-routing-canary.mjs` is a Root-operated, read-only integration
+harness for the **installed** compiled adapter. It does not bootstrap the API,
+create accounts, issue tokens, change environment or modify the running image.
+Root pins the actual compiled module at `/app/apps/cop-api/dist/routing-source.js`
+and current routing base URL by SHA-256, along with the outer container/image
+identity. Its input manifest contains only `schema: cop-ordinary-adapter-canary-v1`,
+a fresh UUID `admissionId`, `moduleSha256` and `baseUrlSha256`. It accepts two fixed
+public mapped-car cases with one and three requested alternatives, matching the
+client's ordinary field shape (steps and road attributes enabled, no fabricated
+`departureTime` or arrival).
+
+The exported `executeReviewedManifest` can be loaded from a separately hash-pinned
+`data:` module in a standalone `docker exec` Node process; this avoids copying a
+file into the application container. Root supplies the non-secret manifest via
+stdin, preserves existing environment and writes only the safe receipt outside
+the container. The helper pins the actual outbound URL, method and body, caps
+adapter requests at two, disallows retries and credential injection, and relies
+on the installed adapter's complete mapped/closure verification. It exports only
+counts, booleans and failure codes, never raw routes, coordinates, provider text,
+credentials or environment. Eight pure synthetic harness tests passed; those
+are not actual integration acceptance.
+
+A successful result explicitly has `publicHttpUserAuthenticationVerified:false`
+and `accountGuardExecuted:false`. It proves real installed-adapter-to-SIM
+integration, not an authenticated public COP HTTP request. Public unauthenticated
+401 and SQL-control 403 probes establish only negative boundaries. Positive
+public OIDC/account/BFF acceptance requires a legitimate current user session
+through the application, normally the owner's iPhone flow, without extracting or
+fabricating credentials.
+
+For an accepted known-closure ordinary request, source code makes one native
+route call and two status checks, plus one trace and one status check per returned
+road-attribute variant. Thus the two ordinary cases have a structural upper bound
+of fourteen native calls (five for one variant, nine for three); concurrent
+background traffic checks and the independently pinned planning kernel's probes
+must be counted separately by Root's native envelope. No penalty-alternative
+calls are made on this guarded branch. Unknown/native overflow, expired proofs,
+wrong dataset, failed auth or a changed graph remains a failure, never a retry
+with weaker routing.
