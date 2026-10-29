@@ -499,6 +499,11 @@ for rollback. See [contract and deployment state](integration/27_JIZDA_MAPPED_VE
 and [ADR 0058](adr/0058_ASSISTED_PLANNING_ORIGIN.md). Source tests do not establish
 physical phone acceptance; Jízda owns its separate SDK/UI delivery.
 
+The [2026-10-29 server acceptance record](testing/cop-planning-origin-20261029.md)
+identifies the actual corrected overlay image, retained failed checks and
+independently accepted credential provisioning. At that checkpoint planning
+remains disabled pending the bounded public canary and separate activation.
+
 The API image starts the compiled server directly using
 `node scripts/start-cop-api.mjs`; the launcher preserves the former pnpm package
 working directory. Cold startup therefore does not download a package manager or

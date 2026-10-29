@@ -89,6 +89,7 @@ Jízda road-trip server deployment and remaining activation blockers: [productio
 Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integration/26_JIZDA_KNOWN_CLOSURES.md); ordinary release active with incomplete coverage; physical acceptance pending.
 
 - [27. Jízda mapped vehicle profiles](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md): typed ordinary intents, route-bound evidence and separate assisted planning-origin contract (ordinary server release deployed; new planning deployment and mobile acceptance separate).
+- [Assisted planning server acceptance, 2026-10-29](testing/cop-planning-origin-20261029.md): accepted image and credential provisioning; activation, bounded public canary and physical-device acceptance are separate.
 
 Public demo analytics: [integration and release gate](analytics/integration.md), [CZ/EN notice proposal](analytics/privacy-review.md); disabled pending acceptance.
 
