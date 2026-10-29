@@ -203,3 +203,25 @@ fix, enable planning or proceed to phone acceptance. The next source investigati
 must distinguish the conditional origin/destination pruning gate from another
 algorithm or an empty/failed `FormPath` result. Additional parameter trials without
 such a discriminator are not an accepted continuation of these closed cases.
+
+## Isolated observation build review
+
+SIM prepared `deploy/valhalla/search-incremental-build-v1/manifest.json`
+(SHA-256 `c1f54d120c94461c035793ba30c21f052dcc8c9c9edc890cea67535dc5ade106`).
+COP independently reviewed its offline bootstrap, build entry point, actor runner
+and image recipes, and repeated all ten pure lock/archive tests successfully.
+The public pinned upstream actor header matches the installed runtime header
+(`4db3eea725bdd01131320edf0b9571bd891a396ff903377b6b13efc6fff4d5b9`).
+This establishes header identity, not the original translation unit or compiler
+flags.
+
+The proposed build reuses the actual static archive and replaces only the one
+search object in control and observation variants. All other 189 object payloads
+and their order must remain identical. An original-archive runner, rebuilt-source
+control and observation runner must then agree on the full native JSON digest
+for the fixed public route. The actor CLI is a new execution surface, not the
+original HTTP service. No result from it establishes SIM guard or COP preview
+acceptance. Missing package pins stop compilation; dependencies are resolved
+and installed only inside a separately admitted disposable environment. Root
+remains the sole operator. Compilation, linking and route execution were **not
+performed by COP** during this source review.
