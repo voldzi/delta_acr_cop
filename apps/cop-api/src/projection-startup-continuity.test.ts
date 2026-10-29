@@ -10,7 +10,7 @@ import { withEventProvenance } from "./provenance.js";
 
 const instant = Date.parse("2026-10-29T12:00:00Z");
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-async function fixture(failAfterSlowRead: false | "outage" | "advanced" = false) {
+async function fixture(failAfterSlowRead: false | "outage" | "advanced" = false, largeProjection = false) {
   for (const [key, value] of Object.entries({ NODE_ENV: "test", COP_DATABASE_URL: "", COP_AUTH_MODE: "oidc",
     COP_OIDC_ISSUER: "https://synthetic-startup.invalid/realms/cop", COP_ALLOW_LAB_TOKEN: "false", COP_WEB_BFF_SESSION_ENABLED: "false",
     COP_ACCOUNT_ERASURE_ENABLED: "false", COP_ACCOUNT_SAFETY_GUARD_REQUIRED: "false", COP_FLIGHT_DATA_ENABLED: "false",
@@ -41,17 +41,30 @@ async function fixture(failAfterSlowRead: false | "outage" | "advanced" = false)
     classification: { level: "UNCLASSIFIED", releasability: ["CZ"], handlingCaveats: [] }, quality: { confidence: 1, sourceReliability: "UNKNOWN", informationCredibility: "UNKNOWN" },
     geo: { lat: 50, lon: 14 }, simulation: { synthetic: true }, payload: { objectId: randomUUID(), objectType: "AIRCRAFT", affiliation: "FRIEND", domain: "AIR", status: "ACTIVE" } };
   const object = withEventProvenance(createCopObjectFromEvent(event), event);
+  const objects = largeProjection ? Array.from({ length: 204 }, () => ({ ...structuredClone(object), objectId: randomUUID(),
+    attributes: { ...object.attributes, syntheticDescription: "s".repeat(6144) } })) : [object];
   const history: TrackHistoryStore = { name: "synthetic-persistent-port", init: vi.fn(async () => undefined), close: vi.fn(async () => undefined),
-    loadCurrent: vi.fn(async () => [object]), countCurrent: async () => 1, count: async () => 0,
+    loadCurrent: vi.fn(async () => objects), countCurrent: async () => objects.length, count: async () => 0,
     query: vi.fn(async () => { clock += 6000; unavailable = failAfterSlowRead === "outage"; advanced = failAfterSlowRead === "advanced"; return []; }),
     append: vi.fn(async () => { throw new Error("Unexpected DB write in hydration test"); }),
     upsertCurrent: vi.fn(async () => { throw new Error("Unexpected DB write in hydration test"); }),
     loadProjectionFences: async () => ({ resources: [], ownerHashes: [], subjectHashes: [], version: "synthetic-empty-frontier" }), projectionErasureReady: async () => true };
   const app = buildServer({ accountErasure: service, trackHistoryStore: history, now });
-  return { app, service, history, observations, advance: () => { clock += 5001; } };
+  return { app, service, history, objects, observations, advance: () => { clock += 5001; } };
 }
 
 describe("cold startup with durable erasure observation and slow track hydration", () => {
+  it("admits a multi-record conflict batch over 1MiB without raising the per-record bound", async () => {
+    const f = await fixture(false, true);
+    expect(Buffer.byteLength(JSON.stringify({ objects: f.objects, historyItems: [] }))).toBeGreaterThan(1_048_576);
+    expect(f.objects.every(object => Buffer.byteLength(JSON.stringify(object)) < 1_048_576)).toBe(true);
+    try {
+      await f.app.ready();
+      expect(f.history.query).toHaveBeenCalled();
+      expect(f.history.upsertCurrent).not.toHaveBeenCalled(); expect(f.history.append).not.toHaveBeenCalled();
+      expect((await f.app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
+    } finally { await f.app.close(); }
+  });
   it("renews the actual five-second observation after a slow persisted-history read", async () => {
     const f = await fixture();
     try {

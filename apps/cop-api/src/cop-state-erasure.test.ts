@@ -22,6 +22,20 @@ function fixture(initial?: ReturnType<typeof createInitialState>, frontier = emp
 }
 
 describe("actual COP RAM projection ownership and producer boundary", () => {
+  it("checks the final batch record and keeps per-record limits and durable fences", async () => {
+    const id = randomUUID(), frontier = emptyFrontier();
+    frontier.resources.push({ kind: "communityReport", id });
+    frontier.subjectHashes.push(runtimeSubjectHash(actor.subjectId));
+    const f = fixture(undefined, frontier); await f.port.init();
+    const batch = Array.from({ length: 204 }, () => ({ syntheticDescription: "s".repeat(6144) }));
+    expect(Buffer.byteLength(JSON.stringify(batch))).toBeGreaterThan(1_048_576);
+    expect(() => f.port.assertWriteAllowed(batch)).not.toThrow();
+    expect(() => f.port.assertWriteAllowed([...batch, { nested: { sourceReference: id } }])).toThrow("FENCED");
+    expect(() => f.port.assertWriteAllowed([...batch, { nested: { subjectId: actor.subjectId } }])).toThrow("FENCED");
+    expect(() => f.port.assertWriteAllowed([...batch, { syntheticDescription: "s".repeat(1_048_576) }])).toThrow("UNAVAILABLE");
+    expect(() => f.port.assertWriteAllowed(Array.from({ length: 100001 }, () => null))).toThrow("UNAVAILABLE");
+  });
+
   it("binds all actual collection pointers, preserves detached/frozen records and supports ordinary cloneable views", async () => {
     const f = fixture();
     expect(await f.port.ready()).toBe(false);

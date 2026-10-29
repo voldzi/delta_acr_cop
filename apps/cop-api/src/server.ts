@@ -5347,7 +5347,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       // Persistence/query can outlive the unchanged five-second observation.
       // Revalidate the real frontier before admitting the returned projection.
       await accountErasure?.refreshCachedGuard();
-      stateProjectionOwner?.assertWriteAllowed({ objects, historyItems });
+      // The 1MiB projection limit applies to each record, not this derived batch.
+      // Keep array bounds and validate every history metadata/point value.
+      stateProjectionOwner?.assertWriteAllowed(objects);
+      stateProjectionOwner?.assertWriteAllowed(historyItems.map(item => ({ ...item, points: undefined })));
+      for (const item of historyItems) stateProjectionOwner?.assertWriteAllowed(item.points);
       return buildConflictEvidenceIndex({
         evaluatedAt: requestNow.toISOString(),
         historyItems,
