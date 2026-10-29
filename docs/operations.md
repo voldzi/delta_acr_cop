@@ -501,8 +501,9 @@ physical phone acceptance; Jízda owns its separate SDK/UI delivery.
 
 The [2026-10-29 server acceptance record](testing/cop-planning-origin-20261029.md)
 identifies the actual corrected overlay image, retained failed checks and
-independently accepted credential provisioning. At that checkpoint planning
-remains disabled pending the bounded public canary and separate activation.
+independently accepted credential provisioning. The bounded public canary found
+both previews rejected with `ROUTING_RESTRICTIONS_RELAXATION_REQUIRED`; planning
+remains disabled. Discovery success and healthy services are not route acceptance.
 
 The API image starts the compiled server directly using
 `node scripts/start-cop-api.mjs`; the launcher preserves the former pnpm package
