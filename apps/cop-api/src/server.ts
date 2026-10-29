@@ -272,6 +272,8 @@ import { deriveMessagingPeerBindings } from "./messaging-peer-bindings.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
+import { registerPlanningOriginRoutes } from "./routes/routing-planning-routes.js";
+import { createPlanningOriginSourceFromEnv, PlanningOriginError, type PlanningOriginSource } from "./routing-planning-origin.js";
 import { createDriverMeasurementConsentStoreFromEnv, type DriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
 import { HttpDriverMeasurementSource, type DriverMeasurementSource } from "./driver-measurement-source.js";
 import {
@@ -423,6 +425,7 @@ export interface BuildServerOptions {
   missionArenaSource?: MissionArenaSource;
   placeGeocoder?: PlaceGeocoder;
   routingSource?: RoutingSource;
+  planningOriginSource?: PlanningOriginSource;
   safetyDataSource?: SafetyDataSource;
   sketchDrawingStore?: SketchDrawingStore;
   simSearchDataSource?: SimSearchDataSource;
@@ -1082,6 +1085,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
   const routingSource = options.routingSource ?? createRoutingSourceFromEnv();
+  const planningOriginSource = options.planningOriginSource ?? createPlanningOriginSourceFromEnv();
   const roadEnrichmentRunner = process.env.COP_ROAD_ENRICHMENT_ENABLED !== "false" && communityReportStore?.roadEnrichmentQueue && routingSource?.config.enabled
     ? new RoadEnrichmentRunner(communityReportStore.roadEnrichmentQueue, routingSource) : undefined;
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
@@ -9320,6 +9324,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       // Diagnostic transport failure must not replace the original routing rejection.
     }
   };
+  registerPlanningOriginRoutes(app, { source: planningOriginSource, now,
+    assertActorAllowed: async actor => {
+      try { await assertRuntimeActorAllowed(actor); }
+      catch (error) {
+        throw new PlanningOriginError(error instanceof RuntimeOwnerErasedError ? 403 : 503,
+          error instanceof RuntimeOwnerErasedError ? "ACCOUNT_ACCESS_REVOKED" : "PLANNING_ORIGIN_UNAVAILABLE");
+      }
+    } });
   registerRoutingRoutes(app, {
     profiles: async (request, reply) => {
       const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);

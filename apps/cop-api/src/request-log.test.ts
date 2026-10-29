@@ -2,8 +2,26 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { safeRequestLog } from "./request-log.js";
 import { registerDriverMeasurementRoutes } from "./routes/driver-measurement-routes.js";
+import { registerPlanningOriginRoutes } from "./routes/routing-planning-routes.js";
 
 describe("operational request log", () => {
+  it("does not log planning coordinates, identities, IPs or malformed request text", async () => {
+    const lines: string[] = [];
+    const app = Fastify({ logger: { serializers: { req: safeRequestLog }, stream: { write(line: string) { lines.push(line); } } } });
+    registerPlanningOriginRoutes(app, { now: () => new Date() });
+    try {
+      const malformed = await app.inject({ method: "POST", url: "/api/v1/routing/planning-origin/candidates?lat=PRIVATE_COORDINATE",
+        remoteAddress: "198.51.100.27", headers: { "content-type": "application/json", authorization: "Bearer PRIVATE_TOKEN", "x-cop-planning-actor": "PRIVATE_ACTOR" },
+        payload: "PRIVATE_REQUEST_BODY" });
+      expect(malformed.statusCode).toBe(400); expect(malformed.body).not.toContain("PRIVATE_");
+      const large = await app.inject({ method: "POST", url: "/api/v1/routing/planning-origin/preview", payload: { content: "PRIVATE_REQUEST_BODY".repeat(2000) } });
+      expect(large.statusCode).toBe(413);
+      const output = lines.join("");
+      for (const value of ["PRIVATE_", "198.51.100.27"]) expect(output).not.toContain(value);
+      expect(safeRequestLog({ method: "POST", url: "/api/v1/routing/planning-origin/PRIVATE_ACCOUNT" })).toEqual({
+        method: "POST", url: "/api/v1/routing/planning-origin/[redacted]" });
+    } finally { await app.close(); }
+  });
   it("keeps request correlation and path without OAuth credentials, media tickets or query data", async () => {
     const lines: string[] = [];
     const app = Fastify({

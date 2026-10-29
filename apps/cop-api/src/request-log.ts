@@ -12,6 +12,10 @@ export function safeRequestLog(request: {
     const known = ["/api/v1/driver-measurements/v1/consent", "/api/v1/driver-measurements/v1/batches"];
     return { method: request.method, url: known.includes(path) ? path : "/api/v1/driver-measurements/[redacted]" };
   }
+  if (path.startsWith("/api/v1/routing/planning-origin/")) {
+    const known = ["/api/v1/routing/planning-origin/candidates", "/api/v1/routing/planning-origin/preview"];
+    return { method: request.method, url: known.includes(path) ? path : "/api/v1/routing/planning-origin/[redacted]" };
+  }
   return {
     method: request.method,
     // Pairing invitations are credentials carried in a path segment.

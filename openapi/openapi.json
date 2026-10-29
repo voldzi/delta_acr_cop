@@ -14527,6 +14527,260 @@
           }
         }
       }
+    },
+    "/api/v1/routing/planning-origin/candidates": {
+      "post": {
+        "operationId": "planningOriginCandidates",
+        "summary": "Discover assisted planning origins.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingPlanningCandidatesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Candidate suggestions or accepted preview; never navigation authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingPlanningCandidatesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Strict validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Existing scoped service authentication failed before any engine request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Context/dataset/selection binding changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Context expired or unchanged route guards rejected result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Existing service/user rate budget exhausted; no fallback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Planning service disabled, unconfigured or unavailable. No fallback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account access revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "SIM response or route evidence could not be verified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Planning request exceeds 32 KiB. Raw parser text is never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Map Catalog"
+        ],
+        "description": "Requires a verified COP OIDC identity. COP derives the opaque actor server-side and uses a separately configured, explicitly authorized SIM service credential. Client identity headers and credentials are never forwarded. No automatic retry, direct provider fallback, navigation authority or measurement authority. Ordinary routing and independent GPS recording remain separate."
+      }
+    },
+    "/api/v1/routing/planning-origin/preview": {
+      "post": {
+        "operationId": "planningOriginPreview",
+        "summary": "Calculate a guarded planning-only preview.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingPlanningPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Candidate suggestions or accepted preview; never navigation authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingPlanningPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Strict validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Existing scoped service authentication failed before any engine request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Context/dataset/selection binding changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Context expired or unchanged route guards rejected result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Existing service/user rate budget exhausted; no fallback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Planning service disabled, unconfigured or unavailable. No fallback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account access revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "SIM response or route evidence could not be verified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Planning request exceeds 32 KiB. Raw parser text is never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Map Catalog"
+        ],
+        "description": "Requires a verified COP OIDC identity. COP derives the opaque actor server-side and uses a separately configured, explicitly authorized SIM service credential. Client identity headers and credentials are never forwarded. No automatic retry, direct provider fallback, navigation authority or measurement authority. Ordinary routing and independent GPS recording remain separate."
+      }
     }
   },
   "components": {
@@ -35167,6 +35421,1216 @@
             ]
           }
         ]
+      },
+      "RoutingPlanningCoordinate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        }
+      },
+      "RoutingPlanningPhoneOrigin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "coordinate",
+          "horizontalAccuracyM",
+          "observedAt",
+          "accuracyAuthorization"
+        ],
+        "properties": {
+          "kind": {
+            "const": "phone_measured"
+          },
+          "coordinate": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "horizontalAccuracyM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 5000
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accuracyAuthorization": {
+            "enum": [
+              "full",
+              "reduced"
+            ]
+          }
+        }
+      },
+      "RoutingPlanningManualOrigin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "coordinate",
+          "source"
+        ],
+        "properties": {
+          "kind": {
+            "const": "manual_point"
+          },
+          "coordinate": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "source": {
+            "enum": [
+              "user_map_selection",
+              "user_selected_last_known",
+              "address_selection"
+            ]
+          }
+        }
+      },
+      "RoutingPlanningOriginContext": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoutingPlanningPhoneOrigin"
+          },
+          {
+            "$ref": "#/components/schemas/RoutingPlanningManualOrigin"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "RoutingPlanningContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "purpose",
+          "contextId",
+          "originContext",
+          "destination",
+          "vehicleProfile"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-planning-origin-v1"
+          },
+          "purpose": {
+            "const": "planning_preview"
+          },
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originContext": {
+            "$ref": "#/components/schemas/RoutingPlanningOriginContext"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "vehicleProfile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "intent",
+              "coverageAcknowledged"
+            ],
+            "properties": {
+              "version": {
+                "const": "sim-mapped-road-profile-v1"
+              },
+              "intent": {
+                "enum": [
+                  "car",
+                  "commercial_truck",
+                  "car_with_trailer",
+                  "road_legal_4x4"
+                ]
+              },
+              "coverageAcknowledged": {
+                "const": "mapped_restrictions_incomplete"
+              },
+              "vehicle": {
+                "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileVehicle"
+              },
+              "driverDeclaredAuthorization": {
+                "type": "boolean",
+                "description": "False is ordinary mapped access. True requests a scoped private-access exemption, currently unsupported (422), never blanket ignore_access."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "intent": {
+                      "enum": [
+                        "commercial_truck",
+                        "car_with_trailer"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "vehicle"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "intent": {
+                      "const": "car_with_trailer"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "vehicle": {
+                      "required": [
+                        "trailer"
+                      ]
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "vehicle": {
+                      "not": {
+                        "required": [
+                          "trailer"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "RoutingPlanningDataset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "builtAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "builtAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RoutingPlanningBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contextId",
+          "requestHash",
+          "contextHash",
+          "profileHash",
+          "destinationHash",
+          "routingDataset"
+        ],
+        "properties": {
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "contextHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "profileHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "destinationHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "routingDataset": {
+            "$ref": "#/components/schemas/RoutingPlanningDataset"
+          }
+        }
+      },
+      "RoutingPlanningCandidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidateId",
+          "coordinate",
+          "offsetDistanceM",
+          "profileValidation",
+          "legalAccess",
+          "directionValidation",
+          "directions",
+          "directionsTruncated"
+        ],
+        "properties": {
+          "candidateId": {
+            "type": "string",
+            "pattern": "^candidate:[a-f0-9]{64}$"
+          },
+          "coordinate": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "offsetDistanceM": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 500
+          },
+          "profileValidation": {
+            "const": "not_checked"
+          },
+          "legalAccess": {
+            "const": "not_verified"
+          },
+          "directionValidation": {
+            "const": "graph_candidate_only"
+          },
+          "directions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/components/schemas/RoutingPlanningCandidateDirection"
+            }
+          },
+          "directionsTruncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoutingPlanningCandidatesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "context"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/RoutingPlanningContext"
+          }
+        }
+      },
+      "RoutingPlanningCandidatesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "purpose",
+          "state",
+          "binding",
+          "observedAt",
+          "validUntil",
+          "candidates",
+          "navigationEligible",
+          "measurementEligible"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-planning-origin-candidates-v1"
+          },
+          "purpose": {
+            "const": "planning_preview"
+          },
+          "state": {
+            "enum": [
+              "choices_available",
+              "no_candidates"
+            ]
+          },
+          "binding": {
+            "$ref": "#/components/schemas/RoutingPlanningBinding"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/RoutingPlanningCandidate"
+            }
+          },
+          "navigationEligible": {
+            "const": false
+          },
+          "measurementEligible": {
+            "const": false
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "choices_available"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "candidates": {
+                  "minItems": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "candidates": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RoutingPlanningSelection": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoutingPlanningCandidateSelection"
+          },
+          {
+            "$ref": "#/components/schemas/RoutingPlanningManualSelection"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "source"
+        }
+      },
+      "RoutingPlanningPreviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "context",
+          "expectedDataset",
+          "selection",
+          "discoveryBinding"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/RoutingPlanningContext"
+          },
+          "expectedDataset": {
+            "$ref": "#/components/schemas/RoutingPlanningDataset"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/RoutingPlanningSelection"
+          },
+          "discoveryBinding": {
+            "$ref": "#/components/schemas/RoutingPlanningBinding"
+          }
+        }
+      },
+      "RoutingPlanningPreviewAssessment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "purpose",
+          "binding",
+          "selectionHash",
+          "geometryHash",
+          "validUntil",
+          "navigationEligible",
+          "measurementEligible",
+          "guards",
+          "state",
+          "coverage",
+          "appliedProfile",
+          "profileHash",
+          "requestHash",
+          "engine",
+          "routingDataset",
+          "appliedFields",
+          "lastMile",
+          "limitations",
+          "knownClosuresEvidence"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-planning-origin-assessment-v1"
+          },
+          "purpose": {
+            "const": "planning_preview"
+          },
+          "binding": {
+            "$ref": "#/components/schemas/RoutingPlanningBinding"
+          },
+          "selectionHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "geometryHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "navigationEligible": {
+            "const": false
+          },
+          "measurementEligible": {
+            "const": false
+          },
+          "guards": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mappedProfile",
+              "knownClosures",
+              "closureRevision",
+              "snapToleranceM",
+              "nativeWarningCount",
+              "allVariantsValidated",
+              "fallbackUsed"
+            ],
+            "properties": {
+              "mappedProfile": {
+                "const": "applied_incomplete_coverage"
+              },
+              "knownClosures": {
+                "const": "applied_reviewed_snapshot"
+              },
+              "closureRevision": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "snapToleranceM": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 25
+              },
+              "nativeWarningCount": {
+                "const": 0
+              },
+              "allVariantsValidated": {
+                "const": true
+              },
+              "fallbackUsed": {
+                "const": false
+              }
+            }
+          },
+          "state": {
+            "const": "applied"
+          },
+          "coverage": {
+            "const": "mapped_restrictions_incomplete"
+          },
+          "appliedProfile": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileProfile"
+          },
+          "profileHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "engine": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "version",
+              "costing",
+              "fallbackUsed"
+            ],
+            "properties": {
+              "provider": {
+                "const": "valhalla"
+              },
+              "version": {
+                "const": "3.8.3"
+              },
+              "costing": {
+                "enum": [
+                  "auto",
+                  "truck"
+                ]
+              },
+              "fallbackUsed": {
+                "const": false
+              }
+            }
+          },
+          "routingDataset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "builtAt"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "builtAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "appliedFields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "heightM",
+                "widthM",
+                "lengthM",
+                "loadedWeightKg",
+                "axleLoadKg",
+                "axleCount",
+                "road_first_preference"
+              ]
+            }
+          },
+          "lastMile": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileLastMile"
+          },
+          "limitations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "knownClosuresEvidence": {
+            "$ref": "#/components/schemas/RoutingPlanningKnownClosuresEvidence"
+          }
+        }
+      },
+      "RoutingPlanningPreviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "purpose",
+          "context",
+          "planningOrigin",
+          "offsetDistanceM",
+          "connector",
+          "navigationEligible",
+          "measurementEligible",
+          "assessment",
+          "route"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-planning-origin-preview-v1"
+          },
+          "purpose": {
+            "const": "planning_preview"
+          },
+          "context": {
+            "$ref": "#/components/schemas/RoutingPlanningContext"
+          },
+          "planningOrigin": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "offsetDistanceM": {
+            "type": "number",
+            "minimum": 0
+          },
+          "connector": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "navigable"
+            ],
+            "properties": {
+              "state": {
+                "const": "unknown"
+              },
+              "navigable": {
+                "const": false
+              }
+            }
+          },
+          "navigationEligible": {
+            "const": false
+          },
+          "measurementEligible": {
+            "const": false
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/RoutingPlanningPreviewAssessment"
+          },
+          "route": {
+            "$ref": "#/components/schemas/RoutingPlanningPreviewPath"
+          }
+        }
+      },
+      "RoutingPlanningPreviewPath": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "previewPathId",
+          "geometry",
+          "distanceM",
+          "durationSeconds",
+          "warnings"
+        ],
+        "properties": {
+          "previewPathId": {
+            "type": "string",
+            "pattern": "^preview:[a-f0-9]{64}$"
+          },
+          "geometry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "properties": {
+              "type": {
+                "const": "LineString"
+              },
+              "coordinates": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    {
+                      "type": "number",
+                      "minimum": -90,
+                      "maximum": 90
+                    }
+                  ],
+                  "items": false
+                }
+              }
+            }
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0
+          },
+          "durationSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "maxItems": 0,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoutingPlanningCandidateDirection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "directionId",
+          "validation"
+        ],
+        "properties": {
+          "directionId": {
+            "type": "string",
+            "pattern": "^direction:[a-f0-9]{64}$"
+          },
+          "headingDeg": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360
+          },
+          "validation": {
+            "const": "graph_candidate_only"
+          }
+        }
+      },
+      "RoutingPlanningCandidateSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "coordinate",
+          "source",
+          "confirmed",
+          "candidateId",
+          "directions",
+          "directionsTruncated"
+        ],
+        "properties": {
+          "coordinate": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "confirmed": {
+            "const": true
+          },
+          "source": {
+            "const": "candidate_selection"
+          },
+          "candidateId": {
+            "type": "string",
+            "pattern": "^candidate:[a-f0-9]{64}$"
+          },
+          "directions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/components/schemas/RoutingPlanningCandidateDirection"
+            }
+          },
+          "directionsTruncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoutingPlanningManualSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "coordinate",
+          "source",
+          "confirmed"
+        ],
+        "properties": {
+          "coordinate": {
+            "$ref": "#/components/schemas/RoutingPlanningCoordinate"
+          },
+          "confirmed": {
+            "const": true
+          },
+          "source": {
+            "const": "user_map_selection"
+          }
+        }
+      },
+      "RoutingPlanningSharedMappedRoadProfileVehicle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "heightM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 5
+          },
+          "widthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 3
+          },
+          "lengthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 25
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 60000
+          },
+          "axleLoadKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 40000
+          },
+          "axleCount": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 20
+          },
+          "trailer": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileTrailer"
+          }
+        }
+      },
+      "RoutingPlanningSharedMappedRoadProfileTrailer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attached",
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "attached": {
+            "const": true
+          },
+          "heightM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 5
+          },
+          "widthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 3
+          },
+          "lengthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 25
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 60000
+          }
+        }
+      },
+      "RoutingPlanningSharedMappedRoadProfileProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "intent",
+          "coverageAcknowledged"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-mapped-road-profile-v1"
+          },
+          "intent": {
+            "enum": [
+              "car",
+              "commercial_truck",
+              "car_with_trailer",
+              "road_legal_4x4"
+            ]
+          },
+          "coverageAcknowledged": {
+            "const": "mapped_restrictions_incomplete"
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileVehicle"
+          },
+          "driverDeclaredAuthorization": {
+            "type": "boolean",
+            "description": "False is ordinary mapped access. True requests a scoped private-access exemption, currently unsupported (422), never blanket ignore_access."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "intent": {
+                  "enum": [
+                    "commercial_truck",
+                    "car_with_trailer"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "vehicle"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "intent": {
+                  "const": "car_with_trailer"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "vehicle": {
+                  "required": [
+                    "trailer"
+                  ]
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "vehicle": {
+                  "not": {
+                    "required": [
+                      "trailer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RoutingPlanningSharedMappedRoadProfileLastMile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "target",
+          "mappedEndpoint",
+          "distanceM"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "mapped_target",
+              "target_guidance_only"
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileCoordinate"
+          },
+          "mappedEndpoint": {
+            "$ref": "#/components/schemas/RoutingPlanningSharedMappedRoadProfileCoordinate"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25
+          }
+        },
+        "description": "Geometry/steps stop at mappedEndpoint. Any displaced target is guidance only, never an appended traversable segment. More than 25m is rejected, not silently snapped."
+      },
+      "RoutingPlanningSharedMappedRoadProfileCoordinate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lon",
+          "lat"
+        ],
+        "properties": {
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          }
+        }
+      },
+      "RoutingPlanningKnownClosuresEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "state",
+          "coverage",
+          "revision",
+          "observedAt",
+          "validUntil",
+          "appliedClosureCount",
+          "geometryHash",
+          "requestHash",
+          "exclusions",
+          "routingDataset",
+          "engine",
+          "limitations"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-known-road-closures-v1"
+          },
+          "state": {
+            "const": "applied"
+          },
+          "coverage": {
+            "const": "incomplete"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "appliedClosureCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 128
+          },
+          "geometryHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of response.query serialized as JSON recursively sorting object keys, preserving array order and numeric values. COP additionally validates normalized query identity against the requested trip; a matching hash alone does not prove identity."
+          },
+          "exclusions": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "closureId",
+                "sourceDirection",
+                "enforcedDirection",
+                "enforcementReason",
+                "reviewedGeometryHash"
+              ],
+              "properties": {
+                "closureId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "sourceDirection": {
+                  "enum": [
+                    "both",
+                    "unknown"
+                  ]
+                },
+                "enforcedDirection": {
+                  "const": "both"
+                },
+                "enforcementReason": {
+                  "enum": [
+                    "source_both_direction",
+                    "conservative_whole_structure_avoidance"
+                  ]
+                },
+                "reviewedGeometryHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "sourceDirection": {
+                      "const": "both"
+                    },
+                    "enforcementReason": {
+                      "const": "source_both_direction"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "sourceDirection": {
+                      "const": "unknown"
+                    },
+                    "enforcementReason": {
+                      "const": "conservative_whole_structure_avoidance"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "routingDataset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "builtAt"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "builtAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "engine": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "version",
+              "fallbackUsed"
+            ],
+            "properties": {
+              "provider": {
+                "const": "valhalla"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fallbackUsed": {
+                "const": false
+              }
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          }
+        },
+        "description": "Additive ordinary-routing evidence only; absence means unknown/not requested, never strict acceptance. observedAt is latest successful full snapshot confirmation, not event onset or physical observation. exclusions length equals appliedClosureCount and closureId values are unique. With unknown source direction, both-direction avoidance is explicitly conservative and requires individual review of an official whole-structure closure statement plus exact graph geometry. Every applied closure uses separately reviewed graph geometry and fresh full TEC membership. Coverage is always incomplete. Configured source/graph/engine/expiry failures return an error without a discarded-exclusion fallback."
       }
     }
   },

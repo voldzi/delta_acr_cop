@@ -139,6 +139,12 @@ AI clients must call only COP API endpoints such as
 Browser and native clients must never call Ollama, AI KnowledgeBase LLM Gateway
 or any provider service token directly.
 
+Separate authenticated planning-only operations are documented in
+[assisted planning origin](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md#assisted-planning-authenticated-actor-boundary-implementation-in-progress):
+`POST /api/v1/routing/planning-origin/candidates` and `/preview`. They use the same
+COP error envelope, preserve full vehicle/closure proof checks, and never provide
+navigation or measurement authority. They default off until separate activation.
+
 Emergency routing clients must also call only COP API endpoints:
 `/api/v1/routing/profiles`, `/api/v1/routing/route`,
 `/api/v1/routing/alternatives`, `/api/v1/routing/isochrone` and

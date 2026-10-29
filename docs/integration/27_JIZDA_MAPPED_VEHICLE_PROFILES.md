@@ -428,3 +428,108 @@ release index update is claimed. Selected current files were inspected directly.
 Diagnostic logger failure is tested separately for both route endpoints: it cannot
 replace the original 422, alter its public correlation echo or trigger another
 upstream call. Only the new diagnostic emission is caught, not routing failures.
+
+### Assisted planning: authenticated actor boundary (implementation in progress)
+
+The proposed separate planning-origin operations are not deployed. Ordinary COP
+routing currently forwards correlation and request time, but no SIM service bearer
+or user assertion. SIM has a separate existing geo service-principal lookup; a
+read-only infrastructure inventory confirmed principal `cop`, but no corresponding
+named credential configuration in the running COP API. This is not evidence of a
+working authenticated planning connection.
+
+`routing-planning-actor.ts` derives a domain-separated SHA-256 assertion only from
+the existing verified-OIDC request WeakMap. It ignores client headers/body and
+decoded-only identities, rejects delimiter ambiguity, and loses authority if the
+authenticated bearer changes. It supplies quota/request binding under a separately
+authenticated, explicitly allowed COP service; the hash itself is no credential.
+Seven isolated tests cover this boundary, including account isolation, refresh,
+invalid signature/issuer, lab identity and forged actor input. No production call
+or new endpoint activation was performed for these tests.
+
+Joint wire review resolved the full mapped-profile facts, conditional candidate
+selection, server-issued dataset for manual planning and separate SDK-verifiable
+versus actor-bound hashes. A final additive review restored actual closure evidence;
+guard constants alone cannot replace the existing COP verifier.
+
+#### New operations and state
+
+- `POST /api/v1/routing/planning-origin/candidates` accepts a strict `context` with
+  version/purpose, UUID contextId, original measured or explicit manual origin,
+  destination and complete mapped vehicle profile. Measured metadata preserves the
+  original timestamp, accuracy in metres and full/reduced authorization. Accepted
+  age is 0–900 seconds; accuracy is greater than zero and at most 5000 metres.
+- One locate query searches within 500 metres independently of that accuracy and
+  returns zero to three choices. Distances use metres; heading uses degrees in
+  [0, 360). Directions are graph candidates, never legal/dimension verification.
+  Opposite directions and distinct carriageways must not be silently collapsed.
+  Discovery validity is at most 120 seconds and bounded by sample/map validity.
+- `POST /api/v1/routing/planning-origin/preview` requires the unchanged context,
+  discovery binding/dataset and explicit selection. Candidate selection requires
+  its ID/direction metadata; manual selection forbids those fields. Even manual
+  planning first obtains a discovery binding, including a `no_candidates` result.
+  A selection must remain within 500 metres of the context origin. IDs have no
+  historical issuance guarantee in this stateless design and never force an edge.
+- Preview performs one fully guarded route computation. The response has a distinct
+  `previewPathId`, false navigation/measurement eligibility, an unknown non-navigable
+  connector and a purpose-specific assessment. Full original mapped facts and
+  `knownClosuresEvidence` remain independently checked. No ordinary route assessment
+  is exposed. Saving a plan does not preserve expired authority; departure obtains
+  a fresh profile, identity and ordinary route. Independent GPS recording is separate.
+
+The exact schemas are in [binding OpenAPI](../../openapi/openapi.json) and
+[runtime schema copy](../api/schemas/planning-origin-v1.schemas.json). The shared
+[synthetic fixture](../api/examples/planning-origin-v1.sim-fixture.json) was exported
+by SIM code and contains no live/private coordinate evidence or native acceptance.
+Its SHA-256 is `b3f9556c89e4d08e60e2f6c99c6cb82cfb3396e0ed993502b9d4baed4bd688bb`.
+The accepted SIM fragment SHA-256 is
+`82c81759ab8b59b3ead1a311d401029492c72e00b6770c4fc598c1ccb943c08e`.
+
+#### Authentication, limits and deployment configuration
+
+COP accepts only its verified OIDC/BFF identity. It derives
+`SHA256("cop-planning-actor-v1" + NUL + issuer + NUL + subject)` server-side and
+overwrites `X-COP-Planning-Actor`. Neither body/query identity nor a client header
+selects the actor, credential or provider. The OAuth bearer/cookie is never sent
+to SIM. The new assertion is pseudonymous quota/request context, not an access key.
+
+SIM authenticates its existing geo bearer principal `cop` and requires explicit
+membership in `PLANNING_ORIGIN_ALLOWED_SERVICE_ACTORS` (empty means deny). COP uses
+`COP_ROUTING_PLANNING_ENABLED=false` by default and a separate
+`COP_ROUTING_PLANNING_SERVICE_TOKEN`. No absent setting borrows an AI, erasure or
+other token. Only production secret files may hold the provisioned geo credential.
+The existing routing base URL/timeout apply; no public port or network change is
+introduced. SIM applies its geo requests-per-minute limit to both service and
+opaque actor (default 60), across both operations; counters are bounded and ephemeral.
+
+COP bounds request bodies to 32 KiB and response bodies to 2 MiB, rejects redirects,
+and retains its timeout throughout response reading. Final validity is rechecked
+after the account-eligibility check completes.
+Responses are `no-store`; no result cache/single-flight exists. Account eligibility
+is checked before and after the upstream call. Operational request logs keep only
+the fixed planning operation and request correlation; no raw body/parser text,
+headers, actor, coordinates, IP or free path segments. There are no new analytics.
+
+Errors preserve the COP envelope. Invalid inputs return 400, missing user identity
+401, changed bindings 409, rejected/stale planning inputs 422, body excess 413,
+quota 429 with bounded Retry-After, invalid evidence 502, and disabled/unconfigured
+or unavailable service 503. A SIM service-auth failure is COP 503, not a user-login
+401. No error retries, direct Valhalla/OpenAI calls or silent manual substitution.
+
+Production activation remains a separate recorded step after image content/start,
+bounded native and authenticated public acceptance. Current source alone does not
+prove that the original phone-to-Penny request succeeds. Rollback disables the COP
+flag and SIM planning allowlist, then restores the accepted image selectors; ordinary
+routing remains unchanged. Keep the approved prior images/configuration available.
+
+Source verification on 2026-10-29: routing/identity/privacy regression 216 passed
+with two existing opt-in skips; two packaging/contract-copy tests passed; contract
+suite 29 passed. API TypeScript build, scoped ESLint, JSON Schema validation,
+skeleton and diff checks passed. OpenAPI lint succeeded with 32 non-fatal warnings
+(including inherited conditional-schema composition diagnostics). All pre-existing
+OpenAPI paths and schemas were compared semantically and remain unchanged.
+The first restricted regression could not open localhost sockets; the unchanged
+OIDC tests and final regression passed with loopback permitted. No production or
+external-provider request was used to obtain these results. SIM independently
+reviewed the COP implementation without a blocking source finding. Native engine,
+image startup, production and physical device results are separate records.

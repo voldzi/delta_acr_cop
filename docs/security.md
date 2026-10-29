@@ -176,7 +176,15 @@ sdíleným klíčem placený fallback.
 
 The immutable routing boundary forwards only typed trip fields and authenticates through the existing COP session. Request/applied/geometry hashes bind every variant; no emergency-access downgrade or fallback may discard mandatory requirements. Public errors do not expose private upstream endpoint or content; trip/GPS bodies are not logged or persisted by this boundary. Activation of real driver measurements is separate.
 
-Routing verifies the signed OIDC/BFF actor before forwarding and never logs or forwards bearer tokens: [routing identity boundary](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md#authenticated-identity-boundary).
+Routing verifies the signed OIDC/BFF actor before forwarding and never logs or forwards users' bearer tokens: [routing identity boundary](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md#authenticated-identity-boundary).
+
+The separate planning-origin feature uses only an explicitly configured geo
+service credential and a server-derived pseudonymous actor assertion. The assertion
+is accepted by SIM only under the allowlisted `cop` service principal and has no
+standalone authority. It does not reuse AI/erasure keys or expose credentials to
+the browser. Typed inputs, full mapped/closure evidence, purpose and account binding
+are independently verified; redirects/retries/fallback and private request logging
+are prohibited. See [ADR 0058](adr/0058_ASSISTED_PLANNING_ORIGIN.md).
 
 Shared mobility owns a separate PostgreSQL domain and active-only private roster.
 No public/pending community member receives private data. Receipt replay is scoped

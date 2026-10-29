@@ -478,6 +478,17 @@ Košík thread on 2026-10-21.
 
 ## Arrival routing image pair
 
+The separate assisted planning-origin candidate has its own default-off activation:
+`COP_ROUTING_PLANNING_ENABLED=false`, dedicated
+`COP_ROUTING_PLANNING_SERVICE_TOKEN`, and the SIM
+`PLANNING_ORIGIN_ALLOWED_SERVICE_ACTORS` default-empty allowlist. Provision only the
+existing geo principal `cop`, within production secret files; no AI/erasure token
+reuse, new key, port or network change. Image content/start and bounded native/public
+acceptance precede activation. Keep the accepted ordinary routing image/configuration
+for rollback. See [contract and deployment state](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md)
+and [ADR 0058](adr/0058_ASSISTED_PLANNING_ORIGIN.md). Source tests do not establish
+physical phone acceptance; Jízda owns its separate SDK/UI delivery.
+
 The bounded COP release and safe reversion of the two approved routing images,
 including retained pending evidence and unchanged erasure protections, are in
 [the operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md). A read-only

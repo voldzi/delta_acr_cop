@@ -82,3 +82,4 @@ published paths are preserved for integration references.
 - [0056 — Clean user reset and shared identity deletion](0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md)
 
 - [0057: Explicit user-selected road arrival](0057_USER_SELECTED_ARRIVAL.md): compatible candidate, independent proof admission and pending production/device acceptance.
+- [0058: Explicit assisted planning origin](0058_ASSISTED_PLANNING_ORIGIN.md): separate preview purpose, authenticated service delegation and full vehicle/closure proof checks.
