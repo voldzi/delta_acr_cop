@@ -90,6 +90,7 @@ Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integratio
 
 - [27. Jízda mapped vehicle profiles](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md): typed ordinary intents, route-bound evidence and separate assisted planning-origin contract (ordinary server release deployed; new planning deployment and mobile acceptance separate).
 - [Assisted planning server acceptance, 2026-10-29](testing/cop-planning-origin-20261029.md): accepted image/provisioning; both public previews rejected with 422, so activation is withheld; native and phone acceptance remain separate.
+- [Source-only diagnostic follow-up](testing/cop-planning-diagnostic-plan-20261029.md): minimal preview CID proposal and limited ordinary alternative; shared diagnostic scope and operational admission remain unresolved, with no runtime change.
 
 Public demo analytics: [integration and release gate](analytics/integration.md), [CZ/EN notice proposal](analytics/privacy-review.md); disabled pending acceptance.
 
