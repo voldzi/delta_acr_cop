@@ -144,3 +144,62 @@ counting or any state drift. Only allowlisted metadata may be retained.
 
 A diagnostic result is not preview acceptance, permission to enable planning, or
 physical COP/Jízda acceptance. Those decisions require their own actual evidence.
+
+## Selected first diagnostic step and actual attempts
+
+Root, COP and SIM selected a smaller first step after the new human instruction:
+an isolated **native-only** comparison of `thor.extended_search=false` and `true`
+using the existing pinned Valhalla image and read-only resolved graph. This does
+not activate either shared diagnostic variant above, call the TEC provider or
+construct an empty closure snapshot. Full SIM guards are not executed in this
+step, so it cannot establish production, preview or legal-access acceptance.
+
+The new fixture deliberately fixes a common departure time, static speed types
+and `prioritize_bidirectional=true` in both phases. These are explicit differences
+from the historical production requests. Its baseline/variant difference is only
+`thor.extended_search`. Geometry and raw engine logs remain in Root RAM. The
+frozen source helper/fixture tests passed 14 synthetic tests, independently
+repeated by COP.
+
+Root first read only the original 6f log window, finding two numeric reverse-search
+exhaustion messages. This was a global-window observation, not per-request
+attribution. Its receipt SHA-256 is
+`fdddeead44e93c06db5d8a71d1e465a2afd3da7c31bfa8d298266812410f796a`.
+
+| Root operation | Actual result | Native requests | Extended-search variant |
+| --- | --- | --- | --- |
+| `2f04ce68-1b56-45ad-9d38-7e8cad586ea5` | Startup metadata waiter inspected only IPv4, while the engine listens via IPv6; owned container cleaned up, production unchanged | 0 | Not executed |
+| `d54bef4a-6ab4-468f-8aec-f6393cb1b91b` | Both **baseline** public cases returned native HTTP 200, a trip and warning 401; old parser did not recognize colored error prefixes | 4: two status, two route | Not executed |
+| `30f80992-b1c3-4865-9cde-a708da38cfbf` | Actual paired comparison: both baseline and both extended-search cases returned native HTTP 200, a trip, warning 401 and one recognized reverse-exhaustion message each | 8: four status, four route | Executed; did not remove warning 401 |
+
+The respective receipt SHA-256 values are
+`bbae38d27d2c212e5e06155839767ee7e800bf5f8dc124fcca775254767fba04`
+and `b0f7c428fad6715be5d72b681ebb84a27af4d1d160b5fdcc0664898917efb6a4`.
+Neither operation is a completed A/B comparison. Zero parsed exhaustion messages
+in the second operation are not evidence that such messages were absent.
+
+Root demonstrated the formatter mismatch: the configured logger inserts ANSI
+color/reset sequences between `[ERROR]` and the message. SIM supplied a separate
+bounded SGR-aware parser v2, preserving the original parser and receipts. Seven
+new pure parser tests passed and were independently repeated by COP. Unknown
+controls, unrecognized exhaustion format, truncated counts or incomplete streams
+must prevent variant admission. Root then executed the manually admitted eight-
+request frame without changing fixture/profile/time. Its receipt SHA-256 is
+`5957e8395426845f89b9715eab1ea025e186b2ba8ee106b54ede6077b64c052b`.
+The corrected parser recognized ten SGR sequences per route observation, with
+no unsupported controls, unknown exhaustion format, truncation or stream overflow.
+Each A/B payload hash matched. The same binary, graph and common isolated config
+were used; only `extended_search` differed between the two phases.
+
+The actual cumulative native count is 12, with zero provider or production API
+calls. Independent Root readback confirmed all three operations' containers
+removed and the production process/configuration unchanged. The durable aggregate
+audit SHA-256 is
+`3a24a670abeeff56e0501d906295e135e258858249ca78821338d7dffea68ddf`.
+
+**Negative result:** setting `extended_search=true` alone did not resolve warning
+401 in either new public native fixture. Do not deploy that setting as a proven
+fix, enable planning or proceed to phone acceptance. The next source investigation
+must distinguish the conditional origin/destination pruning gate from another
+algorithm or an empty/failed `FormPath` result. Additional parameter trials without
+such a discriminator are not an accepted continuation of these closed cases.
