@@ -264,6 +264,38 @@ publication is authorized by this server release.
 
 ## Capabilities and assessment
 
+### Planning-origin investigation on 2026-10-29 (design pending)
+
+One physical Jízda 70 request returned `ROUTING_LOCATION_NOT_ROUTABLE` at
+`native_request`, costing auto, requested time mode none, one requested variant,
+zero returned routes and no warning codes. Algorithm and multipass cause were
+not reported; the failing endpoint is unknown. Source mapping for this branch is
+Valhalla HTTP 400 / numeric 171. No geometry existed for closure validation;
+this is not evidence of a closure failure. The diagnostic window was closed
+after capture and SIM remained healthy. No retry or TestFlight upload occurred.
+
+Client source review found that Jízda retains the original CLLocation accuracy
+and timestamp, but currently sends only coordinates and an approximate flag into
+its preview calculation; COP's route request has no uncertainty fields. Existing
+client planning limits are 900 seconds and 5000 metres. Approximate may mean age
+or coarse accuracy, so neither cause is established for the captured request.
+SIM's current known-closure route uses at most 25 metres for every waypoint's
+native search and subsequent snap validation.
+
+SIM ADR 0050 proposes a separate planning preview with an immutable measured
+anchor and an explicit user-selected planning access point. It is not a frozen
+wire contract or implemented API. COP requires a distinct typed result and
+purpose-bound verification, unchanged full vehicle/closure/geometry safeguards,
+bounded discovery and post-await identity/input revalidation. Manual/address
+origins must not fabricate measured accuracy. Candidate selection grants no road
+access and must not silently move GPS or enable navigation/recording.
+
+Before implementation, jointly resolve client/server age and accuracy bounds,
+actual candidate-provider capabilities and proof binding. Avoid introducing a
+new signing secret solely for selection when existing, correctly domain-separated
+verification can meet the requirements. COP's binding OpenAPI and unknown-field
+rejection remain unchanged until that review; no additional live query is implied.
+
 `GET /api/v1/routing/profiles` adds optional `mappedProfiles`, version
 `sim-mapped-road-profile-capabilities-v1`. Keep existing strict `capabilities`
 separate. Availability is `disabled` or `requires_runtime_validation`; the latter
