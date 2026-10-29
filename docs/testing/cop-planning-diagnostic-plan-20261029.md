@@ -243,3 +243,15 @@ template. COP independently checked these exact diffs and repeated all 13 pure
 tests successfully. The original package and failed receipt remain preserved.
 This is source/build preparation evidence, not a completed native comparison or
 production route acceptance.
+
+Root's corrected C++20 build (`d2b22526-72b1-4ed5-9c1a-d67a15dba37d`)
+successfully compiled the actor, control search and observation search objects.
+It then failed at the first link because the transitive pkg-config output uses
+bare `libprotokit.a` filenames. The failed link log SHA-256 is
+`40083ba2378615b4f059ee228ca45927837b33a8d7e7a6e38409efe048edf27a`.
+Root subsequently verified that the archive exists at
+`/usr/lib/x86_64-linux-gnu/libprotokit.a` (1,248,008 bytes; SHA-256
+`3472cb3ddf9a26056b371c0ebd566b4cd825c1b3e4cb76a55434aeecb5166307`).
+The proposed next correction binds the two exact bare tokens to this verified
+path and reuses the preserved objects and archives. It does not remove a
+library, change compilation, download packages or establish native acceptance.
