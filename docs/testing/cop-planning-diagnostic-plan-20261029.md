@@ -5,6 +5,15 @@ diagnostic flag or additional HTTP/native test is changed by this document.
 No maintenance hold remains. The [actual canary record](cop-planning-origin-20261029.md)
 remains a failed acceptance, with planning disabled.
 
+Subsequent direct human instruction in the Jízda thread on 2026-10-29 authorizes
+targeted diagnosis, the necessary verified repair and later installation on the
+owner's iPhone, with no TestFlight upload and preserved vehicle safety limits.
+This instruction was independently read from user message
+`01a188c5-7f91-7013-ba40-bdfbf69f1429`. COP, SIM and the Root operator resumed
+selection of a method that can distinguish the actual multipass trigger; logging
+the already-known warning alone is insufficient. Root remains the sole host
+executor. No new diagnostic deployment or probe is claimed in this record.
+
 ## What is known and what is missing
 
 Both previews returned 422 because the deployed SIM guard rejects native warning
@@ -111,6 +120,16 @@ sentinel leakage; off/expiry/cap behavior through preview; no diagnostic on succ
 non-interfering emit failure; and unchanged malformed-warning/geometry failures,
 payload/bindings, ordinary behavior and shared cap. These tests are **not yet
 implemented or passed**. Type-check/build and contract checks remain required.
+
+After the new instruction, COP's HTTP/transport regression run passed 21 tests.
+The added synthetic OIDC discovery-to-preview rejection test verifies unchanged
+422/code, the same correlation ID through COP and its upstream header, exactly
+one preview call, unmodified request body, no direct fallback and no upstream
+provider text or credential in the user response. It also confirms that internal
+diagnostic fields are absent from that response. The existing BFF-session test
+now uses the session store's wall-clock expiry rather than an already elapsed
+routing-fixture timestamp; production expiry behavior is unchanged. These tests
+do not test SIM's proposed internal CID wire or native multipass instrumentation.
 
 ## Possible bounded public scenario: not admitted or executed
 

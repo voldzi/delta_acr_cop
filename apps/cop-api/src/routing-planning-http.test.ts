@@ -14,6 +14,7 @@ const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const serviceToken = "synthetic-geographic-service-token";
 let calls: Array<{ body: unknown; headers: Headers; url: string }>;
 let upstreamStatus: number;
+let upstreamCode: string | undefined;
 function token(subject = "synthetic-a") {
   const now = Math.floor(Date.now() / 1000);
   const head = Buffer.from(JSON.stringify({ alg: "RS256", kid })).toString("base64url");
@@ -23,7 +24,7 @@ function token(subject = "synthetic-a") {
   return `${data}.${createSign("RSA-SHA256").update(data).end().sign(pair.privateKey).toString("base64url")}`;
 }
 beforeEach(() => {
-  calls = []; upstreamStatus = 200;
+  calls = []; upstreamStatus = 200; upstreamCode = undefined;
   for (const [key, value] of Object.entries({ COP_AUTH_MODE: "oidc", COP_ALLOW_LAB_TOKEN: "false", COP_ROUTING_PLANNING_ENABLED: "false",
     COP_OIDC_ISSUER: issuer, COP_OIDC_JWKS_URI: `${issuer}/jwks`, COP_OIDC_ALLOWED_CLIENTS: "csm-mobile", COP_OIDC_REQUIRED_ROLE: "cop_operator" })) vi.stubEnv(key, value);
   clearJwksCacheForTests();
@@ -31,7 +32,7 @@ beforeEach(() => {
     if (String(url) === `${issuer}/jwks`) return Response.json({ keys: [{ ...pair.publicKey.export({ format: "jwk" }), kid, alg: "RS256", use: "sig" }] });
     const body = JSON.parse(String(init?.body)), headers = new Headers(init?.headers);
     calls.push({ body, headers, url: String(url) });
-    if (upstreamStatus !== 200) return Response.json({ code: upstreamStatus === 429 ? "PLANNING_ORIGIN_LIMIT_EXCEEDED" : "PRIVATE_UNKNOWN_CODE",
+    if (upstreamStatus !== 200) return Response.json({ code: upstreamCode ?? (upstreamStatus === 429 ? "PLANNING_ORIGIN_LIMIT_EXCEEDED" : "PRIVATE_UNKNOWN_CODE"),
       message: "PRIVATE_PROVIDER_TEXT" }, { status: upstreamStatus, headers: { "Retry-After": "30" } });
     const actor = headers.get("x-cop-planning-actor")!;
     if (String(url).endsWith("/candidates")) {
@@ -95,6 +96,34 @@ describe("authenticated COP planning HTTP facade", () => {
       expect(query.statusCode).toBe(400); expect(calls).toHaveLength(0);
     } finally { await api.close(); }
   });
+  it("preserves the diagnostic correlation and strict preview denial without exposing provider details or retrying", async () => {
+    const api = app();
+    const correlationId = "a04d6112-155b-4cd5-a0de-09e3cf732fe1";
+    const userToken = token();
+    try {
+      const discovery = await api.inject({ method: "POST", url: path("candidates"), payload: raw.candidatesRequest,
+        headers: { authorization: `Bearer ${userToken}` } });
+      expect(discovery.statusCode).toBe(200);
+      const request = { ...raw.previewRequest, discoveryBinding: discovery.json().binding };
+      upstreamStatus = 422; upstreamCode = "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED";
+      const response = await api.inject({ method: "POST", url: path("preview"), payload: request,
+        headers: { authorization: `Bearer ${userToken}`, "x-correlation-id": correlationId } });
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe("ROUTING_RESTRICTIONS_RELAXATION_REQUIRED");
+      expect(response.json().error.correlationId).toBe(correlationId);
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(calls).toHaveLength(2);
+      const upstream = calls[1]!;
+      expect(upstream.url).toBe("https://sim.example.test/api/v1/routing/planning-origin/preview");
+      expect(upstream.headers.get("x-correlation-id")).toBe(correlationId);
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${serviceToken}`);
+      expect(upstream.body).toEqual(request);
+      expect(JSON.stringify(upstream.body)).not.toContain(correlationId);
+      for (const privateValue of ["PRIVATE_PROVIDER_TEXT", serviceToken, userToken]) expect(response.body).not.toContain(privateValue);
+      expect(response.json()).not.toHaveProperty("route");
+      expect(response.json()).not.toHaveProperty("diagnostics");
+    } finally { await api.close(); }
+  });
   it("keeps the new feature off unless explicitly configured", async () => {
     const api = app(false);
     try {
@@ -113,7 +142,8 @@ describe("authenticated COP planning HTTP facade", () => {
   });
   it("accepts the web session while refusing a cross-origin or revoked session", async () => {
     vi.stubEnv("COP_PUBLIC_URL", "https://cop.example.test");
-    const store = new InMemoryWebSessionStore(), expires = new Date(new Date(raw.nowUtc).getTime() + 300_000);
+    // The session store uses wall time independently of the routing fixture clock.
+    const store = new InMemoryWebSessionStore(), expires = new Date(Date.now() + 300_000);
     const session = await store.create({ accessToken: token(), accessTokenExpiresAt: expires,
       profile: { subjectId: "synthetic-a", name: "Synthetic", username: "synthetic" } }, expires);
     const api = app(true, store);
