@@ -44,6 +44,16 @@ Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
 `/health/dependencies`.
 
+Dependency health starts its independent account-erasure-owner, messaging and AI
+checks concurrently. Each retains its existing timeout, error fallback and status;
+no readiness check is skipped and an unavailable owner remains unavailable. With
+default limits (2.5 s, 2.5 s, 10 s), these checks contribute at most the slowest
+limit rather than their former 15 s sequential sum. This prevents a cold owner
+probe plus a slow AI health check from exceeding the release collector's 12 s
+per-request budget by construction. It does not prove any particular historical
+capture failure or make the live dependencies healthy. Owner health retains its
+30 s cache/single-flight and deletion admission keeps its separate fresh checks.
+
 ## PostgreSQL routing and session operations
 
 `COP_DATABASE_POOL_MODE=direct|session|transaction` declares the main

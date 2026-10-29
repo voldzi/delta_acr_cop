@@ -1842,28 +1842,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     },
     dependencies: async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
-      const erasureOwners = await withDependencyTimeout("cop-account-erasure-owners", accountErasureReadinessHealth(), {
-        name: "cop-account-erasure-owners", status: "unavailable", detail: "Read-only owner readiness check is pending."
-      });
-      const messaging = await withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
-        detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
-        name: "csm-messaging-provider",
-        status: "degraded"
-      });
-      const aiGatewayDependency = await withDependencyTimeout(
-        "ai-gateway",
-        aiGateway.health().then((status) => ({
-          name: "ai-gateway",
-          status: status.status,
-          detail: status.detail
-        })),
-        {
-          name: "ai-gateway",
-          status: "degraded",
-          detail: `AI gateway dependency check timed out after ${aiHealthDependencyTimeoutMs()} ms.`
-        },
-        aiHealthDependencyTimeoutMs()
-      );
+      // Independent probes retain their own timeouts and failure states.
+      // Starting them together bounds response latency by the slowest probe.
+      const [erasureOwners, messaging, aiGatewayDependency] = await Promise.all([
+        withDependencyTimeout("cop-account-erasure-owners", accountErasureReadinessHealth(), {
+          name: "cop-account-erasure-owners", status: "unavailable", detail: "Read-only owner readiness check is pending."
+        }),
+        withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
+          detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
+          name: "csm-messaging-provider",
+          status: "degraded"
+        }),
+        withDependencyTimeout(
+          "ai-gateway",
+          aiGateway.health().then((status) => ({
+            name: "ai-gateway",
+            status: status.status,
+            detail: status.detail
+          })),
+          {
+            name: "ai-gateway",
+            status: "degraded",
+            detail: `AI gateway dependency check timed out after ${aiHealthDependencyTimeoutMs()} ms.`
+          },
+          aiHealthDependencyTimeoutMs()
+        )
+      ]);
       return {
         status: mobilityDependency().status === "unavailable" ? "degraded" : "ok",
         dependencies: [
