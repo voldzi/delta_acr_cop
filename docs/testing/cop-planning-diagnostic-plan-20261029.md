@@ -297,6 +297,36 @@ next targeted comparison must use a new public source-equivalent 41dd payload:
 normal speed types, no usable live overlay and no forced prioritization, changing
 only absent departure time to explicit current departure time.
 
+### Actual source-equivalent current-departure comparison
+
+Root subsequently completed public frame
+`85e5b616-0c69-4cba-a362-8f8e5b91c8ef`, receipt SHA-256
+`30543105e33c5dcf7678bd622713d752d620b6280d0d25c613df5cfeffbea546`.
+Both source-equivalent baseline cases returned warning 401 and reverse-frontier
+exhaustion. Changing only native `date_time` to `{type:0}` produced a trip with
+no warnings in both cases. Six native actions completed (two status, four route),
+bringing the separately defined mechanism count to twenty-six. This is native
+mechanism evidence, not full SIM, COP HTTP or owner-phone acceptance.
+
+SIM published the shared accepted-road correction at
+`84b85cd94051095eb6038f8501ca8f411e1cc37e`. The earlier preview-only `3c27fbc6`
+was superseded before any build or deployment. The final correction sets a
+private current-departure option inside `knownClosureRoute`, **after** its
+existing rejection of non-current departures. It covers ordinary route,
+alternatives and assisted preview while leaving the public query/hash and
+explicit departure/arrival parsing unchanged. Current traffic speed use still
+requires its independent matching usable lease. Warning 401, vehicle/access,
+snap, closure, graph and proof validation remain mandatory; no fallback or
+automatic change of origin is added.
+
+SIM reported 817 passing tests and six skips. COP independently ran the two
+affected known-closure/live-traffic suites: 121 passing tests. Source review,
+these tests and the native comparison do not by themselves establish deployment.
+Root owns the fresh image-only transition, rollback and bounded live acceptance.
+An off-road location error 171 still requires an explicitly selected and
+confirmed road origin; the timing correction does not turn the original point
+into a routable location.
+
 ## Ordinary COP adapter acceptance boundary
 
 The installed COP `RoutingSourceAdapter.route` forwards `/routing/route` to SIM
@@ -346,3 +376,15 @@ must be counted separately by Root's native envelope. No penalty-alternative
 calls are made on this guarded branch. Unknown/native overflow, expired proofs,
 wrong dataset, failed auth or a changed graph remains a failure, never a retry
 with weaker routing.
+
+For the owner's separate, explicitly authorized phone flow, at most one ordinary
+request is allowed. A native or waypoint-snap 171 stops after the initial status
+and route calls (two actions). Only after explicit user action may one candidates
+request follow (two dataset-status calls and one locate), then one confirmed
+preview (two outer dataset-status calls, two inner status calls and one route).
+The preview query has road attributes disabled. Thus that specific three-request
+flow has at most ten native HTTP actions; an ordinary success with three variants
+has at most nine. This excludes independent startup, health and background
+traffic checks, which Root must account for separately. No private coordinate or
+route body is exported as evidence. A row selection alone is not confirmation,
+and neither a retry nor another destination may be silently substituted.
