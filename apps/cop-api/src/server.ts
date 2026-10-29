@@ -5250,8 +5250,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return;
     }
     try {
+      await accountErasure?.refreshCachedGuard();
       stateProjectionOwner?.assertWriteAllowed(point);
       await trackHistoryStore.append(point);
+      await accountErasure?.refreshCachedGuard();
       stateProjectionOwner?.assertWriteAllowed(point);
     } catch (error) {
       markTrackHistoryStoreDegraded(error);
@@ -5263,8 +5265,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return;
     }
     try {
+      await accountErasure?.refreshCachedGuard();
       stateProjectionOwner?.assertWriteAllowed({ object, event });
       await trackHistoryStore.upsertCurrent(object, event);
+      await accountErasure?.refreshCachedGuard();
       stateProjectionOwner?.assertWriteAllowed({ object, event });
     } catch (error) {
       markTrackHistoryStoreDegraded(error);
@@ -5308,6 +5312,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     query: TrackHistoryQuery = {}
   ): Promise<Map<string, ObjectConflictEvidence>> {
     const objectIds = objects.map((object) => object.objectId);
+    await accountErasure?.refreshCachedGuard();
     stateProjectionOwner?.assertWriteAllowed(objects);
     if (objectIds.length === 0) {
       return new Map();
@@ -5331,7 +5336,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const operation = retainProjectionFlight((async () => {
       const historyItems = await readTrackHistory(effectiveQuery, requestNow);
-      stateProjectionOwner?.assertWriteAllowed({ objects, historyItems });
+      await accountErasure?.refreshCachedGuard();
+      // The 1MiB projection limit applies to each record, not this derived batch.
+      // Keep array bounds and validate every history metadata/point value.
+      stateProjectionOwner?.assertWriteAllowed(objects);
+      stateProjectionOwner?.assertWriteAllowed(historyItems.map(item => ({ ...item, points: undefined })));
+      for (const item of historyItems) stateProjectionOwner?.assertWriteAllowed(item.points);
       return buildConflictEvidenceIndex({
         evaluatedAt: requestNow.toISOString(),
         historyItems,
