@@ -255,3 +255,44 @@ Root subsequently verified that the archive exists at
 The proposed next correction binds the two exact bare tokens to this verified
 path and reuses the preserved objects and archives. It does not remove a
 library, change compilation, download packages or establish native acceptance.
+
+### Actual link completion and observed search branch
+
+Root completed the separately reviewed C6 link-only operation
+`1369ac0b-66bf-4cb2-83b7-ea80445a1224` (result SHA-256
+`f19b9f2500e6eb78ae96794ce1e992783d59d58d87daa85e7ab6c33b9fc47898`).
+The corrections bind existing runtime library files and append the proven
+GeoTIFF dependency missing from pkg-config. No dependency was dropped, no object
+was recompiled, and the other 189 archive members remain unchanged. The earlier
+failed build/link receipts remain failures.
+
+Root then executed the bounded public mechanism frame
+`998b7d32-8417-40ec-b1d8-1a035cdb5aef` (receipt SHA-256
+`9f6b97631f102da3e53115bd6bfd22650d27b650079aa208f13e66907b4ccf1e`).
+The actual original service, original-archive actor, rebuilt control and observed
+actor produced the same complete route JSON: 6,341 bytes, SHA-256
+`6487f8e3f0418caa3ce76e4be6de95ff4b5a57302ad08521d739320a3a983299`.
+Each returned a trip and warning 401 on dataset `1792897718`.
+
+The two actual observation records distinguish the previously unresolved branch:
+
+- Pass 0: five origin and two destination seeds; extended search enabled;
+  pruning disabled at the origin false and at the destination true;
+  `reverse_gate_empty`; no connection, no FormPath call, no recost failure,
+  empty result.
+- Pass 1: the same seed counts and pruning flags; two best connections;
+  `reverse_connection_formpath`; one completed FormPath call, one returned path,
+  no unwind or recost failure.
+
+This confirms reverse-frontier termination in the strict pass, rather than a
+FormPath/recost failure. It does not identify which of the multiple pass-1
+relaxations was necessary or prove that the route is legally accessible. The
+frame used the explicitly different fixed-time, forced-bidirectional mechanism
+fixture; it is not a reconstruction of the historical 6f planning payload.
+
+Eight new native actions completed (four status, four route), bringing the
+mechanism total to twenty. Raw output stayed in RAM, production remained
+unchanged, and this result grants no permission to enable COP planning. The
+next targeted comparison must use a new public source-equivalent 41dd payload:
+normal speed types, no usable live overlay and no forced prioritization, changing
+only absent departure time to explicit current departure time.
