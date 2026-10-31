@@ -179,3 +179,15 @@ Final acceptance must include actual authenticated bootstrap and native identity
 recovery, not just container health. Preserve local credentials on temporary 503;
 never turn a failed bootstrap into a verified identity. Record production results
 and the rollback binding here before declaring the incident resolved.
+
+
+The APP-owned release boundary is versioned under
+`scripts/projection-admission-release/`. Its pure constructor accepts only the
+actual A56 guard, preserving all original bytes except the finite dispatch,
+image authority and dedicated pending-return additions. Historical F847 readers
+keep their original pin. Source tests cover accepted return and pending failure
+before/after Up, uncertain command outcome, fresh explicit reconciliation,
+health/restart rejection, crashes before/after CAS and partial archival. These
+are synthetic temporary-file/fake-Docker tests; no production return is claimed.
+Root independently reviews, seals and executes the source package. Source
+publication itself is not a production activation or user-login acceptance.

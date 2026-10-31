@@ -30,3 +30,8 @@ def activate(r, kernel, store, release_id, expected):
     kernel.evidence(r, proof, True)
     with kernel.health_scope(r, store, proof):
         return store.activate(release_id, expected)
+
+
+def return_pending(r, store, proof_path, expected):
+    """Dedicated guard method; generic recover(rollback) remains prohibited."""
+    return store.revert_admission_pending(Path(proof_path), expected)

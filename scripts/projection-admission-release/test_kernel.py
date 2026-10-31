@@ -23,6 +23,7 @@ def load(path):
 K = load(HERE / 'kernel.py'); C = load(HERE / 'constructor.py')
 V4C = load(V4 / 'constructor.py'); V4T = load(V4 / 'test_kernel.py')
 RAW = (HERE / 'kernel.py').read_bytes()
+PENDING_RAW = (HERE / 'pending_return.py').read_bytes()
 BASE = V4C.construct((V4 / 'fixtures/cop-api-runtime.pg-reconnect.py.txt').read_bytes(), (V4 / 'kernel.py').read_bytes())
 NOW = datetime.datetime.now(datetime.timezone.utc)
 
@@ -79,15 +80,19 @@ def rewrite(proof, case, docs):
 
 class Tests(unittest.TestCase):
     def test_constructor_exact_and_fully_reversible(self):
-        target = C.construct(BASE, RAW).decode()
-        target = target.replace("PLANNING_CONFIG_V3_KERNEL_SHA256 = '" + K.sha(RAW) + "'\nADMISSION_IMAGE_VERSION = '" + K.VERSION + "'",
+        target = C.construct(BASE, RAW, PENDING_RAW).decode()
+        target = target.replace("PLANNING_CONFIG_V3_KERNEL_SHA256 = '" + K.sha(RAW) + "'\nADMISSION_IMAGE_VERSION = '" + K.VERSION + "'\nADMISSION_PENDING_RETURN_SHA256 = '" + K.sha(PENDING_RAW) + "'",
                                 "PLANNING_CONFIG_V3_KERNEL_SHA256 = '" + K.HISTORICAL + "'")
         target = target.replace('PLANNING_CONFIG_V3_VERSION, PLANNING_ENABLE_V4_VERSION, ADMISSION_IMAGE_VERSION',
                                 'PLANNING_CONFIG_V3_VERSION, PLANNING_ENABLE_V4_VERSION')
         new = "        if image == '" + K.NEW + "':\n            store=Store(uid=1000)\n            store.planning_config_v3_module().image(store.post_edge_runtime(),self,inspected,revision)\n        elif image == PLANNING_BOOTSTRAP_V3_IMAGE:"
         target = target.replace(new, '        if image == PLANNING_BOOTSTRAP_V3_IMAGE:')
+        start = target.index('    def revert_admission_pending(')
+        end = target.index('    def revert_arrival(', start)
+        target = target[:start] + target[end:]
+        target = target.replace("    def clean(self):\n        require(not os.path.lexists(self.root / 'admission-pending-return.json'), 'admission_return_pending')\n", "    def clean(self):\n")
         self.assertEqual(target.encode(), BASE)
-        with self.assertRaises(ValueError): C.construct(BASE + b'\n', RAW)
+        with self.assertRaises(ValueError): C.construct(BASE + b'\n', RAW, PENDING_RAW)
 
     def test_actual_historical_v4_read_uses_original_kernel_pin(self):
         r, p, case, acceptance, env, docs = V4T.fixture()
