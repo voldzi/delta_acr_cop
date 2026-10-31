@@ -89,6 +89,17 @@ Optional PostgreSQL-dependent suites were not turned into passes. Focused ESLint
 and repository skeleton validation also passed. The versioned benchmark separately
 completed 128 replacements in 316.73 ms, with the timer observed at 1,000.61 ms.
 
+The compiled-module fixture is
+`scripts/tests/cop-projection-admission-compiled-fixture.mjs`. It prevents socket,
+fetch and database attempts and exercises the compiled module's lease, durable
+frontier, resource fence, explicit caller and unversioned-guard boundaries.
+The local baseline was rebuilt entirely from existing Git history; its module
+and map hashes matched the separately observed production hashes. No production
+source content was exported. The compiled baseline reproduced lease exhaustion
+after 60/128 replacements; the compiled candidate completed 128/128 in 320.73 ms
+and retained the negative boundaries. These local runs are not an actual image
+test; the sealed operator must still run the fixture inside both exact images.
+
 ## Release and rollback boundary
 
 The immutable runtime/test review patch has SHA-256
