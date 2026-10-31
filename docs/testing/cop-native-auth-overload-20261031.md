@@ -1,7 +1,8 @@
 # Native authentication overload, 2026-10-31
 
-Status: source candidate validated locally; production CPU hotspot and deployment
-acceptance remain pending. No routing canary or TestFlight upload is authorized
+Status: source candidate and both actual image fixtures passed. One bounded
+production native CPU sample and a fatal V8 heap marker are recorded below.
+Production activation and authenticated/native acceptance remain pending. No routing canary or TestFlight upload is authorized
 by this record. The native owner separately verifies login on the existing app.
 
 ## Observed production failure
@@ -9,7 +10,8 @@ by this record. The native owner separately verifies login on the existing app.
 Read-only inspection targeted `cop-cop-api-1`, container
 `73dd42a369db2ee118fdc0a98bc01e7dd1faac89e5968c55c2eda18acd5a43df`, image
 `sha256:6cdf302ea305e7fa58a11a1f9139deccd9f5b70cd0982a7ce87cd6b70d9d5c30`.
-It started on 2026-10-29 at 23:21:31 UTC; restart count was zero.
+At the initial inspection it had started on 2026-10-29 at 23:21:31 UTC;
+restart count was zero. This observation predates the later restart below.
 
 The 09:15:00–09:28:59 UTC log window contained **three distinct**
 `GET /api/v1/mobile/bootstrap` requests returning 503. One was rejected with
@@ -37,6 +39,30 @@ The database application name is `cop-account-safety-v2`. The reported count of
 80 `pg_stat_activity` entries included all backend types and must not be called
 80% client-slot utilization.
 
+## Later restart and bounded native CPU sample
+
+A server-side fixed-marker aggregate over 09:28:59–12:29:00 UTC counted 8,186
+log lines, one `JavaScript heap out of memory` marker and one `FATAL ERROR`
+marker. The heap marker timestamp was 09:55:52.495122157 UTC. Root metadata later
+showed the same container starting at 09:55:54.436128133 UTC, restart count one,
+and `OOMKilled=false`. A fatal V8 heap failure is compatible with this flag:
+it is not proof of a kernel OOM kill. Raw logs were not exported.
+
+The separately approved one-off native sample completed once: 15 seconds,
+49 Hz user-space CPU sampling with frame pointers, no heap dump, debug port,
+restart or raw stack-memory recording. At 12:27 UTC its target PID/start ticks
+remained unchanged before and after sampling. This was **after** the restart.
+Selected native self-overhead was SHA-256 block processing 5.96%, V8 string hash
+4.13%, ordered-hash-set lookup 2.29%, crypto decode 1.83%, JSON stringify 1.38%
+and heap/scavenge 1.38%. These rows neither establish crypto dominance nor
+attribute allocations to a precise JavaScript caller or to the earlier peak.
+
+The Root receipt is under
+`/srv/x5-production/staging/cop/auth-overload-perf-20261031-122707Z-ed70d336`:
+`receipt.json` SHA-256 `60714e1b00fa3db888e05054284948685830f33ca6e95d34df6a5fe0b50e51dc`.
+This is evidence of the observed restart and sampled work, not proof that the
+candidate addresses every allocation or every original 503.
+
 ## Source paths and reproducible cost
 
 Native authentication awaits mobile bootstrap, which also constructs a map
@@ -58,7 +84,8 @@ with an unchanged five-second guard lease, produced:
 
 These are local synthetic observations, not production performance claims.
 A local baseline CPU profile attributed substantial self samples to hashing,
-`runtimeOwnerHash`, projection code and GC. Production sampling is still separate.
+`runtimeOwnerHash`, projection code and GC. The separate native production
+sample above has narrower attribution limits.
 
 Reproduce the candidate's bounded fixture without accounts, SQL or network:
 
@@ -98,7 +125,40 @@ and map hashes matched the separately observed production hashes. No production
 source content was exported. The compiled baseline reproduced lease exhaustion
 after 60/128 replacements; the compiled candidate completed 128/128 in 320.73 ms
 and retained the negative boundaries. These local runs are not an actual image
-test; the sealed operator must still run the fixture inside both exact images.
+test. The actual image runs are recorded below.
+
+## Actual image fixture and synthetic retained heap
+
+Root built image
+`sha256:51a10099616c4b2bbd2607391413de975fdf49ba0b2df403db6d3e9785eb9094`
+from the exact production image above. It adds precisely the two compiled
+`cop-state-erasure.js` / `.js.map` files, preserves their original metadata and
+all image Config fields, and adds one filesystem layer. It is a verified partial
+hotfix, not a claim of a canonical full-source rebuild.
+
+Under CPU limit one and memory limit 768 MiB, the actual baseline completed
+12/128 replacements before the unchanged five-second lease expired
+(5,000.13 ms block). The actual repaired image completed 128/128 in 1,492.04 ms
+(timer 1,492.70 ms), with no failure. All seven expected boundary groups passed
+for both roles; socket/fetch/database/native calls and real DB writes were zero.
+The production container, PID and complete container-configuration inventory
+were unchanged. The build container was removed; production was not activated.
+
+Root case:
+`/srv/x5-production/root-cop-auth-projection-f65abfbf-d7d8-42e3-bd7a-0a628ff520d5`.
+Acceptance SHA-256:
+`d205f70ceb083fb1d3754ecff3e974bd5f86bf012ac15b4a665c08fe0f7838d8`.
+The 1,492 ms isolated block still exceeds the source's 1,000 ms pressure threshold;
+passing the five-second lease is not proof of eliminating pressure rejections.
+Post-activation warmed workload and bootstrap latency/status remain required.
+
+A separate local synthetic forced-GC observation retained 100 histories of 500
+points each, after three warm replacements per history. Retained heap delta was
+36,014,400 bytes in the baseline and 18,855,520 in the candidate. Cold seeded
+histories had almost identical deltas (14,740,808 and 14,739,240 bytes). This
+supports lower warm retained overhead for this dataset; it does not identify the
+production allocation owner, establish long-term memory stability or replace
+post-deployment observations. No production data, DB or network was used.
 
 ## Release and rollback boundary
 
