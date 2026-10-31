@@ -2,7 +2,8 @@
 
 Status: source candidate and both actual image fixtures passed. One bounded
 production native CPU sample and a fatal V8 heap marker are recorded below.
-Production activation and authenticated/native acceptance remain pending. No routing canary or TestFlight upload is authorized
+Production API activation and a bounded warm-workload check passed.
+Authenticated/native acceptance remains pending. No routing canary or TestFlight upload is authorized
 by this record. The native owner separately verifies login on the existing app.
 
 ## Observed production failure
@@ -191,3 +192,42 @@ health/restart rejection, crashes before/after CAS and partial archival. These
 are synthetic temporary-file/fake-Docker tests; no production return is claimed.
 Root independently reviews, seals and executes the source package. Source
 publication itself is not a production activation or user-login acceptance.
+
+
+## Actual production activation and bounded warm workload
+
+Root activated the exact `51a1…` image through the separately reviewed controller,
+after preparation/sealing succeeded. Actual active release is
+`release-6f461a0bdca04292abb723c05ea3d5ad`, pointer generation
+`9737d2f07bb64a16886234bbebb58bdc`, container
+`a5c377010d9f8d476b6a52102112af4361623fd65b90204f61baa6890a2e7be2`.
+The host guard is the exact derived
+`593874714db6b35537ffe733a8f266483685f37a0d5e6c73abb4159f9503f9d2`.
+Application environment, profile, source Compose, safety limits and peers were
+preserved. The old image and both explicit Root return controllers remain
+retained. Root case:
+`/srv/x5-production/root-cop-auth-release-6d1dcc9a-01cb-4b5f-85c9-120a5e4c3bac`.
+No real user, credential or database was reset.
+The protected accepted receipt has SHA-256
+`573e710406bf01316e203a06af77843c4d89aea382be6583158ef9d44c27e072`
+and filesystem modification time 2026-10-31 14:14:51.811370 UTC. The runtime
+uses the ordinary protected release override; host source Git and all four
+source Compose files were preserved.
+
+At 14:17:26, 14:17:52 and 14:18:17 UTC the same process (PID 2112491) remained
+healthy with zero restarts. Uptime was 204/230/256 seconds, with the actual
+15,000 ms flight poll configured. In-memory accepted events rose
+1,227 → 1,454 → 1,683; current objects were 123/124/123. This establishes a
+nonempty process after more than thirteen poll intervals, rather than merely an
+empty post-restart state. RSS was 485,672/493,704/508,640 KiB, high-water 601,508
+KiB; sampled CPU was 31.5/65.66/0.46%. These finite observations do not establish
+long-term memory stability or eliminate the original two unexplained slow 503s.
+
+Live/ready were 200/ok in approximately 1.3–1.8 ms. Anonymous bootstrap returned
+the expected 401 in 109.7/62.1/48.4 ms. This verifies an anonymous boundary;
+it is **not** successful signed-in bootstrap or native login.
+
+The existing metrics endpoint took 4.27–4.69 seconds and counted approximately
+55.97 million persisted history points. This is a separate observability-query
+cost; no additional DB-count experiment or parallel fix belongs to this release.
+The persisted count alone is not a measure of in-memory warm state.
