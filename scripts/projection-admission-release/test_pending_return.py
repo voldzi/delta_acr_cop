@@ -117,7 +117,8 @@ class Harness:
     def commit(self, binding, expected, cid):
         if self.fail_commit: raise ValueError('SYNTHETIC_PRE_COMMIT_FAILURE')
         assert self.pointer['generation'] == expected
-        self.pointer = {**self.pointer, 'generation': '0'*32, 'containerId': cid}
+        self.pointer = {**self.pointer, 'generation': '0'*32, 'containerId': cid,
+                        'releaseId': binding['releaseId'], 'imageId': binding['imageId']}
         self.calls.append('commit')
         return copy.deepcopy(self.pointer)
 
@@ -171,6 +172,16 @@ class Tests(unittest.TestCase):
                 self.assertNotIn('up', h.calls)
                 self.assertTrue((h.root / 'pending.json').exists())
                 self.assertFalse((h.root / P.JOURNAL).exists())
+
+    def test_forward_pointer_already_committed_but_pending_retained_can_return(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h = Harness(Path(directory))
+            h.pointer = {**h.pointer, 'generation': '8'*32, 'imageId': K.NEW,
+                         'releaseId': h.new['releaseId'], 'containerId': 'e'*64}
+            v = h.authorize('12345678-1234-4234-8234-123456789abc', 'start')
+            result = h.execute(v)
+            self.assertEqual(result['imageId'], K.OLD)
+            self.assertEqual(h.calls.count('up'), 1)
 
     def test_unhealthy_or_restarted_return_never_commits_or_archives_original(self):
         for status, restarts in [('unhealthy', 0), ('healthy', 1)]:

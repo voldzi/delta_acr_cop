@@ -113,6 +113,13 @@ def propose(r, k, store, operation_id, mode):
             'goIssued': False, 'productionChanged': False}
 
 
+def forward_pointer(k, v, pointer):
+    return (v.pending['targetContainerId'] is not None and pointer['imageId'] == k.NEW
+            and pointer['releaseId'] == v.new_binding['releaseId']
+            and pointer['containerId'] == v.pending['targetContainerId']
+            and pointer['profileGeneration'] == k.PROFILE and pointer['profileId'] == k.PROFILE)
+
+
 def validate(r, k, store, p, v):
     fields = {'contractVersion', 'transitionId', 'mode', 'approvalRef', 'kernelSha256', 'workerSha256', 'activePointer',
               'pendingPrevious', 'forwardReleaseId', 'forwardProof', 'pendingSha256', 'pendingHealthSha256',
@@ -136,7 +143,7 @@ def validate(r, k, store, p, v):
     need(r.environment_metadata(store.source / '.env', store.uid) == p['environmentMetadata'], 'ADMISSION_RETURN_ENV_CHANGED')
     own = store.root / JOURNAL
     if p['mode'] == 'start':
-        need(p['activePointer'] == v.pending['previous'] and not os.path.lexists(own)
+        need((p['activePointer'] == v.pending['previous'] or forward_pointer(k, v, p['activePointer'])) and not os.path.lexists(own)
              and p['returnJournalSha256'] is None, 'ADMISSION_RETURN_ALREADY_STARTED')
         if v.current['Image'] == k.OLD:
             need(v.current['Id'] == v.pending['previous']['containerId'] and v.pending['targetContainerId'] is None,
@@ -168,7 +175,7 @@ def validate(r, k, store, p, v):
              <= r.fenced_timestamp(original['expiresAt']) == r.fenced_timestamp(journal['upExpiresAt']),
              'ADMISSION_RETURN_ORIGINAL_AUTHORITY')
         pointer = p['activePointer']
-        need(pointer == v.pending['previous'] or (pointer['releaseId'] == v.old_binding['releaseId']
+        need(pointer == v.pending['previous'] or forward_pointer(k, v, pointer) or (pointer['releaseId'] == v.old_binding['releaseId']
              and pointer['containerId'] == v.current['Id'] and pointer['imageId'] == k.OLD
              and pointer['profileGeneration'] == k.PROFILE), 'ADMISSION_RETURN_CONTINUATION_POINTER')
     return p
@@ -250,7 +257,7 @@ def execute(r, k, store, path, expected):
     store.record_accepted_health(v.old_dir, v.old_binding, actual, verified)
     pointer = store.pointer()
     need(pointer == p['activePointer'], 'ADMISSION_RETURN_FINAL_CAS')
-    if pointer == v.pending['previous']:
+    if pointer == v.pending['previous'] or forward_pointer(k, v, pointer):
         pointer = store.commit_pointer(v.old_binding, expected, actual['Id'])
     else:
         need(pointer['containerId'] == actual['Id'] and pointer['releaseId'] == v.old_binding['releaseId'],
