@@ -80,11 +80,14 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
   if (!options.issuer) throw new Error("COP state projection issuer required");
   const owners = new WeakMap<object, RuntimeOwner | undefined>();
   const resolverOwners = new WeakMap<object, RuntimeOwner>();
-  const referenceCache = new WeakMap<object, string[]>();
+  // Only detached, deeply frozen records created by this owner may reuse an
+  // admission. Every read still checks the live lease and any explicit owner.
+  const immutableAdmissions = new WeakMap<object, { generation: string | number; fences: number }>();
   const collections = new Map<Field, Map<string, unknown> | unknown[]>();
   const bindings = new Map<Field, unknown>();
   const ownerFences = new Set<string>(), subjectFences = new Set<string>(), resourceFences = new Set<string>();
   let frontierLoaded = false, initialBinding = true, erasing = false;
+  let localFenceGeneration = 0;
   let checkedGeneration: string | number | undefined;
   const checkedActors = new Set<string>();
   const assertCachedAllowed = (owner: RuntimeOwner): void => {
@@ -104,19 +107,24 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
       assertCachedAllowed(owner);
       if (ownerFences.has(runtimeOwnerHash(owner)) || subjectFences.has(runtimeSubjectHash(owner.subjectId))) throw new ContentErasureStoreError(403, "CONTENT_PROJECTION_FENCED");
     }
+    const immutableRecord = value && typeof value === "object" && owners.has(value) && Object.isFrozen(value) ? value : undefined;
+    const generation = options.cachedGuard.version?.(), fences = localFenceGeneration;
+    const admitted = immutableRecord ? immutableAdmissions.get(immutableRecord) : undefined;
+    if (generation !== undefined && admitted?.generation === generation && admitted.fences === fences) return;
     if (Array.isArray(value)) {
       if (value.length > 100000) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
       for (const item of value) assertWrite(item, owner);
-      return;
+    } else {
+      for (const candidate of scalarStrings(value)) {
+        if (resourceFences.has(candidate.toLowerCase()) || subjectFences.has(runtimeSubjectHash(candidate))) throw new ContentErasureStoreError(403, "CONTENT_PROJECTION_FENCED");
+        // An issuer field in a payload is never trusted. The configured verified
+        // realm and the cached accepted job frontier decide actor admission.
+        if (candidate && Buffer.byteLength(candidate) <= 512) assertCachedAllowed({ issuer: options.issuer, subjectId: candidate });
+      }
     }
-    const references = value && typeof value === "object" && Object.isFrozen(value) ? referenceCache.get(value) ?? scalarStrings(value) : scalarStrings(value);
-    if (value && typeof value === "object" && Object.isFrozen(value)) referenceCache.set(value, references);
-    for (const candidate of references) {
-      if (resourceFences.has(candidate.toLowerCase()) || subjectFences.has(runtimeSubjectHash(candidate))) throw new ContentErasureStoreError(403, "CONTENT_PROJECTION_FENCED");
-      // An issuer field in a payload is never trusted. The configured verified
-      // realm and the cached accepted job frontier decide actor admission.
-      if (candidate && Buffer.byteLength(candidate) <= 512) assertCachedAllowed({ issuer: options.issuer, subjectId: candidate });
-    }
+    if (immutableRecord && generation !== undefined && generation === options.cachedGuard.version?.() &&
+        fences === localFenceGeneration && options.cachedGuard.ready())
+      immutableAdmissions.set(immutableRecord, { generation, fences });
   };
   const assertWrite = (value: unknown, owner?: RuntimeOwner): void => {
     try { rawAssertWrite(value, owner); }
@@ -250,6 +258,7 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
   const port: CopStateProjectionOwner = {
     async init() {
       const frontier = await options.loadFences();
+      localFenceGeneration++;
       for (const ref of frontier.resources) resourceFences.add(ref.id.toLowerCase());
       for (const hash of frontier.ownerHashes) ownerFences.add(hash);
       for (const hash of frontier.subjectHashes) subjectFences.add(hash);
@@ -260,7 +269,8 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     producerBindingInstalled: () => activeBinding() && installed.get(state) === port && frontierLoaded && options.cachedGuard.ready(),
     async ready() { return port.producerBindingInstalled() && await options.retainedCopies.ready(); },
     fence(actor, resources = { reportIds: [], groupIds: [] }) {
-      requireRuntimeOwner(actor); ownerFences.add(runtimeOwnerHash(actor)); subjectFences.add(runtimeSubjectHash(actor.subjectId));
+      requireRuntimeOwner(actor); localFenceGeneration++;
+      ownerFences.add(runtimeOwnerHash(actor)); subjectFences.add(runtimeSubjectHash(actor.subjectId));
       for (const ref of projectionReferences(resources)) resourceFences.add(ref.id);
     },
     async preflight(actor): Promise<RuntimeOwnerAssessment> {

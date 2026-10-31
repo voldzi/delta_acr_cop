@@ -129,6 +129,78 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     expect(state.auditEvents).toHaveLength(1);
   });
 
+  it("rechecks lease expiry and the durable frontier for previously accepted immutable records", async () => {
+    const f = fixture(); let generation = 1, ready = true;
+    f.options.cachedGuard.version = () => generation;
+    f.options.cachedGuard.ready = () => ready;
+    await f.port.init();
+    const original = object(actor.subjectId);
+    f.state.objects.set(original.objectId, original);
+    const retained = f.state.objects.get(original.objectId)!;
+    f.port.assertWriteAllowed(retained); f.port.assertWriteAllowed(retained);
+    ready = false;
+    expect(() => f.port.assertWriteAllowed(retained)).toThrow("UNAVAILABLE");
+    ready = true; generation++; f.revoked.add(runtimeOwnerHash(actor));
+    expect(() => f.port.assertWriteAllowed(retained)).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(() => f.state.objects.set(original.objectId, retained)).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(() => f.state.objects.set(original.objectId, { ...retained, confidence: 0.25 })).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(f.state.objects.get(original.objectId)).toBe(retained);
+  });
+
+  it("does not transfer an immutable admission to changed payloads when a state snapshot is replaced", async () => {
+    const f = fixture(); let generation = 1;
+    f.options.cachedGuard.version = () => generation;
+    await f.port.init();
+    const original = object(other.subjectId); f.state.objects.set(original.objectId, original);
+    const retained = f.state.objects.get(original.objectId)!;
+    f.port.assertWriteAllowed(retained);
+    f.state.objects = new Map([[original.objectId, retained]]);
+    expect(f.state.objects.get(original.objectId)).toBe(retained);
+    generation++; f.revoked.add(runtimeOwnerHash(actor));
+    expect(() => { f.state.objects = new Map([[original.objectId, { ...retained, ownerSubjectId: actor.subjectId }]]); }).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(f.state.objects.get(original.objectId)).toBe(retained);
+    expect(() => f.port.assertWriteAllowed(retained)).not.toThrow();
+  });
+
+  it("invalidates immutable admissions for local resource fences and reloaded fences without a durable version change", async () => {
+    const frontier = emptyFrontier(), f = fixture(undefined, frontier);
+    f.options.cachedGuard.version = () => 1;
+    await f.port.init();
+    const first = object(other.subjectId), second = object(other.subjectId);
+    f.state.objects.set(first.objectId, first); f.state.objects.set(second.objectId, second);
+    const a = f.state.objects.get(first.objectId)!, b = f.state.objects.get(second.objectId)!;
+    f.port.assertWriteAllowed(a); f.port.assertWriteAllowed(b);
+    f.port.fence(actor, { reportIds: [first.objectId], groupIds: [] });
+    expect(() => f.port.assertWriteAllowed(a)).toThrow("FENCED");
+    expect(() => f.port.assertWriteAllowed(b)).not.toThrow();
+    frontier.resources.push({ kind: "communityReport", id: second.objectId });
+    await f.port.init();
+    expect(() => f.port.assertWriteAllowed(b)).toThrow("FENCED");
+  });
+
+  it("never treats an externally shallow-frozen object as an immutable admission witness", async () => {
+    const f = fixture(); f.options.cachedGuard.version = () => 1;
+    await f.port.init();
+    const nested = { note: "synthetic-safe" }, external = Object.freeze({ nested });
+    f.port.assertWriteAllowed(external); f.port.assertWriteAllowed(external);
+    f.port.fence(actor);
+    nested.note = actor.subjectId;
+    expect(() => f.port.assertWriteAllowed(external)).toThrow("FENCED");
+  });
+
+  it("does not reuse immutable admission when the guard has no version or for a fenced explicit caller", async () => {
+    const f = fixture(); await f.port.init();
+    const original = object(actor.subjectId); f.state.objects.set(original.objectId, original);
+    const retained = f.state.objects.get(original.objectId)!;
+    f.port.assertWriteAllowed(retained);
+    f.revoked.add(runtimeOwnerHash(actor));
+    expect(() => f.port.assertWriteAllowed(retained)).toThrow("CACHED_ACCOUNT_FENCE");
+    f.revoked.clear(); f.options.cachedGuard.version = () => 1;
+    f.port.assertWriteAllowed(retained, other); f.port.assertWriteAllowed(retained, other);
+    f.port.fence(other);
+    expect(() => f.port.assertWriteAllowed(retained, other)).toThrow("FENCED");
+  });
+
   it("clears a newly verified resolver association while preserving another author's payload", async () => {
     const f = fixture(); await f.port.init();
     const value = { deadLetterId: randomUUID(), channel: "cop.domain.events" as const, correlationId: "synthetic", errorCode: "SYNTHETIC", message: "synthetic", receivedAt: "2026-10-14T00:00:00Z", body: { thirdParty: other.subjectId } };
