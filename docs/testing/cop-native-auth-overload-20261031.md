@@ -231,3 +231,24 @@ The existing metrics endpoint took 4.27–4.69 seconds and counted approximately
 55.97 million persisted history points. This is a separate observability-query
 cost; no additional DB-count experiment or parallel fix belongs to this release.
 The persisted count alone is not a measure of in-memory warm state.
+
+## WAF planning boundary: already installed, freshly verified
+
+On 31 October Root read back the existing active planning exception, rather than
+reinstalling it. Configuration SHA-256 was
+`d23a5d5d380ebf23a40fec153fbc2707898d662ff9835bf5f107a612d281fac3`,
+matching the historical 29 October seal. The exact exception block SHA-256 was
+`5d57487456300384dcb75be31291df758102908350a77ade7179b45868b7188b`,
+present once as local rule 1000964. It excludes only the field **name**
+`json.context.vehicleProfile.coverageAcknowledged` from rule 930120, only for
+POST JSON on the COP host's `/api/v1/routing/planning-origin/candidates` and
+`/api/v1/routing/planning-origin/preview`. It grants no authentication or value
+exception and does not disable SQL/XSS protections or affect other sites.
+
+At 14:27:13.117–14:27:13.369 UTC, four prepared synthetic boundary requests
+(case `a77ad56382f349038a5ad9273bf32605`) returned expected results: both benign
+requests reached the API and returned 401 `UNAUTHORIZED`; unrelated SQL payloads
+on both paths returned 403. No credentials, private coordinates, authenticated
+route or native request were used. Configuration changed: **false**. No duplicate
+exception or old installer was applied. These checks verify the WAF boundary,
+not successful signed-in route planning or native login.
