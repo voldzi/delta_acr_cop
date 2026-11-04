@@ -1,0 +1,7 @@
+{
+  "Sources/CSMCore/ManagedVehicleNativeMembership.swift": "75908175160ad3395a1093c023c64f626b2ac54e3bcacbeb3d44f4b855095974",
+  "Sources/CSMCore/OfflineFirstMessagingClient.swift": "9d9131a5ee7fa141911185dce574268944222f9f342ca05ac6212b67fec2fcff",
+  "Sources/CSMCore/HTTPClient.swift": "eb35c639636ef4a47d499bad9c157e03f7bef3b54b3d3d4ed2a63b6abe63b1ca",
+  "Sources/CSMCore/ServiceFactory.swift": "3c9f927b3794a493acc751b57737d0a2b176d145b2467b79e7bfa8d2789e35ee",
+  "Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift": "33ccff2261d1267c19c06c4bf84414dc641855cad0d2b3d10315ea4f203d1ebb"
+}

@@ -38,3 +38,35 @@ MatrixRustSDK26.09.17/LiveKit2.17.0 dependencies.23 MatrixDraftSubmissionTests p
 including audience-change retention/no replay and journal epoch rebinding.
 Original Vendor, resolved checkouts and previous DerivedData were not modified.
 A new dedicated synthetic simulator was used. No TestFlight upload or phone test.
+
+## Required follow-up: fresh audience authority (patch2)
+
+Apply `fresh-audience-authority-v2.patch` only after checking its five baseline
+hashes. These are the c78169a overlay, not the original unmodified Vendor.
+It also adds ManagedVehicleAuthorityTests.swift, which must not already exist.
+The original candidate patch alone is insufficient to authorize a new send:
+its cached Conversation and journal can agree while both are stale.
+
+The follow-up requires an injected ManagedVehicleAudienceChecking before each
+new managed draft handoff and replay. Missing checker, outage, stale authority
+or account/configuration change denies handoff and preserves the pending journal.
+The production factory injects COPManagedVehicleAudienceChecker: it obtains a
+fresh own-actor/native identity mapping, then uses the existing scoped-token
+fence for a fresh COP conversation request. Only HTTP200 exact ready receipt,
+matching source membership revision/recipientEpoch/conversation/room and own
+native identity can pass.202/409/429/503 never grant sending and are not retried.
+Both checks use an ephemeral no-cache/no-cookie/no-redirect HTTPS transport.
+This reuses a token-fencing primitive named VoiceOutboundScope; no call is made
+or authorized and ordinary messages/calls/GPS retain their existing paths.
+
+Actual isolated simulator evidence:31 tests passed:27 MatrixDraftSubmissionTests
+and4 production-checker tests over an intercepted synthetic HTTP transport.
+Cases include stale Conversation plus stale journal against changed server
+state, missing checker, outage, account change during the awaited check, wrong
+native actor and pending/rate-limit/server errors. These are not live COP or
+actual Megolm decryption acceptance. The production COP route, durable projection
+and lifecycle integration must exist and pass before the hidden UI is enabled.
+
+The fresh check linearizes at server verification. It does not recall a
+transaction already handed off to the Rust SDK/Matrix server or a notification
+already handed off to APNs, and must not be described as doing so.

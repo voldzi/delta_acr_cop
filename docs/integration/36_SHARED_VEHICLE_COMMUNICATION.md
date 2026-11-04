@@ -140,3 +140,10 @@ built for iOS Simulator; all23 MatrixDraftSubmissionTests passed. Exact applicat
 instructions and baseline hashes are in the adjacent SDK `HANDOFF.md`. This
 supersedes the earlier checkpoint's statement that native facade source was
 missing; real Synapse/E2EE/push acceptance and server projection remain pending.
+
+The c78169a cached epoch comparison is not by itself a fresh send authority.
+The required follow-up patch uses a server/own-native-identity checker before
+new managed handoff/replay.31 isolated simulator tests passed, including actual
+checker code over synthetic intercepted HTTP. See SDK HANDOFF.md patch2; the
+COP durable source projection/endpoint/lifecycle and actual Megolm acceptance
+remain missing and production activation is still prohibited by readiness.

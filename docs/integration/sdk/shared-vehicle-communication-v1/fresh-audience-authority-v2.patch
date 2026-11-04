@@ -1,0 +1,435 @@
+--- a/Sources/CSMCore/ManagedVehicleNativeMembership.swift
++++ b/Sources/CSMCore/ManagedVehicleNativeMembership.swift
+@@ -1,8 +1,16 @@
+ import Foundation
++import CryptoKit
+ 
+ protocol ManagedVehicleNativeMembership: Sendable {
+     func requireManagedVehicleJoined(_ conversation: Conversation) async throws
+     func acceptManagedVehicleInvitation(_ conversation: Conversation) async throws
++}
++
++/// Injected authority must perform a fresh server check, bound to this native
++/// account and exact conversation/room/revision/audience. Cached metadata alone
++/// cannot implement this protocol. Missing checker always means deny.
++protocol ManagedVehicleAudienceChecking: Sendable {
++    func requireCurrentAudience(for conversation: Conversation, scope: MatrixLocalStoreScope) async throws
+ }
+ 
+ extension Conversation {
+@@ -20,3 +28,40 @@
+         return submission.recipientEpoch == nil
+     }
+ }
++
++/// Production implementation: verifies source membership and native actor mapping
++/// afresh using the authenticated COP service. Never derives authority from the
++/// cached Conversation or journal. Existing scoped-token fencing is reused;
++/// it does not initiate or authorize a voice call.
++struct COPManagedVehicleAudienceChecker: ManagedVehicleAudienceChecking {
++    let http: HTTPClient
++    func requireCurrentAudience(for conversation: Conversation, scope: MatrixLocalStoreScope) async throws {
++        guard scope.provider == "csm.messaging", conversation.isManagedVehicleConversation,
++              let vehicle = conversation.metadata["externalId"].flatMap(UUID.init(uuidString:)),
++              let revisionRaw = conversation.metadata["vehicleMembershipRevision"],
++              let revision = Int(revisionRaw), revision > 0, String(revision) == revisionRaw,
++              let epoch = conversation.managedRecipientEpoch,
++              let room = conversation.activeMatrixRoomId else { throw CancellationError() }
++        let generation = await MainActor.run { CSMCommunicationRuntime.currentCOPSessionGeneration() }
++        let lookup: MessagingIdentityLookup = try await http.postVerifiedUncached(
++            "/api/v1/messaging/matrix/identities/lookup", body: ["conversationId": conversation.conversationId])
++        guard lookup.complete, lookup.verified(for: conversation, actorUserId: lookup.actorUserId,
++                matrixUserId: scope.userID) else { throw CancellationError() }
++        let issuer = AppConfiguration.fromBundle().oidcIssuer.absoluteString
++        let sdkScope = SHA256.hash(data: Data((issuer + "\0" + lookup.actorUserId).utf8))
++            .map { String(format: "%02x", $0) }.joined()
++        let actorScope = VoiceOutboundScope(issuer: issuer, subject: lookup.actorUserId,
++            sdkScope: sdkScope, generation: generation, validateCurrent: {
++                guard CSMCommunicationRuntime.currentCOPSessionGeneration() == generation else {
++                    throw CSMCOPSessionError(.accountChanged)
++                }
++            })
++        let request = CSMSharedVehicleConversationRequest(operationId: UUID(), expectedMembershipRevision: revision)
++        let receipt: CSMSharedVehicleConversationReceipt = try await http.postVerifiedUncached(
++            "/api/v1/shared-vehicles/v1/vehicles/\(vehicle.uuidString.lowercased())/conversation",
++            body: request, scope: actorScope)
++        guard receipt.matches(accountId: receipt.accountId, vehicleId: vehicle, request: request),
++              receipt.conversationId == conversation.conversationId, receipt.roomId == room,
++              String(receipt.recipientEpoch) == epoch else { throw CancellationError() }
++    }
++}
+--- a/Sources/CSMCore/OfflineFirstMessagingClient.swift
++++ b/Sources/CSMCore/OfflineFirstMessagingClient.swift
+@@ -16,6 +16,7 @@
+         guard revision == configurationRevision else { throw CancellationError() }
+     }
+ 
++    private let managedAudienceChecker: (any ManagedVehicleAudienceChecking)?
+     private let liveClient: any MessagingClientProtocol
+     private let submissionKey = "outbox-send:" + UUID().uuidString
+     private let outbox: any MessageOutboxStoring
+@@ -34,8 +35,10 @@
+     init(
+         liveClient: any MessagingClientProtocol,
+         outbox: any MessageOutboxStoring,
+-        history: (any MessageHistoryStoring)? = nil
++        history: (any MessageHistoryStoring)? = nil,
++        managedAudienceChecker: (any ManagedVehicleAudienceChecking)? = nil
+     ) {
++        self.managedAudienceChecker = managedAudienceChecker
+         self.liveClient = liveClient
+         self.outbox = outbox
+         self.outboxActor = OutboxActor(store: outbox)
+@@ -415,6 +418,17 @@
+         }
+     }
+ 
++    private func requireCurrentManagedAudience(_ conversation: Conversation) async throws {
++        guard conversation.isManagedVehicleConversation else { return }
++        guard isConfigured, liveClientReady, let checker = managedAudienceChecker,
++              conversation.managedRecipientEpoch != nil,
++              let scope = lastBootstrap.flatMap(MatrixLocalStoreScope.init) else { throw CancellationError() }
++        let revision = configurationRevision
++        try await checker.requireCurrentAudience(for: conversation, scope: scope)
++        guard revision == configurationRevision, isConfigured, liveClientReady,
++              lastBootstrap.flatMap(MatrixLocalStoreScope.init) == scope else { throw CancellationError() }
++    }
++
+     private func enqueueAndSubmitTrackedDraft(_ draft: OutgoingMessageDraft, to conversation: Conversation,
+                                               sender: any MatrixDraftSending,
+                                               notificationContext: MessagingNotificationSendContext? = nil) async throws -> ChatMessage {
+@@ -430,6 +444,8 @@
+         pending.senderId = scope.userID
+         pending.roomId = conversation.activeMatrixRoomId ?? conversation.conversationId
+         guard !conversation.isManagedVehicleConversation || conversation.managedRecipientEpoch != nil else { throw CancellationError() }
++        try await requireCurrentManagedAudience(conversation)
++        guard revision == configurationRevision else { throw CancellationError() }
+         let state = MatrixDraftSubmission(scope: scope, draft: draft, roomID: roomID, recipientEpoch: conversation.managedRecipientEpoch)
+         try await outbox.enqueueMatrixDraft(pending, conversation: conversation, submission: state)
+         guard revision == configurationRevision else { throw CancellationError() }
+@@ -837,6 +853,8 @@
+             // them. Retain them for explicit reconciliation; never blind retry.
+             guard let submission = record.matrixSubmission, submission.scope == scope,
+                   submission.roomID == conversation.activeMatrixRoomId, conversation.matchesManagedSubmission(submission) else { continue }
++            try await requireCurrentManagedAudience(conversation)
++            guard revision == configurationRevision else { throw CancellationError() }
+             let reconciled = try await sender.reconcileMatrixDraft(submission, in: conversation)
+             guard revision == configurationRevision else { throw CancellationError() }
+             try await persistMatrixSubmission(reconciled, record: record, revision: revision)
+--- a/Sources/CSMCore/HTTPClient.swift
++++ b/Sources/CSMCore/HTTPClient.swift
+@@ -80,6 +80,36 @@
+         let (data, response) = try await verificationSession.data(for: request)
+         guard let http = response as? HTTPURLResponse, http.url == request.url,
+               data.count <= 65_536 else { throw CSMServiceError.invalidState("Neplatná odpověď ověření propojení.") }
++        guard http.statusCode == 200 else {
++            throw HTTPResponseFailure(statusCode: http.statusCode, code: Self.errorCode(in: data))
++        }
++        return try CSMJSONCoding.decoder.decode(Response.self, from: data)
++    }
++
++    /// Fresh managed-chat authority only; no cache, redirect or implicit retry.
++    func postVerifiedUncached<Body: Encodable & Sendable, Response: Decodable & Sendable>(
++        _ path: String, body: Body, scope: VoiceOutboundScope? = nil
++    ) async throws -> Response {
++        guard requiresAuthorization, baseURL.scheme == "https", baseURL.host != nil,
++              baseURL.user == nil, baseURL.password == nil, baseURL.query == nil,
++              baseURL.fragment == nil, ["", "/"].contains(baseURL.path) else { throw CancellationError() }
++        if let scope { try await MainActor.run { try scope.validateCurrent() } }
++        var request = try await request(path, method: "POST", voiceScope: scope)
++        request.httpBody = try CSMJSONCoding.encoder.encode(body)
++        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
++        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
++        request.cachePolicy = .reloadIgnoringLocalCacheData
++        request.timeoutInterval = 15
++        let configuration = URLSessionConfiguration.ephemeral
++        configuration.urlCache = nil; configuration.httpCookieStorage = nil
++        configuration.protocolClasses = session.configuration.protocolClasses
++        let verificationSession = URLSession(configuration: configuration,
++            delegate: HTTPVerificationNoRedirect(), delegateQueue: nil)
++        defer { verificationSession.finishTasksAndInvalidate() }
++        let (data, response) = try await verificationSession.data(for: request)
++        if let scope { try await MainActor.run { try scope.validateCurrent() } }
++        guard let http = response as? HTTPURLResponse, http.url == request.url,
++              data.count <= 65_536 else { throw CancellationError() }
+         guard http.statusCode == 200 else {
+             throw HTTPResponseFailure(statusCode: http.statusCode, code: Self.errorCode(in: data))
+         }
+--- a/Sources/CSMCore/ServiceFactory.swift
++++ b/Sources/CSMCore/ServiceFactory.swift
+@@ -82,7 +82,8 @@
+             messaging: OfflineFirstMessagingClient(
+                 liveClient: liveMessagingClient,
+                 outbox: messageOutbox,
+-                history: messageHistory
++                history: messageHistory,
++                managedAudienceChecker: COPManagedVehicleAudienceChecker(http: http)
+             ),
+             messageOutbox: messageOutbox,
+             communityOutbox: communityOutbox,
+--- a/Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift
++++ b/Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift
+@@ -10,7 +10,7 @@
+         conversation.metadata["vehicleRecipientEpoch"] = "1"
+         let outbox = InMemoryMessageOutbox()
+         let live = DraftSubmissionMessaging(confirmation: .pending)
+-        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox)
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox, managedAudienceChecker: SyntheticManagedAudience(epoch: "1"))
+         try await wrapper.configure(with: bootstrap)
+         _ = try await wrapper.sendMessage("Synthetic private draft", to: conversation)
+         conversation.metadata["vehicleRecipientEpoch"] = "3" // removal/rejoin, same room
+@@ -42,6 +42,95 @@
+             conversation.metadata["vehicleRecipientEpoch"] = invalid
+             XCTAssertNil(conversation.managedRecipientEpoch)
+         }
++    }
++
++    func testStaleConversationAndStaleJournalCannotAuthorizeNewReplay() async throws {
++        var (bootstrap, conversation) = try await setup()
++        conversation.metadata["scope"] = "shared_vehicle"
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        let outbox = InMemoryMessageOutbox()
++        let live = DraftSubmissionMessaging(confirmation: .pending)
++        let authority = SyntheticManagedAudience(epoch: "1")
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox, managedAudienceChecker: authority)
++        try await wrapper.configure(with: bootstrap)
++        _ = try await wrapper.sendMessage("Synthetic original audience", to: conversation)
++        await authority.changeEpoch("2")
++        // Both Conversation and encrypted journal still contain stale epoch1.
++        do {
++            _ = try await wrapper.synchronizePendingMessages(for: conversation)
++            XCTFail("Cached agreement must not authorize a replay")
++        } catch is CancellationError {} catch { XCTFail("Expected authority cancellation") }
++        let records = try await outbox.pendingRecords(for: conversation.conversationId)
++        XCTAssertEqual(records.count, 1)
++        XCTAssertEqual(records.first?.matrixSubmission?.recipientEpoch, "1")
++        let calls = await live.queuedParts
++        XCTAssertEqual(calls, [0])
++        let authorityCalls = await authority.calls
++        XCTAssertEqual(authorityCalls, 2)
++    }
++
++    func testMissingFreshAuthorityCheckerCannotEnqueueManagedMessage() async throws {
++        var (bootstrap, conversation) = try await setup()
++        conversation.metadata["scope"] = "shared_vehicle"
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        let outbox = InMemoryMessageOutbox()
++        let live = DraftSubmissionMessaging(confirmation: .pending)
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox)
++        try await wrapper.configure(with: bootstrap)
++        do {
++            _ = try await wrapper.sendMessage("Synthetic retained composer text", to: conversation)
++            XCTFail("No implicit authority from metadata")
++        } catch is CancellationError {} catch { XCTFail("Expected authority cancellation") }
++        let calls = await live.queuedParts
++        XCTAssertTrue(calls.isEmpty)
++        let count = try await outbox.pendingMessageCount()
++        XCTAssertEqual(count, 0)
++    }
++
++    func testFreshAuthorityOutagePreservesPendingWithoutNewTransportCall() async throws {
++        var (bootstrap, conversation) = try await setup()
++        conversation.metadata["scope"] = "shared_vehicle"
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        let outbox = InMemoryMessageOutbox()
++        let live = DraftSubmissionMessaging(confirmation: .pending)
++        let authority = SyntheticManagedAudience(epoch: "1")
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox, managedAudienceChecker: authority)
++        try await wrapper.configure(with: bootstrap)
++        _ = try await wrapper.sendMessage("Synthetic draft", to: conversation)
++        await authority.failNetwork()
++        do {
++            _ = try await wrapper.synchronizePendingMessages(for: conversation)
++            XCTFail("Authority outage must not send")
++        } catch is URLError {} catch { XCTFail("Expected network failure") }
++        let records = try await outbox.pendingRecords(for: conversation.conversationId)
++        XCTAssertEqual(records.count, 1)
++        let calls = await live.queuedParts
++        XCTAssertEqual(calls, [0])
++    }
++
++    func testAccountSwitchDuringFreshAuthorityCannotResumeOriginalDraft() async throws {
++        var (bootstrap, conversation) = try await setup()
++        conversation.metadata["scope"] = "shared_vehicle"
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        let outbox = InMemoryMessageOutbox()
++        let live = DraftSubmissionMessaging(confirmation: .pending)
++        let authority = SyntheticManagedAudience(epoch: "1")
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox, managedAudienceChecker: authority)
++        try await wrapper.configure(with: bootstrap)
++        _ = try await wrapper.sendMessage("Synthetic old account draft", to: conversation)
++        await authority.pauseNext()
++        let heldConversation = conversation
++        let pending = Task { try await wrapper.synchronizePendingMessages(for: heldConversation) }
++        await authority.waitForPause()
++        bootstrap.userId = "@b:matrix.test"
++        try await wrapper.configure(with: bootstrap)
++        await authority.release()
++        do { _ = try await pending.value; XCTFail("Late authority must not cross accounts") }
++        catch is CancellationError {} catch { XCTFail("Expected identity cancellation") }
++        let records = try await outbox.pendingRecords(for: conversation.conversationId)
++        XCTAssertEqual(records.count, 1)
++        let calls = await live.queuedParts
++        XCTAssertEqual(calls, [0])
+     }
+ 
+     private func setup() async throws -> (MessagingBootstrap, Conversation) {
+@@ -574,3 +663,35 @@
+     func discardPendingMessages(for conversationId: String) async throws -> Int { try await store.discardPendingMessages(for: conversationId) }
+     func clear() async throws { try await store.clear() }
+ }
++
++private actor SyntheticManagedAudience: ManagedVehicleAudienceChecking {
++    var epoch: String
++    private(set) var calls = 0
++    private var networkFailed = false
++    private var shouldPause = false
++    private var entered = false
++    private var pauseWaiter: CheckedContinuation<Void, Never>?
++    private var heldLookup: CheckedContinuation<Void, Never>?
++    func failNetwork() { networkFailed = true }
++    func pauseNext() { shouldPause = true }
++    func waitForPause() async {
++        if entered { return }
++        await withCheckedContinuation { pauseWaiter = $0 }
++    }
++    func release() { heldLookup?.resume(); heldLookup = nil }
++    init(epoch: String) { self.epoch = epoch }
++    func changeEpoch(_ value: String) { epoch = value }
++    func requireCurrentAudience(for conversation: Conversation, scope: MatrixLocalStoreScope) async throws {
++        calls += 1
++        if networkFailed { throw URLError(.networkConnectionLost) }
++        if shouldPause {
++            shouldPause = false
++            await withCheckedContinuation { continuation in
++                heldLookup = continuation
++                entered = true
++                pauseWaiter?.resume(); pauseWaiter = nil
++            }
++        }
++        guard scope.userID == "@a:matrix.test", conversation.managedRecipientEpoch == epoch else { throw CancellationError() }
++    }
++}
+--- /dev/null
++++ b/Tests/CSMCommunicationKitTests/ManagedVehicleAuthorityTests.swift
+@@ -0,0 +1,120 @@
++import Foundation
++import XCTest
++@testable import CSMCommunicationKit
++
++@MainActor
++final class ManagedVehicleAuthorityTests: XCTestCase {
++    override func tearDown() { VehicleAuthorityURLProtocol.reset(); super.tearDown() }
++    private func fixture(serverEpoch: Int = 1, wrongNativeIdentity: Bool = false, status: Int = 200) async throws
++        -> (COPManagedVehicleAudienceChecker, Conversation, MatrixLocalStoreScope) {
++        var bootstrap = try await PreviewCopAPIClient().messagingBootstrap(deviceId: "synthetic-device")
++        bootstrap.providerId = "csm.messaging"; bootstrap.userId = "@a:matrix.test"
++        let scope = try XCTUnwrap(MatrixLocalStoreScope(bootstrap))
++        let items = try await PreviewCopAPIClient().conversations()
++        var conversation = try XCTUnwrap(items.first)
++        let actor = "00000000-0000-4000-8000-000000000001"
++        let vehicle = "00000000-0000-4000-8000-000000000002"
++        conversation.conversationId = "conv_vehicle_" + vehicle
++        conversation.members = [.init(userId: actor)]
++        conversation.matrix = .init(roomId: "!vehicle:matrix.test", state: "active", encrypted: true)
++        conversation.metadata = ["scope": "shared_vehicle", "externalId": vehicle,
++            "vehicleMembershipRevision": "3", "vehicleRecipientEpoch": "1"]
++        let boundConversation = conversation
++        let issuer = AppConfiguration.fromBundle().oidcIssuer.absoluteString
++        let payload = try JSONSerialization.data(withJSONObject: ["iss": issuer, "sub": actor])
++        let jwt = "synthetic." + payload.base64EncodedString().replacingOccurrences(of: "+", with: "-")
++            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") + ".signature"
++        VehicleAuthorityURLProtocol.configure { request in
++            if request.url?.path == "/api/v1/messaging/matrix/identities/lookup" {
++                let lookup = MessagingIdentityLookup(contractVersion: "cop-messaging-identity-lookup-v1", providerId: "csm.messaging",
++                    actorUserId: actor, conversationId: boundConversation.conversationId,
++                    matrixRoomId: boundConversation.activeMatrixRoomId,
++                    identities: [.init(userId: actor, matrixUserId: wrongNativeIdentity ? "@b:matrix.test" : "@a:matrix.test")],
++                    unresolvedUserIds: [], validUntil: Date().addingTimeInterval(20), status: "online", warnings: [])
++                return (200, try CSMJSONCoding.encoder.encode(lookup))
++            }
++            if status != 200 { return (status, Data(#"{"error":{"code":"SYNTHETIC_UNAVAILABLE"}}"#.utf8)) }
++            let data: Data
++            if let body = request.httpBody { data = body }
++            else if let stream = request.httpBodyStream {
++                stream.open(); defer { stream.close() }
++                var bytes = Data(); var buffer = [UInt8](repeating: 0, count: 1024)
++                while stream.hasBytesAvailable { let n = stream.read(&buffer, maxLength: buffer.count); if n <= 0 { break }; bytes.append(contentsOf: buffer.prefix(n)) }
++                data = bytes
++            } else { throw URLError(.badServerResponse) }
++            let input = try JSONDecoder().decode(CSMSharedVehicleConversationRequest.self, from: data)
++            let result: [String: Any] = ["contractVersion": "cop-shared-vehicle-communication-v1", "confirmed": true,
++                "operationId": input.operationId.uuidString, "accountId": actor, "vehicleId": vehicle,
++                "membershipRevision": 3, "recipientEpoch": serverEpoch, "roomGeneration": 1,
++                "conversationId": boundConversation.conversationId, "roomId": "!vehicle:matrix.test",
++                "scope": "shared_vehicle", "historyPolicy": "from_membership", "revocation": "server_enforced",
++                "serverTimestamp": "2026-11-04T10:00:00.123Z"]
++            return (200, try JSONSerialization.data(withJSONObject: result))
++        }
++        let configuration = URLSessionConfiguration.ephemeral
++        configuration.protocolClasses = [VehicleAuthorityURLProtocol.self]
++        return (COPManagedVehicleAudienceChecker(http: HTTPClient(baseURL: URL(string: "https://cop.synthetic.test")!,
++            tokenProvider: VehicleAuthorityToken(token: jwt), session: URLSession(configuration: configuration), requiresAuthorization: true)), conversation, scope)
++    }
++
++    func testProductionCheckerRequiresFreshSourceAndExactNativeActor() async throws {
++        let (checker, conversation, scope) = try await fixture()
++        try await checker.requireCurrentAudience(for: conversation, scope: scope)
++        let requests = VehicleAuthorityURLProtocol.requests
++        XCTAssertEqual(requests.count, 2)
++        XCTAssertEqual(requests.last?.httpMethod, "POST")
++        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Cache-Control"), "no-store")
++        XCTAssertTrue(requests.allSatisfy { $0.url?.host == "cop.synthetic.test" })
++    }
++    func testProductionCheckerRejectsStaleMetadataAgainstFreshSourceEpoch() async throws {
++        let (checker, conversation, scope) = try await fixture(serverEpoch: 2)
++        do { try await checker.requireCurrentAudience(for: conversation, scope: scope); XCTFail("Must reject stale audience") }
++        catch is CancellationError {} catch { XCTFail("Unexpected failure") }
++        XCTAssertEqual(VehicleAuthorityURLProtocol.requests.count, 2)
++    }
++    func testProductionCheckerRejectsAnotherNativeAccountBeforeSourceRequest() async throws {
++        let (checker, conversation, scope) = try await fixture(wrongNativeIdentity: true)
++        do { try await checker.requireCurrentAudience(for: conversation, scope: scope); XCTFail("Must reject another account") }
++        catch is CancellationError {} catch { XCTFail("Unexpected failure") }
++        XCTAssertEqual(VehicleAuthorityURLProtocol.requests.count, 1)
++    }
++    func testProductionCheckerNeverAcceptsPendingRateLimitOrUnavailableAndNeverRetries() async throws {
++        for status in [202, 409, 429, 503] {
++            let (checker, conversation, scope) = try await fixture(status: status)
++            do { try await checker.requireCurrentAudience(for: conversation, scope: scope); XCTFail("Must reject \(status)") }
++            catch let failure as HTTPResponseFailure { XCTAssertEqual(failure.statusCode, status) }
++            catch { XCTFail("Unexpected failure") }
++            XCTAssertEqual(VehicleAuthorityURLProtocol.requests.count, 2)
++        }
++    }
++}
++
++private struct VehicleAuthorityToken: ScopedVoiceAccessTokenProviding {
++    let token: String
++    func accessToken() async throws -> String? { token }
++    func accessToken(for scope: VoiceOutboundScope) async throws -> String? { token }
++}
++private final class VehicleAuthorityURLProtocol: URLProtocol, @unchecked Sendable {
++    private static let lock = NSLock()
++    nonisolated(unsafe) private static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
++    nonisolated(unsafe) private static var calls: [URLRequest] = []
++    static var requests: [URLRequest] { lock.withLock { calls } }
++    static func configure(_ value: @escaping @Sendable (URLRequest) throws -> (Int, Data)) {
++        lock.withLock { handler = value; calls = [] }
++    }
++    static func reset() { lock.withLock { handler = nil; calls = [] } }
++    override class func canInit(with request: URLRequest) -> Bool { true }
++    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
++    override func startLoading() {
++        let action = Self.lock.withLock { Self.calls.append(request); return Self.handler }
++        do {
++            guard let action, let url = request.url else { throw URLError(.badServerResponse) }
++            let (status, data) = try action(request)
++            let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/json"])!
++            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
++            client?.urlProtocol(self, didLoad: data)
++            client?.urlProtocolDidFinishLoading(self)
++        } catch { client?.urlProtocol(self, didFailWithError: error) }
++    }
++    override func stopLoading() {}
++}
