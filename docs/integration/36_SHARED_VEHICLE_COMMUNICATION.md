@@ -1,8 +1,9 @@
 # Shared vehicle communication: contract and implementation boundary
 
-Status 2026-11-04: implemented source candidate with admission disabled; not
-deployed or production accepted. Personal messages, direct calls and GPS
-consent retain their existing behavior.
+Status 2026-11-04: COP and Messaging code images are deployed and healthy;
+shared vehicle admission remains disabled. Live paired production acceptance
+is pending. See the [current deployment evidence](../deployment/shared-vehicle-communication/README.md).
+Personal messages, direct calls and GPS consent retain their existing behavior.
 
 ## Client contract
 
@@ -98,7 +99,7 @@ only trusted server code may construct that evidence after actual readback.
 
 Source candidate includes the public conversation endpoint, source projection,
 retry worker and Messaging close path. Both production admission flags remain
-false; this is not a deployed capability. The SDK facade and fresh audience
+false; the deployed code is not an enabled capability. The SDK facade and fresh audience
 checker were handed to Jízda with exact hashes in the adjacent HANDOFF.md.
 
 COP persists a single immutable intent and recipient epoch in VehicleState,
@@ -165,7 +166,7 @@ Evidence (separate acceptance surfaces):
 
 Jízda typed mutation202 handling is implemented and compatibility-reviewed.
 Still required before activation: dedicated controller custody/provisioning,
-guarded paired release, actual live COP source
+actual live COP source
 and native identity integration and notification handoff acceptance. APNs and
 physical-iPhone acceptance remain separate. No TestFlight upload is authorized.
 
