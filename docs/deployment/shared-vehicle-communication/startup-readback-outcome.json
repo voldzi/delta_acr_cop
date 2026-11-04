@@ -1,0 +1,82 @@
+{
+  "contractVersion": "cop-messaging-startup-readback-outcome-v1",
+  "observedAt": "2026-11-04T21:25:57.087485+00:00",
+  "sourceRevision": "19c9b39669877dfeacbe1bd996e9c8da7c4cd1ec",
+  "productionImage": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+  "containerId": "d75a44cd259ececd4627fd8a06cf9cfdf3a2e96ce237dd461798d4e6bf95c811",
+  "runtime": {
+    "healthy": true,
+    "restartCount": 0,
+    "liveHttp": 200,
+    "readyHttp": 200,
+    "readyChecksPassed": 12,
+    "authorityMode": "database_v2",
+    "controllerConfigured": false,
+    "admissionEnabled": false
+  },
+  "cause": {
+    "synapseProcessingSeconds": [
+      5.09,
+      12.432
+    ],
+    "disconnectedClientLifetimeSeconds": [
+      4.996,
+      5.011
+    ],
+    "oldTimeoutMs": 5000,
+    "incompleteResponses": 23,
+    "status202NotCompletionProof": true
+  },
+  "fix": {
+    "startupReadOnlyCallBudgetMs": 15000,
+    "startupReadbackPhaseBudgetMs": 60000,
+    "ordinaryAndMutatingCallTimeoutMs": 5000,
+    "mandatoryHydrationPreserved": true,
+    "latePinDeadlineEnforced": true,
+    "entireOtpBoot60sClaimed": false,
+    "newRetryAdded": false
+  },
+  "validation": {
+    "actualImageTestsPassed": 264,
+    "actualImageTestsSkipped": 47,
+    "isolatedPostgresTestsPassed": 17,
+    "compiledCandidateReadOnlyProbe": {
+      "snapshot": true,
+      "capabilityHttp": 200,
+      "readbackHttp": [
+        202,
+        202
+      ],
+      "readbackElapsedMs": [
+        2962,
+        2805
+      ],
+      "policyAndScopeMatched": true,
+      "noPinPublished": true,
+      "noReplayInvoked": true
+    },
+    "postDeploymentReadOnlyProviderAcceptance": true,
+    "liveProcessPinDirectlyInspected": false,
+    "rpcUnavailableBecauseDistributionDisabled": true,
+    "rawLogsOrSecretsPrinted": false
+  },
+  "deployment": {
+    "imageOnlyInputsVerified": true,
+    "currentDeclaredEnvironmentAndLabelsMatch": true,
+    "peersUnchanged": true,
+    "fullRawHistoricalParityAccepted": false,
+    "initialFinalComparison": "RUNTIME_IMAGE_ONLY_PARITY",
+    "originalFailurePreserved": true,
+    "environmentArrayOrderNotCanonicalizedInInitialComparer": true,
+    "soleCauseOfComparerFailureProven": false,
+    "digestReconstructionSucceeded": false,
+    "automaticRetry": false,
+    "automaticRollback": false,
+    "rootCase": "/srv/csm-messaging/account-safety/startup-image-19c9b39-v1"
+  },
+  "releaseAcceptanceComplete": false,
+  "pairedAcceptanceComplete": false,
+  "testFlightPublished": false,
+  "phoneOrApnsClaimed": false,
+  "next": "Close current-runtime semantic parity evidence without replacing the failed receipt, then a fresh existing-controller config-only case; general admission remains a separate gate."
+}

@@ -11,11 +11,12 @@ separate states. This document does not authorize a configuration/identity chang
   session/vehicle requests401. Actual AI index and completed erasure-owner
   readiness are ok. An earlier owner aggregate timed out as pending; it was not
   treated as a completed negative or relabeled as success.
-- Messaging is healthy on e9c50077… / source50e590c after a manual return to
-  the exact original protected configuration. Current CIDc20c4a64… has12
-  historical restarts, retained explicitly; live/ready200 and stable same-process
-  observation passed. Admission remains off. This is not zero-restart acceptance
-  of the controller configuration.
+- Messaging now runs source19c9b39 / image9a69b3f3… in CIDd75a44cd… .
+  Cold start succeeded, restart count is0 and live/ready return200 with all12
+  readiness checks ok. Only the image in the protected pin changed. The original
+  final raw-runtime comparison failed and remains recorded; current declared
+  environment/labels and peers match. Do not claim full historical raw parity or
+  complete release acceptance. See startup-readback-outcome.json.
 - The first COP candidatee4a94bb3… / dd545c2 failed guarded cold startup. It is
   quarantined; its stage and all failed proof/health artifacts are preserved.
 - COP vehicle conversation and Jízda gates remain off. No TestFlight publication,
@@ -88,35 +89,21 @@ remain available. Final source/current-state metadata are in release.review.json
 
 ## Next acceptance boundary
 
-Keep both features disabled. Dedicated controller account creation and custody
-are now proven, but its configuration cutover was not accepted. The two-key
-change exposed guarded cold-start replay failure in AccountSafety; restoring
-the same image/original inputs also initially failed before stabilizing. Read-only
-diagnostics verified catalog/bindings/prefixes and later provider capability,
-but did not establish the exact transient failure cause. No guard was weakened.
-The unused passwordless controller is retained; source intents and managed
-records were not removed. Original controller apply is consumed and cannot be
-replayed. Resolve cold-start reliability before a fresh configuration-only case
-and the separate general-admission/paired acceptance window with Jízda.
-See [actual execution and recovery](controller-only-outcome.json). Never reuse an
-administrator or cop.ai.agent as room controller. Verify exact ready/join-required,
-revocation/kick/invite readback, pending202/exact retry/restart, wrong actor,
-notification/native delivery denial and lifecycle cleanup. No real account is
-needed for a destructive test. Do not infer phone/APNs acceptance from source
-or server checks.
+The startup timeout cause is now established: server processing took5.09–12.43s,
+while23 incomplete responses ended at4.996–5.011s client lifetime. Source19c9b39
+limits startup read-only calls to15s inside one60s hydration budget, preserves
+mandatory guards and enforces the deadline inside the final pin handler.
+Ordinary/mutating calls remain5s. Actual-image264 tests passed,47 skipped;
+17 isolated native PostgreSQL cases passed separately. This is not phone or
+complete account-deletion acceptance.
 
-Before any enrollment, return requires actual proof of absent COP projections
-and Messaging managed records, paused intake and a specifically approved bound
-transition. After enrollment, contain by disabling admission while retaining
-cleanup-capable writers and every durable pending intent; do not return to an
-older writer or replace operation identities. No automatic rollback is installed.
-The historical manual-return scripts are one-operation tools, not generic release
-commands. Preserved evidence: /var/lib/cop-self-release/manual-return-20261104;
-new completion permit and health observation are separately retained.
-
-See release.review.json for exact image/source pins, the integration contract
-at docs/integration/36_SHARED_VEHICLE_COMMUNICATION.md, and
-[archived working notes](../../archive/2026-11-04_SHARED_VEHICLE_RELEASE_WORKING_NOTES.md).
-
-Concrete next-step review: [controller identity, bounded configuration and acceptance](controller-review.md).
-The review now contains the exact executor/bootstrap and32tests; execution proved account custody but failed runtime acceptance. Admission was never enabled. The actual outcome and original-config recovery are recorded separately.
+The new source is deployed and healthy without restarts. The image-only executor
+stopped at its final raw metadata comparison. It compared unsorted Config.Env
+arrays; the old raw object was retained only as a digest, so this is a known
+verification limitation, not grounds to invent parity. The independent current
+observation confirms declared environment/labels, unchanged peers, live/ready
+and read-only database/provider acceptance. The failed receipt stays intact.
+Close the remaining deployment parity evidence before a fresh controller-only
+configuration case; never replay the consumed controller-creation operation.
+Keep both general admission and Jízda gate off until the separate explicit
+window and real paired acceptance. No TestFlight/device acceptance is claimed.
