@@ -34,6 +34,10 @@ Custody checks include this queue. Before publishing custodyReviewed it explicit
 executes a <=60second device-less admin impersonation, exact whoami and logout
 in finally, followed by token/device/crypto/queue-zero SQL/API readback. This
 dynamic proof is not inferred from the admission-disabled capability endpoint.
+A recognized token from a successful login always enters try/finally before
+validating unexpected device/whoami response; logout is attempted even on those
+failures. Tokens in non-successful login responses are never used. The test clock
+is fixed and verifies an exact60000ms validity request with no requested device.
 The original password=null PUT proposal is superseded, not silently reused.
 
 The deployed Messaging adapter verifies controller name/admin/bot/active state,
@@ -79,7 +83,7 @@ Every collision, unknown custody result, changed source or parity failure stops
 without automatic adoption, retry or rollback. A partial technical account may
 remain unused and requires explicit recovery; it is not silently deleted.
 
-28 deterministic boundary/protocol tests passed. The actual default bootstrap
+32 deterministic boundary/protocol tests passed. The actual default bootstrap
 also passed read-only against current COP and Messaging (404, SQL readback
 availability, exact CAS, current declared environment and planned pin hash).
 No provider write, installation or runtime change has been performed. Exact

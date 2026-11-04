@@ -144,12 +144,12 @@
     "sourceBaselines": "Exact current CID/image/runtime digest/input hashes/peer IDs in executor; fresh COP source/image/generation before and after bootstrap. Not a cross-host atomic transaction.",
     "originalEvidence": "Exclusive Root journal before first provider write; fsync file and directory; preserve original protected pin. Full runtime/resolved render contain credentials and are never journaled, only their digests.",
     "failure": "No automatic retry/adoption or rollback; retain partial controller/config journal; admission remains false.",
-    "sha256": "02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271",
-    "bootstrapSha256": "71fcd167cf0067556d92769e205c218ef3180b5a8209bed95980caeea9c7300e",
-    "testsPassed": 28,
-    "testsScope": "28 deterministic boundary/protocol tests: process/config/parity/retry, duplicate creation no PUT, registration HMAC/inhibit_login, pending-deactivation timeout no reactivation, wrong whoami/failed logout no custody publication, secret-free probe result, bootstrap hash/generation/modes.",
+    "sha256": "f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3",
+    "bootstrapSha256": "665689b1d379b4e523bae6870b50086e2d39844bef65ac46bed0e0f645504238",
+    "testsPassed": 32,
+    "testsScope": "28 deterministic boundary/protocol tests: process/config/parity/retry, duplicate creation no PUT, registration HMAC/inhibit_login, pending-deactivation timeout no reactivation, wrong whoami/failed logout no custody publication, secret-free probe result, bootstrap hash/generation/modes. Final32 also cover successful login with unexpected device must logout, error status must not logout arbitrary response token, whoami exception cleanup, exact frozen-clock+60000ms request and provider exception cannot publish custody.",
     "liveReadonlyPreflight": {
-      "executorSha256": "02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271",
+      "executorSha256": "f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3",
       "copGenerationRechecked": true,
       "copModified": false,
       "newPrivilegeGranted": false,
@@ -160,6 +160,12 @@
       "targetPinSha256": "15837d03fae096387ed6162d163b78586149f912c5bf65c9b5106880509a030e"
     },
     "dynamicCustody": "Explicit <=60s device-less impersonation, exact whoami, logout in finally and subsequent zero-token/device/crypto/pending readback BEFORE custodyReviewed publication; capability with admissionOFF is not claimed to perform it.",
-    "deactivationLifecycle": "Deployed _user_parter_loop removes users_pending_deactivation only after _part_user completes. Wait for zero while still deactivated, at most10s; only then reactivate. Pending row remains a mandatory zero surface in custody."
+    "deactivationLifecycle": "Deployed _user_parter_loop removes users_pending_deactivation only after _part_user completes. Wait for zero while still deactivated, at most10s; only then reactivate. Pending row remains a mandatory zero surface in custody.",
+    "reviewArtifactSha256": {
+      "controller-only-off.py": "f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3",
+      "bootstrap-controller-off.py": "665689b1d379b4e523bae6870b50086e2d39844bef65ac46bed0e0f645504238",
+      "test_controller_only_off.py": "5f8dfbf4f751eaad6dba8d75327c81f8210cfb1e5690e1a5a2a8e402b76b66e1",
+      "test_bootstrap_controller_off.py": "61f0a468d39cc1f8785031c5022d7741f1e52c61db35e30fee1a667a4dc8b56d"
+    }
   }
 }

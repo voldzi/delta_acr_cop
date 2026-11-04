@@ -82,6 +82,14 @@ class ExecutorBoundaries(unittest.TestCase):
   self.ops.provider=p
   with self.assertRaisesRegex(m.Stop,'DYNAMIC_PROBE_UNPROVEN'):m.execute(self.ops,True)
   self.assertNotIn('publish',self.ops.calls)
+ def test_probe_transport_exception_cannot_publish_custody(self):
+  original=self.ops.provider
+  def p(mode):
+   if mode=='probe':raise m.Stop('CONTROLLER_PROVIDER_UNPROVEN')
+   return original(mode)
+  self.ops.provider=p
+  with self.assertRaises(m.Stop):m.execute(self.ops,True)
+  self.assertNotIn('publish',self.ops.calls);self.assertNotIn('custody.json',self.ops.records)
  def test_unrelated_render_delta_stops_before_restart(self):
   self.ops.bad_render=True
   with self.assertRaisesRegex(m.Stop,'EXCEEDS_TWO'):m.execute(self.ops,True)
@@ -113,13 +121,15 @@ class Reply:
  def __exit__(self,*args):pass
  def read(self,*args):return self.raw
 class ActualProviderProtocol(unittest.TestCase):
- def run_child(self,collision=False,mode="create",pending_forever=False,wrong_who=False,logout_failure=False):
+ def run_child(self,collision=False,mode="create",pending_forever=False,wrong_who=False,logout_failure=False,unexpected_device=False,login_error=False,whoami_exception=False):
   calls=[];registered={};uid=m.CONTROLLER
   def urlopen(req,timeout):
    path=req.full_url.split('8008')[1];body=json.loads(req.data) if req.data else None;method=req.get_method();calls.append((method,path,body))
    if method=='POST' and path.endswith('/login'):
-    self.assertGreater(body['valid_until_ms'],0);return Reply({'access_token':'synthetic-control-token'})
-   if method=='GET' and path.endswith('/whoami'):return Reply({'user_id':'@wrong:synthetic' if wrong_who else uid})
+    self.assertEqual(body,{'valid_until_ms':1793822460000});return Reply({'access_token':'synthetic-control-token',**({'device_id':'unexpected-device'} if unexpected_device else {})},403 if login_error else 200)
+   if method=='GET' and path.endswith('/whoami'):
+    if whoami_exception:raise urllib.error.URLError('synthetic network failure')
+    return Reply({'user_id':'@wrong:synthetic' if wrong_who else uid})
    if method=='POST' and path.endswith('/logout'):return Reply({},500 if logout_failure else 200)
    if method=='GET' and path.endswith('/register'):return Reply({'nonce':'synthetic-nonce'})
    if method=='GET':raise urllib.error.HTTPError(req.full_url,404,'missing',{},io.BytesIO(m.encoded({'errcode':'M_NOT_FOUND'})))
@@ -144,7 +154,7 @@ class ActualProviderProtocol(unittest.TestCase):
    def close(self):pass
   fake_pg=types.SimpleNamespace(connect=lambda **kwargs:Connection())
   ticks=iter(range(0,1000,2))
-  with patch('urllib.request.urlopen',urlopen),patch('sys.stdin',io.StringIO(payload)),patch('sys.stdout',out),patch.dict(sys.modules,{'yaml':fake_yaml,'psycopg2':fake_pg}),patch('time.monotonic',side_effect=lambda:next(ticks)),patch('time.sleep'),patch('builtins.open',side_effect=lambda *args,**kwargs:io.StringIO('synthetic')):
+  with patch('urllib.request.urlopen',urlopen),patch('sys.stdin',io.StringIO(payload)),patch('sys.stdout',out),patch.dict(sys.modules,{'yaml':fake_yaml,'psycopg2':fake_pg}),patch('time.monotonic',side_effect=lambda:next(ticks)),patch('time.sleep'),patch('time.time',return_value=1793822400),patch('builtins.open',side_effect=lambda *args,**kwargs:io.StringIO('synthetic')):
    exec(compile(m.SYNAPSE_CODE,'<synapse-child>','exec'),{'__name__':'__main__'})
   return json.loads(out.getvalue()),calls,registered,out.getvalue()
  def test_actual_child_race_cannot_modify_competing_identity(self):
@@ -159,6 +169,15 @@ class ActualProviderProtocol(unittest.TestCase):
  def test_wrong_whoami_still_logs_out(self):
   r,calls,_,_=self.run_child(mode='probe',wrong_who=True)
   self.assertFalse(r['result']['identityProven']);self.assertTrue(r['result']['logoutProven']);self.assertTrue(any(c[1].endswith('/logout') for c in calls))
+ def test_unexpected_device_still_logs_out_and_fails_custody(self):
+  r,calls,_,_=self.run_child(mode='probe',unexpected_device=True)
+  self.assertFalse(r['ok']);self.assertTrue(any(c[1].endswith('/logout') for c in calls))
+ def test_error_login_response_cannot_logout_arbitrary_token(self):
+  r,calls,_,_=self.run_child(mode='probe',login_error=True)
+  self.assertFalse(r['ok']);self.assertFalse(any(c[1].endswith('/logout') for c in calls))
+ def test_whoami_exception_still_attempts_logout(self):
+  r,calls,_,_=self.run_child(mode='probe',whoami_exception=True)
+  self.assertFalse(r['ok']);self.assertTrue(any(c[1].endswith('/logout') for c in calls))
  def test_failed_logout_is_not_custody_proof(self):
   r,_,_,_=self.run_child(mode='probe',logout_failure=True)
   self.assertFalse(r['result']['logoutProven'])

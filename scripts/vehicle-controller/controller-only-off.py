@@ -140,10 +140,11 @@ try:
  elif mode=='probe':
   until=int(time.time()*1000)+60000
   status,login=api('POST','/_synapse/admin/v1/users/'+urllib.parse.quote(controller,safe='')+'/login',{'valid_until_ms':until})
-  assert status==200 and isinstance(login.get('access_token'),str) and not login.get('device_id')
-  control_token=login['access_token'];del login
+  assert status==200 and isinstance(login.get('access_token'),str) and login['access_token']
+  control_token=login['access_token'];unexpected_device=bool(login.get('device_id'));del login
   identity=False;logout=False
   try:
+   assert not unexpected_device
    status,who=api('GET','/_matrix/client/v3/account/whoami',token=control_token)
    identity=status==200 and who.get('user_id')==controller
   finally:

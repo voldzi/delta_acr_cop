@@ -5,7 +5,7 @@ COP generation is checked before and after; COP is never modified here.
 """
 import argparse,hashlib,json,os,stat,subprocess,sys
 from pathlib import Path
-EXECUTOR_SHA='02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271'
+EXECUTOR_SHA='f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3'
 COP_IMAGE='sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d'
 COP_REVISION='00c854d56eb9fd4346e26dade622776c83bee9a5'
 COP_GENERATION='55190b1dc87f4bf59dec02d3396c41a3'
@@ -13,7 +13,7 @@ ROOT_LOADER=r'''
 import hashlib,json,os,socket,stat,sys
 assert os.geteuid()==0 and socket.gethostname().split('.')[0]=='comm'
 raw=sys.stdin.buffer.read(1048577)
-assert 0<len(raw)<1048576 and hashlib.sha256(raw).hexdigest()=='02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271'
+assert 0<len(raw)<1048576 and hashlib.sha256(raw).hexdigest()=='f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3'
 path='/srv/csm-messaging/account-safety/controller-only-executor-v1.py'
 '''
 INSTALL=r'''
