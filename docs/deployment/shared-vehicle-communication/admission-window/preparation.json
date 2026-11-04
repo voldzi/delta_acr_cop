@@ -77,7 +77,7 @@
   "remainingBeforeAnyFinalWindowAuthorization": [
     "Proposed publisher/deadline/COMM adapter exist only as source; concrete Root installer, approval loader and supervisor integration remain incomplete. Actual host integration and armed timer are unproven.",
     "Existing-owner test addresses and verified csm-mobile token pairs have not been provided; no identities created",
-    "Dedicated native stage host compiled and source freeze reviewed; complete paired thirteen-case coordinator, checkpoint process reconciliation, owned simulator and live execution are still pending.",
+    "Dedicated native stage and explicit resume source compiled/reviewed; complete paired thirteen-case coordinator, owned simulator and actual live native/process restart acceptance remain pending.",
     "Fresh Root scope must explicitly cover the one COP flag plus its missing map, unchanged ordinary code-only authority, timer and failure containment; no generic Root permission",
     "Actual thirteen-case server/native acceptance not executed; every case remains not_run"
   ],
@@ -95,7 +95,7 @@
     "readOnly": true
   },
   "localVerification": {
-    "sourceUnitTestsPassed": 78,
+    "sourceUnitTestsPassed": 84,
     "scope": "pure contracts, fake-host boundaries and local inherited-flock test; not production or native acceptance",
     "skeletonValidationPassed": true
   },
@@ -116,7 +116,9 @@
     "fullCaseCoordinatorComplete": false,
     "nativeRefreshOwnerExclusive": true,
     "finiteNativePumpPrepared": true,
-    "offlineRealPythonSpoolInteropPassed": true
+    "offlineRealPythonSpoolInteropPassed": true,
+    "explicitNativeResumeSourcePrepared": true,
+    "actualNativeProcessRestartProven": false
   },
   "nativeStageSource": {
     "freezeSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
@@ -124,7 +126,9 @@
     "sourceFilesVerified": 16,
     "builtInfoVerified": true,
     "nativeActions": 17,
-    "nativePythonTestsIndependentlyPassed": 29,
-    "nativeIOSExecuted": false
+    "nativePythonTestsIndependentlyPassed": 41,
+    "nativeIOSExecuted": false,
+    "resumeFreezeSha256": "8d81f92ed1c84a1b9a4aba5d1c0d966e619d046d4fb17b6718e69d30843161da",
+    "resumeSourceFilesVerified": 18
   }
 }

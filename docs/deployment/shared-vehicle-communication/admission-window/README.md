@@ -123,6 +123,39 @@ execution, full thirteen-case orchestration, checkpoint process reconciliation,
 public runtime/host flows and notification handoff remain unproven. A denied
 normal SDK send is distinct from a direct Matrix HTTP send denial.
 
+## Explicit native checkpoint resume
+
+The separate native resume freeze `8d81f92e…` descends from the preserved
+`8e9e8a2c…` snapshot. All18 new source hashes, the copied Swift source, built
+host Info and successful build log were independently checked. The native
+Python suite passed41tests independently. These files are still uncommitted in
+the shared Jízda checkout; the old snapshot is not rewritten as new evidence.
+
+`Pump.resume(checkpoint_command)` now reconciles this existing coordinator's
+complete canonical intent/observation journal with the native immutable command
+and result prefix. It invokes the frozen `SpoolClient.observe_resume` only after
+its own prefix agrees. That helper requires matching checkpoint state, fixture,
+launch lineage, no uncertain in-flight command, complete pause receipt, real
+Mac `ESRCH` for the old PID, a live different new PID and a held runtime lock.
+`EPERM` is not exit. A JSON boolean or supplied cursor cannot replace probes.
+
+The pump checks the observed old PID against its own accepted process, rechecks
+its journal after observation, records a private exclusive resume receipt and
+retains its existing verified sequence. Future results must come from the
+observed new process. It does not start/restart a host, adopt another coordinator
+instance or accept resume after `finish`. An unproven observation leaves the
+checkpoint blocking; uncertainty writing the resume receipt is a hard stop.
+No process/launch receipt is exported in public observations.
+
+The COP suite now passes84 source tests. A separate offline interoperation check
+used the real frozen Python resume helper plus COP's own journal, with the
+native producer and all process/lock probes **explicitly stubbed**. This proves
+protocol agreement, not a real process restart, held native lock or iOS test.
+See [resume source review](native-resume-source-review.json) and
+[offline resume interoperation](resume-interop-observation.json). Real checkpoint
+restart acceptance, complete case coordination and the production window remain
+pending; no runtime, account, simulator or production gate changed.
+
 See [preparation facts](preparation.json),
 [offline constructor observation](constructor-observation.json),
 [source snapshot](source-snapshot.json) and the

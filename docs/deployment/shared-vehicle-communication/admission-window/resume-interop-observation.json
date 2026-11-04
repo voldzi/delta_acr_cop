@@ -1,0 +1,14 @@
+{
+  "scope": "offline_real_Python_resume_helpers_with_stub_native_producer_and_stub_process_probes",
+  "nativeManifestSha256": "8d81f92ed1c84a1b9a4aba5d1c0d966e619d046d4fb17b6718e69d30843161da",
+  "ownCoordinatorJournalAndNativePrefixReconciled": true,
+  "existingCursorPreserved": true,
+  "privateResumeReceiptWritten": true,
+  "realProcessRestartProven": false,
+  "realRuntimeLockHeldProven": false,
+  "nativeIOSExecuted": false,
+  "simulatorStarted": false,
+  "networkRequests": 0,
+  "productionChanged": false,
+  "aggregatePass": false
+}

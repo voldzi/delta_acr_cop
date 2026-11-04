@@ -1,0 +1,20 @@
+{
+  "scope": "resume_source_compatibility_and_offline_checks_only",
+  "nativeSourceFreezeSha256": "8d81f92ed1c84a1b9a4aba5d1c0d966e619d046d4fb17b6718e69d30843161da",
+  "parentFreezeSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
+  "nativeSourceFilesMatched": 18,
+  "nativeSourceCommitted": false,
+  "copiedSwiftSourceMatched": true,
+  "builtHostInfoMatched": true,
+  "successfulHostBuildLogRead": true,
+  "hostBuildExecutedByCop": false,
+  "nativePythonTestsIndependentlyPassed": 41,
+  "copUnitTestsPassed": 84,
+  "copOwnJournalReconciledBeforeResume": true,
+  "runtimeAndProcessProbesProvidedByFrozenNativeHelper": true,
+  "actualNativeIOSExecutionPerformed": false,
+  "actualProcessRestartProven": false,
+  "liveCasesPassed": 0,
+  "liveCasesNotRun": 13,
+  "productionChanged": false
+}
