@@ -1,0 +1,18 @@
+{
+  "scope": "offline_proposal_not_installed",
+  "parentGuardSha256": "e3d31a74d1c9cf296ad2afb26382824dbbd1c5faec2fcc59d954950216c14fc3",
+  "parentKernelSha256": "c74e60fc58ef31fe2e8bca422345460c32575bca34db7255bdca2c9ddf38d9a1",
+  "newKernelSha256": "1f9539afb9540bfa0e4274e4443288ed70362690df751a6593a00f1a4eca2914",
+  "proposedGuardSha256": "48077a7ed96b791466fb1651627cf7d8cd8b966885302d4c2d0971e182843df1",
+  "historicalSourceRoundTripPreserved": true,
+  "ordinaryBrokerCanChangeConfiguration": false,
+  "productionChanged": false,
+  "ordinaryBrokerSourceChanged": false,
+  "parentPolicySha256": "2517bfc17a2d11e6a87ac2fc3a280b51da79c5044228f716cdb71ad9d13f84a7",
+  "proposedPolicySha256": "b997ac02e33fdf05dcafcc50fa6559c182bfa8528898fd76f2b51fee27a2ce4a",
+  "onlyPolicyChanges": [
+    "guardSha256",
+    "assets.scripts/cop-api-runtime.py"
+  ],
+  "policyInstalled": false
+}

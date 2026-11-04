@@ -1,0 +1,111 @@
+{
+  "contractVersion": "cop-vehicle-window-preparation-v1",
+  "state": "offline_source_proposal_not_installed",
+  "observedAt": "2026-11-04T22:30:24.258683+00:00",
+  "globalAdmissionOpened": false,
+  "accountsCreated": false,
+  "ordinaryBrokerCanChangeConfiguration": false,
+  "baseline": {
+    "cop": {
+      "generation": "55190b1dc87f4bf59dec02d3396c41a3",
+      "container": "9e0af82d3bfa1355e14180c6d0adf6fe0f0d86c4dbc768b0371f2d54ca8aa2cf",
+      "image": "sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d",
+      "pid": 1698295,
+      "startedAt": "2026-11-04T19:06:25.056838646Z",
+      "restartCount": 0,
+      "flagPresent": false,
+      "composeMappingPresent": false
+    },
+    "messaging": {
+      "container": "df775c70de0716b556ef0299716cc450584581a4021ca9189bdde7df6c1cc4e6",
+      "image": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+      "controllerConfigured": true,
+      "admissionEnabled": false
+    }
+  },
+  "productionGuard": {
+    "guardSha256": "e3d31a74d1c9cf296ad2afb26382824dbbd1c5faec2fcc59d954950216c14fc3",
+    "kernelSha256": "c74e60fc58ef31fe2e8bca422345460c32575bca34db7255bdca2c9ddf38d9a1",
+    "policySha256": "2517bfc17a2d11e6a87ac2fc3a280b51da79c5044228f716cdb71ad9d13f84a7",
+    "brokerSha256": "3bf7b52b37a2d685033e4af9ae26d4681cd1ab45fb216238a87e806dc29e9309"
+  },
+  "sourceComposeHashes": {
+    "docker-compose.yml": "25d29b0e1d8c9a87fbc1c74d402ca4d9ec268581ecdf4c7cbfa0ade4797ecc6a",
+    "docker-compose.driver-measurements.yml": "26d41de1e8b1388a2c1a3b5130db613d4c7bfacfe0145a0654757c98bf26a5d4",
+    "docker-compose.x5.yml": "67e5e1082fee81fe742c7117580bad2a99d1f5b5ef66a4fccc4b10721c25ed8c",
+    "docker-compose.ai-router.yml": "c84c6a57bb7e654c22b876d00a41fb388ce6e26d0afbccea0aea58691597ab5e"
+  },
+  "oidc": {
+    "issuer": "https://login.zeleznalady.cz/realms/cop",
+    "nativeClient": "csm-mobile",
+    "redirectUri": "csm://oauth/callback",
+    "scope": "openid profile offline_access",
+    "pkce": "S256",
+    "actualNativeLoginFormHttp": 200,
+    "actualRegistrationFormHttp": 200,
+    "actualRegistrationFields": [
+      "locale",
+      "username",
+      "email",
+      "firstName",
+      "lastName"
+    ],
+    "completeRegistrationOrVerificationFlowProven": false,
+    "formSubmitted": false,
+    "passwordOrNoncePrinted": false,
+    "backendCanonicalProfile": "GET /api/v1/me/preferences (may persist own profile)",
+    "backendActor": "GET /api/v1/mobile/bootstrap",
+    "mobilityAccount": "GET /api/v1/mobility/v1/account (may persist own account)",
+    "nativeMatrixProvision": "POST /api/v1/messaging/bootstrap (defer by actor/stage)",
+    "identityLookup": "POST /api/v1/messaging/matrix/identities/lookup (existing only)",
+    "workerCredentialProvisioningAllowed": false
+  },
+  "nativeFixtureContracts": {
+    "fixtureSchemaSha256": "85f73a26fdf8f225f5db8ab468b2ba94dd5666dd5c69f94fa2efb3fedfe3e0c1",
+    "handoffSha256": "809f14e439ff47ae9b3dab8449434e7f05027057838444de6ceb02128aea6923",
+    "reportSchemaSha256": "9f5da24b182c2d3cd5b92b6e28dbef000afd42ebfcbcb8559fbc86a60f3f1ace"
+  },
+  "bounds": {
+    "scope": "global_not_isolated",
+    "syntheticAllowlistEnforced": false,
+    "syntheticTestActorBudget": 3,
+    "syntheticVehicleBudget": 1,
+    "secondsMax": 1800,
+    "cases": 13,
+    "nativeProductionGateRemainsOff": true
+  },
+  "remainingBeforeAnyFinalWindowAuthorization": [
+    "Proposed publisher/deadline/COMM adapter exist only as source; concrete Root installer, approval loader and supervisor integration remain incomplete. Actual host integration and armed timer are unproven.",
+    "Existing-owner test addresses and verified csm-mobile token pairs have not been provided; no identities created",
+    "Native/core runner and owned simulator acceptance are not ready or executed",
+    "Fresh Root scope must explicitly cover the one COP flag plus its missing map, unchanged ordinary code-only authority, timer and failure containment; no generic Root permission",
+    "Actual thirteen-case server/native acceptance not executed; every case remains not_run"
+  ],
+  "liveReadbackAt": "2026-11-04T23:09:56.367017+00:00",
+  "liveReadback": {
+    "copHealthy": true,
+    "copRestartCount": 0,
+    "messagingHealthy": true,
+    "messagingRestartCount": 0,
+    "bothAdmissionFlagsOff": true,
+    "oidc": true,
+    "labTokenDisabled": true,
+    "accountErasureEnabled": true,
+    "accountSafetyRequired": true,
+    "readOnly": true
+  },
+  "localVerification": {
+    "sourceUnitTestsPassed": 61,
+    "scope": "pure contracts, fake-host boundaries and local inherited-flock test; not production or native acceptance",
+    "skeletonValidationPassed": true
+  },
+  "nativeActualRunnerReady": false,
+  "nativeCasesNotRun": 13,
+  "notificationReadback": {
+    "apnsMode": "live",
+    "webPushMode": "live",
+    "actualDedicatedTestRecipientProven": false,
+    "actualMatrixGatewayHandoffProven": false,
+    "configurationChanged": false
+  }
+}

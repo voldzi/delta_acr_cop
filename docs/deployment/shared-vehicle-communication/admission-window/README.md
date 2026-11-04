@@ -1,0 +1,74 @@
+# Admission-window preparation — not installed
+
+The startup repair and the separate existing-controller configuration are
+already deployed. This directory records preparation for the next functional
+acceptance stage; it is not a deployment approval or evidence that vehicle
+communication is available to users.
+
+Both general admission flags remain off. The proposed flags are global: three
+synthetic actors are the test budget, not a server-enforced allowlist. Jízda's
+production gate also remains off. Do not describe this as an isolated pilot.
+
+## Source and evidence
+
+The files under `scripts/vehicle-admission/` are an **incomplete, uninstalled
+proposal**. They include pure contracts and tests, a byte-exact constructor,
+proposed guarded publisher/worker, COMM adapter, orchestration core, timer
+renderer and deadline containment. A concrete reviewed installer, approval
+loader and supervisor integration are still missing. No proposed entry point
+may be installed or executed as Root on the strength of this document.
+
+The constructor observation was produced against locally copied public bytes
+of the exact installed guard and policy. It does not install either output.
+It preserves ordinary broker source and configuration authority, changing only
+the two guard hash references in the proposed policy. Source unit tests do not
+prove real host execution, timer arming, a production switch or native behavior.
+
+The production COP Compose lacks the flag mapping. A future explicitly reviewed
+transition therefore needs the single flag in `.env` **and** its one exact
+mapping line in `docker-compose.yml`. A value-only switch is insufficient.
+No other environment value, image, role, key, network or mount is in scope.
+
+Normal closing must preserve the same protected release checks. The proposed
+independent timer starts closure 180 seconds before the hard deadline. Rendering
+units is not arming a timer. Emergency containment can persist only this flag
+as off and stop a positively identified owned COP intake; it is not successful
+configuration acceptance, release repair or permission to stop cleanup writers.
+Unknown pending state remains unproven and needs reconciliation. No old-image
+fallback, erased-data restoration or durable-intent deletion is proposed.
+
+## Remaining prerequisites
+
+1. Complete, review and freeze the concrete host installation and supervisor;
+   verify inherited storage locking, actual timer arming/readback and closure
+   after failure. Do not weaken the ordinary healthy-source check.
+2. Obtain three dedicated real test identities through the actual `csm-mobile`
+   PKCE flow; invitation actors A/B need genuinely verified owned email
+   addresses. No accounts have been created. The human question for addresses
+   is pending. A service credential, a fixture UUID or a fabricated verification
+   claim cannot substitute for these sessions.
+3. Finish the actual Jízda native/core runner and notification handoff. Jízda
+   confirmed its current artifacts are schemas plus an offline validator, with
+   all thirteen cases `not_run`. Its old loopback harness cannot be promoted
+   into production evidence. An owned simulator is separately pending; do not
+   reuse another application's simulator or the user's shared session.
+4. Obtain approval of the exact complete one-window configuration capability
+   only after these prerequisites are reviewable. The installed code-only
+   broker still cannot change configuration.
+
+Only then consider one bounded window: at most three test actors, one synthetic
+vehicle and thirty minutes. Preserve separate results for the thirteen server,
+native/core, notification and lifecycle cases. An expired token is not proof of
+revocation; queueing is not actual notification delivery; unobserved cases fail
+acceptance. Phone, APNs and TestFlight acceptance remain separate.
+
+A read-only configuration check found both APNs and Web Push modes already
+`live`. This does not establish a registered dedicated test recipient or a
+correlated handoff from the actual Matrix push gateway. Neither was proven;
+do not replace that evidence with the mode setting or a dry-run stub. The
+production push configuration was not changed.
+
+See [preparation facts](preparation.json),
+[offline constructor observation](constructor-observation.json),
+[source snapshot](source-snapshot.json) and the
+[deployed repair record](../README.md).

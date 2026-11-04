@@ -141,3 +141,10 @@ was promoted into production authority. See owned-controller-config.review.json.
 Next is the distinct general-admission window and paired functional acceptance,
 not another controller creation or replay of either consumed case. The original
 failed image-only receipt and historical parity limitation remain unchanged.
+
+The [window preparation](admission-window/README.md) is incomplete source only,
+not installed or authorized for execution. Fresh read-only checks confirm both
+production services healthy with zero restarts and both admission flags off.
+Jízda has confirmed that its actual live native/core runner is not yet complete;
+all thirteen prepared cases remain `not_run`. Do not repeat the resolved startup
+diagnostic or open global admission on the strength of source unit tests.
