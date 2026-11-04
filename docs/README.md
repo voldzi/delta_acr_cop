@@ -16,6 +16,7 @@ Native authentication overload and the isolated immutable-projection candidate:
 Shared vehicle communication source candidate and provider enforcement boundary:
 [Jízda SDK handoff](integration/36_SHARED_VEHICLE_COMMUNICATION.md),
 [paired release review and rollback](deployment/shared-vehicle-communication/README.md).
+Application-owned release authority: [ADR0061](adr/0061_APPLICATION_OWNED_CODE_RELEASE.md).
 
 Frontendové výchozí hodnoty přihlášení a bezpečný přechod veřejného API bez lab
 přístupu jsou popsány v [konfiguraci](runbooks/03_ENVIRONMENT_CONFIGURATION.md#výchozí-přihlášení-při-sestavení)

@@ -1122,6 +1122,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
   let aiContextIndexRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let aiContextIndexWarmupRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let aiContextIndexClosing = false;
   let voiceCallExpiryTimer: ReturnType<typeof setInterval> | undefined;
   let aiContextIndexRefreshInFlight: Promise<AiContextIndexRefreshResult> | undefined;
   let trackPersistenceFlushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1764,11 +1766,23 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
     await initializeFlightDataSource();
-    await refreshAiContextIndex("startup", now());
+    // All durable owners/fences above remain mandatory. Warming an optional
+    // index must not close their pools or restart the API when a guarded read
+    // cannot complete. No document is published until the existing refresh
+    // pipeline and its final continuity check both succeed; readiness keeps
+    // reporting the empty index as degraded in the meantime.
+    void refreshAiContextIndex("startup", now()).catch((error) => {
+      reportAiContextIndexRefreshFailure(error);
+      if (aiContextIndexClosing) return;
+      // One bounded early retry; subsequent retries use the existing interval.
+      aiContextIndexWarmupRetryTimer = setTimeout(() => {
+        aiContextIndexWarmupRetryTimer = undefined;
+        if (!aiContextIndexClosing) void refreshAiContextIndex("background", now()).catch(reportAiContextIndexRefreshFailure);
+      }, Math.min(5_000, aiContextIndexRefreshSeconds * 1000));
+      aiContextIndexWarmupRetryTimer.unref?.();
+    });
     aiContextIndexRefreshTimer = setInterval(() => {
-      void refreshAiContextIndex("background", now()).catch((error) => {
-        app.log.warn({ error }, "AI context index refresh failed.");
-      });
+      void refreshAiContextIndex("background", now()).catch(reportAiContextIndexRefreshFailure);
     }, aiContextIndexRefreshSeconds * 1000);
     aiContextIndexRefreshTimer.unref?.();
     safetyNotificationWorker?.start();
@@ -1806,6 +1820,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
     }
+    aiContextIndexClosing = true;
+    if (aiContextIndexWarmupRetryTimer) clearTimeout(aiContextIndexWarmupRetryTimer);
     if (aiContextIndexRefreshTimer) {
       clearInterval(aiContextIndexRefreshTimer);
     }
@@ -2674,6 +2690,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       name: "ai-context-index",
       status: diagnostics.status === "disabled" ? "disabled" : diagnostics.status === "ok" ? "ok" : "degraded"
     };
+  }
+
+  function reportAiContextIndexRefreshFailure(error: unknown): void {
+    const reasonCode = error instanceof ProviderCopiesUnavailableError ? "AI_PROVIDER_COPY_GUARD_UNAVAILABLE" :
+      error instanceof AccountErasureError ? "AI_ACCOUNT_GUARD_UNAVAILABLE" :
+      error instanceof ContentErasureStoreError ? "AI_CONTENT_GUARD_UNAVAILABLE" : "AI_CONTEXT_REFRESH_UNAVAILABLE";
+    app.log.warn({ component: "ai-context-index", reasonCode }, "AI context index remains unavailable; guarded refresh did not complete.");
   }
 
   async function refreshAiContextIndex(reason: string, requestNow: Date): Promise<AiContextIndexRefreshResult> {

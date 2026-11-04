@@ -86,3 +86,5 @@ published paths are preserved for integration references.
 
 - [0059: Fresh planning flag enable](0059_FRESH_PLANNING_FLAG_ENABLE.md) — separate finite Root authority while preserving historical V3 readers and proofs.
 - [0060: Vehicle chat room generations](0060_SHARED_VEHICLE_CONVERSATION_ROOM_GENERATIONS.md) — staged logical conversation, native revocation and generation-bound client/delivery acceptance.
+
+- [0061: Application-owned code releases](0061_APPLICATION_OWNED_CODE_RELEASE.md) — limited Root broker, unchanged historical proofs, code-only cases and separate live acceptance.

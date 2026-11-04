@@ -1,84 +1,89 @@
-# Paired vehicle conversation release review
+# Shared vehicle communication release
 
-Prepared 4 November 2026. Source review artifact, **not an executable installer,
-Root authorization, image build receipt or production acceptance**.
+Updated4November2026. Source, image build, deployment and native acceptance are
+separate states. This document does not authorize a configuration/identity change.
 
-The adjacent `release.review.json` pins both published payload revisions,
-contracts, observed production image IDs, the exact four configuration keys,
-ordered installation and rollback conditions. Its null target image IDs are
-intentional: a source SHA cannot substitute for an actual built image digest.
-The source revisions precede this documentation commit and are immutable payload
-pins, not instructions to build a moving branch or this directory's HEAD.
+## Current production state
 
-## Installation boundary
+- COP is restored and accepted on51a10099… / sourceb8d1897, generation
+  ddf7ce6eccab439bb336f18118a0cd5c, CIDca463e19… . Pending recovery is closed.
+  The health-only completion did not recreate the container or add restarts.
+  HTTPS live/ready200 and auth/login302 to login.zeleznalady.cz passed.
+- Messaging is running healthy one9c50077… / source50e590c. Admission remains off.
+- The first COP candidatee4a94bb3… / dd545c2 failed guarded cold startup. It is
+  quarantined; its stage and all failed proof/health artifacts are preserved.
+- COP vehicle conversation and Jízda gates remain off. No TestFlight publication,
+  APNs/physical-phone or paired production acceptance is claimed.
 
-The app executor currently has passwordless access only to three fixed
-`cop-reviewed-release` actions. That broker is pinned to the earlier
-login/location release (COP API c06c… / web3606…); its status rejects the current
-state after subsequent accepted image51a… . It is not a general application
-release authority and cannot install these candidates. Do not rewrite its pins,
-use OS-maintenance sudo for an application command, invoke an unrestricted
-container swap or use another application's builder as an alternative.
+The original image also initially failed cold startup before stabilizing. Guard
+snapshot/local jobs/configuration/dataset and the separately approved normal
+assertCurrent check passed. The captured startup error was in guarded AI index
+warmup. A new source candidate makes this optional warmup asynchronous while
+retaining every mandatory owner/fence initialization, publication check and
+readiness dependency. It does not change provider/erasure decisions, financial
+limits, Router model routing or external context. The empty index stays degraded
+until a guarded refresh actually succeeds. One early retry is bounded; shutdown
+prevents late retry scheduling. Arbitrary exception text is not logged.
 
-The current unprivileged invocation of COP's dedicated X5 builder verifier also
-fails. It does not establish the cause (custody/mount/configuration requires
-Root inspection). No build or prune is authorized by a failed verifier. Root
-must first inspect that existing builder and X5 custody, without changing shared
-builders or global Docker settings. Ordinary application preparation resumes
-only after that exact verifier passes.
+## Limited application-owned releases
 
-The **concrete missing Root work** is: verify the existing build custody; build
-both exact payloads with approved resolved bases; record image/dependency/config
-parity and actual tests; seal only those two images and the four declared keys
-in the existing application release profile; expose a fixed action for that
-sealed release if noninteractive execution is intended. General sudo, arbitrary
-command/path/environment authority and weakening runtime/erasure checks are
-outside this proposal. No password or token value belongs in this artifact.
+ADR0061 defines the installed Root-owned code-only broker. The application
+executor can use only fixed status/prepare/activate commands without a password.
+No general sudo, arbitrary path/image/environment argument or other-service
+operation was added. A private request supplies a published source revision and
+expected generation. Root freezes/verifies Git bytes, pins the existing Dockerfile
+and Node24.22.2 base, verifies the dedicated X5 builder and runs actual image tests
+plus database/X5/Sharp/runtime/health checks. Activation still requires a fresh
+Root case, exact source process/CAS, full environment/topology parity and a target
+with zero restarts. Configuration changes require a separate bounded decision.
 
-Install the Messaging candidate first and COP second, both disabled. The source
-Compose declarations forward the feature flags explicitly; adding .env entries
-without updating the actual container is insufficient. Preserve all other
-configuration, credentials, networks, mounts and account-safety controls.
-Separately review the dedicated controller custody, then run live synthetic
-paired acceptance before approving enabled values. Never reuse the administrator
-or cop.ai.agent as the room controller. The observed production Matrix server
-name is docker.home.cz; a proposed controller name must be checked for absence
-and prior use, rather than adopting an existing principal by name.
+Current status must match the accepted CID, have no pending operation, and report
+actual healthy/running state; historical restart counts are exposed, not hidden.
+The bad image is rejected before testing or activation. Actual-image acceptance
+now requires all9 named test files, at least109 successes, no failures/pending,
+and the unchanged compatibility probes. Root policy/source changes are not
+performed by ordinary application releases.
 
-This candidate requires no new business tables or broad database rights; it
-uses existing internal VehicleState and Messaging JSONB store/CAS. Existing
-healthy database_v2 protections and at least two Messaging pool connections are
-mandatory. Do not re-run account reset, erasure installation, role grants or any
-historical migration merely to release this feature.
+The dedicated cop-x5 builder was recovered with its existing pinned definition
+and X5 bind cache; no prune, global data-root change or shared builder change
+occurred. X5 UUID/filesystem and own storage lock remain mandatory. Full build
+contexts/artifacts live on X5; small protected operation cases remain Root-owned.
 
-## Return and recovery
+## Messaging evidence limitation
 
-Before **any** enrollment, the existing guard may return to the exact healthy
-baseline only after proving that neither source intents nor managed room records
-were created, including synthetic acceptance records. Do not infer this from a
-false flag alone. Keep actual current runtime/configuration evidence.
+Docker save/load normalized its manifest ID from60a8959c… toe9c50077… . Both hosts
+verified identical full Config and all4 RootFS layers. Only services.api.image
+changed in the protected pin; original bytes and preflight are preserved.
 
-After enrollment, the supported containment is to disable admission/UI while
-keeping the new cleanup-capable writers running and retaining all pending
-intents/bindings. Let exact outstanding revocations/closures finish. Returning
-to an older writer, rolling back source membership, deleting managed metadata
-or replacing an immutable operation to obtain success is prohibited. Already
-handed-off messages, SDK transactions and APNs cannot be recalled.
+The first raw HostConfig/Mounts comparison failed and the old raw object was not
+retained. Do not claim complete historical raw parity. A supplemental observation
+verified current environment, declared runtime security/identity, network IDs,
+mount identities/read-only/propagation, peers and health. Legacy Binds does not
+expose CreateMountpoint, so creation-time policy remains unproven. The user
+approved only the exact existing csm-messaging_messaging-data volume(created
+8July2026) without Compose labels; it was not changed, deleted or relabeled.
+The observation explicitly keeps complete/raw parity false and is not paired
+acceptance. Its Root receipt is in the original vehicle-image-release directory.
 
-A partially completed paired release needs explicit reconciliation of actual
-image IDs, config, pointers and durable state through the existing guard. This
-artifact is not authority for an automatic retry or older-image fallback.
+## Next acceptance boundary
 
-## Evidence and exclusions
+Keep both features disabled until dedicated controller custody/configuration and
+live synthetic paired acceptance are completed with Jízda. Never reuse an
+administrator or cop.ai.agent as room controller. Verify exact ready/join-required,
+revocation/kick/invite readback, pending202/exact retry/restart, wrong actor,
+notification/native delivery denial and lifecycle cleanup. No real account is
+needed for a destructive test. Do not infer phone/APNs acceptance from source
+or server checks.
 
-The current source evidence is in
-[the integration contract](../../integration/36_SHARED_VEHICLE_COMMUNICATION.md).
-COP77 focused tests, Messaging260 pass/41 skip, earlier isolated PostgreSQL3,
-SDK39 (including4 new typed pending-response checks) and phased actual Megolm acceptance are distinct results. None supplies
-live COP/COMM, APNs or physical-phone acceptance. Jízda's production gate remains
-off, and no TestFlight publication is authorized.
+Before any enrollment, return requires actual proof of absent COP projections
+and Messaging managed records, paused intake and a specifically approved bound
+transition. After enrollment, contain by disabling admission while retaining
+cleanup-capable writers and every durable pending intent; do not return to an
+older writer or replace operation identities. No automatic rollback is installed.
+The historical manual-return scripts are one-operation tools, not generic release
+commands. Preserved evidence: /var/lib/cop-self-release/manual-return-20261104;
+new completion permit and health observation are separately retained.
 
-Read-only compiled baseline checks matched production `mobility-service.js`,
-`routes/mobility-routes.js` and `cop-state-erasure.js` exactly. `server.js`
-differed only in comments/formatting. This limited check does **not** establish
-whole-image or dependency parity for a new full rebuild; record that separately.
+See release.review.json for exact image/source pins, the integration contract
+at docs/integration/36_SHARED_VEHICLE_COMMUNICATION.md, and
+[archived working notes](../../archive/2026-11-04_SHARED_VEHICLE_RELEASE_WORKING_NOTES.md).

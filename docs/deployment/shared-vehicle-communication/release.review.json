@@ -1,7 +1,7 @@
 {
   "contractVersion": "cop-managed-vehicle-release-review-v1",
   "reviewDate": "2026-11-04",
-  "status": "source_ready_root_build_and_seal_required",
+  "status": "previous_cop_restored_healthy_startup_fix_candidate_verified_locally",
   "productionActivated": false,
   "executableInstaller": false,
   "sources": {
@@ -33,9 +33,10 @@
     "health": "both healthy at read-only inspection; recheck immediately before any change"
   },
   "targetImages": {
-    "cop": null,
-    "messaging": null,
-    "reason": "No privileged build or deployment performed; never treat source SHAs as image digests."
+    "cop": "sha256:e4a94bb3f76bbcfe0d831b5aae993aabf79a2680208b10a10e552d5c8c5d6b49",
+    "messaging": "sha256:e9c50077e596718f267b65422e5c95169ea6e3f88d55ce734c5d5939183b9907",
+    "messagingBuilderArtifact": "sha256:60a8959ca1f226ed1f7e3d26de72c714cf5650b4c178db51256450ea84619eaa",
+    "reason": "Actual built images. Docker save/load normalized Messaging manifest identity; full Config and RootFS verified identical."
   },
   "allowedRuntimeDelta": {
     "cop": {
@@ -120,7 +121,71 @@
   },
   "remainingAuthority": [
     "Current NOPASSWD cop-reviewed-release CLI is pinned to an older login/location hotfix and rejects status; it cannot build/seal/activate these targets.",
-    "Existing COP X5 builder verification fails for current unprivileged invocation; do not build with a shared/default builder to bypass it.",
     "Root must perform the bounded build/custody/seal steps and give the application executor a fixed noninteractive action for only the resulting release. No generic sudo, arbitrary commands or credential disclosure requested."
-  ]
+  ],
+  "builderRecovery": {
+    "contractVersion": "cop-dedicated-builder-recovery-v1",
+    "date": "2026-11-04",
+    "imageId": "sha256:27933730df224df80c41f4e5a9b33fa78831a79fd31903df3bb7deb49363422f",
+    "configurationSha256": "09eec3a15a98bd5a2adf4793e08da8a2dfa85c9a6899d26bbf69f0f9752f59dc",
+    "copBuilderRuntimeX5Verified": true,
+    "existingCachePreserved": true,
+    "prunePerformed": false,
+    "applicationRestarted": false
+  },
+  "productionState": {
+    "cop": "Healthy accepted51a10099/sourceb8d1897, generationddf7ce6eccab439bb336f18118a0cd5c, CIDca463e197883878c22607246f0fd2e8e74321cb6bee62b4e29e25f8041584a28, pending closed; health-only completion no recreate/no new restarts",
+    "messaging": "new image running healthy, admission disabled; supplemental runtime security/identity observations passed, historical raw parity and legacy creation-time bind policy remain unproven",
+    "messagingRawComparisonPassed": false,
+    "messagingEvidenceLimitation": "Original raw HostConfig/Mounts object was not retained after a failed equality check. Do not claim raw parity. Additional declared-contract validation currently stops on the pre-existing named volume without Compose ownership labels. No ownership guard exception accepted.",
+    "legacyVolumeException": "User-approved 4Nov2026 only exact existing csm-messaging_messaging-data created2026-07-08T17:26:43Z without labels, source messaging-data target/data; no relabel or volume modification",
+    "diagnostics": {
+      "readOnlySnapshot": true,
+      "guardFenceCount": 2,
+      "localJobCount": 2,
+      "jobsConfigurationDatasetMatch": true,
+      "guardColumnUpdatePrivilegesPresent": true,
+      "guardDefaultReadonly": false,
+      "guardRlsActive": false,
+      "guardUserTriggerCount": 0,
+      "continuityAdvisoryLockCounts": {
+        "granted": 0,
+        "waiting": 0
+      },
+      "oneApprovedLiveContainerAssertion": "Process killed(exit137) by main container restart, outcome unproven; not automatically replayed",
+      "stableReadOnlyProbe": "Passed, snapshot2fences, identical watermark",
+      "stableAssertOnce": "Explicitly approved; passed, same watermark,5000ms validity, no SQL errors",
+      "observer": "Short25s run: guard decisions unchanged,98 successful refreshes, no failures captured. Longer run refused before mutation once original API healthy."
+    },
+    "publicHttps": {
+      "live": 200,
+      "ready": 200,
+      "authLogin": 302,
+      "loginRedirectHost": "login.zeleznalady.cz"
+    },
+    "failedCopImageQuarantined": true
+  },
+  "selfDeployment": {
+    "installed": true,
+    "actions": [
+      "status",
+      "prepare",
+      "activate"
+    ],
+    "generalSudo": false,
+    "configurationChangeAuthority": false,
+    "actualStatusPassed": true,
+    "actualPreparePassed": true,
+    "actualActivationPassed": false,
+    "statusIncludesRealHealthAndPendingCheck": true,
+    "normalFutureImageTestMinimum": 109
+  },
+  "nextCandidate": {
+    "sourceRevision": null,
+    "imageId": null,
+    "change": "asynchronous guarded optional AI warmup, bounded early retry and shutdown cancellation; all owner initialization/publication/readiness guards preserved",
+    "localFocusedTests": 109,
+    "localOperatorBoundaryTests": 18,
+    "productionActivated": false
+  }
 }
