@@ -95,7 +95,7 @@
     "readOnly": true
   },
   "localVerification": {
-    "sourceUnitTestsPassed": 61,
+    "sourceUnitTestsPassed": 71,
     "scope": "pure contracts, fake-host boundaries and local inherited-flock test; not production or native acceptance",
     "skeletonValidationPassed": true
   },
@@ -107,5 +107,13 @@
     "actualDedicatedTestRecipientProven": false,
     "actualMatrixGatewayHandoffProven": false,
     "configurationChanged": false
+  },
+  "pairedServerSteps": {
+    "state": "library_only_not_live",
+    "actualNativeSpoolLeaseBinding": true,
+    "durableSingleAttemptJournal": true,
+    "actualLiveMutations": 0,
+    "fullCaseCoordinatorComplete": false,
+    "nativeRefreshOwnerExclusive": true
   }
 }

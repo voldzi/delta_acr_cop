@@ -11,6 +11,7 @@
     "scripts/vehicle-admission/messaging.py": "7f3157cf33a26c3105ad7cd6a0538a3b6c853ebd6828b5acdf8ebc1bc1c3aa87",
     "scripts/vehicle-admission/proposal.py": "513da73744506baea4536c4724bcb3200670cd77ba7459a94413490234cb59a8",
     "scripts/vehicle-admission/publisher.py": "c32084dfa88d8c4354a6f32f828b6a71483a57c108decef8a8a7134ab0463a56",
+    "scripts/vehicle-admission/server_steps.py": "6d75b07a5590aef9898b2da5f44309edf2fd03794e917455bec8a62447015dd2",
     "scripts/vehicle-admission/supervisor.py": "a70f4cae4d45592c71355fc406b4c0687847fadd26b9c0a277d625b6a6cef5c6",
     "scripts/vehicle-admission/test_constructor.py": "3bd380829d3f52aae6523a754d6c9fc92aad6db291903b609cd883d548b09e38",
     "scripts/vehicle-admission/test_contract.py": "70db6b17997a6791062531221e3aca7bf2c8a6b966c3f49588782edd04b05b3b",
@@ -20,6 +21,7 @@
     "scripts/vehicle-admission/test_messaging.py": "bd8a7709628a2e3eae626803215ac5740c71552c2665a4d6929ff08c8a030b7f",
     "scripts/vehicle-admission/test_proposal.py": "57c34d34db9c3cbc6e0589d54a123fb91d0bf8bcad760a3d0f12210879717b68",
     "scripts/vehicle-admission/test_publisher.py": "ff7769fbb466649a082b362657f1ea67dce392b2ea139b46caa8ef37487d2142",
+    "scripts/vehicle-admission/test_server_steps.py": "f9545f7e953836a23fe6097890c833a4d7f136ff3fa21550db6adab1c3781412",
     "scripts/vehicle-admission/test_supervisor.py": "3ca7e75e6ed1f40cb1e7d04857eedc902b28188e5c494d400d115f6dca5a5dd5",
     "scripts/vehicle-admission/test_timer.py": "29e5c012be7da9bfdc7e5940821ddda4474e5918ecbcf9278ca9eb49f9b1a435",
     "scripts/vehicle-admission/test_worker.py": "4e013190231411517bd9ce5bdad24821b8b3b0ae10bd02f22d4e209fe57d5057",
@@ -27,7 +29,7 @@
     "scripts/vehicle-admission/worker.py": "685c5842ccb840d19f5dc949cd05037dcfb9f7bea7bfa33a88d3e386fc2765c9"
   },
   "tests": {
-    "passed": 61,
+    "passed": 71,
     "productionAcceptance": false
   },
   "approvalGranted": false,

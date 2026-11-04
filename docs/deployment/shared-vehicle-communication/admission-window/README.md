@@ -68,6 +68,40 @@ correlated handoff from the actual Matrix push gateway. Neither was proven;
 do not replace that evidence with the mode setting or a dry-run stub. The
 production push configuration was not changed.
 
+## Paired server steps
+
+`scripts/vehicle-admission/server_steps.py` implements the bounded COP HTTP steps
+for the proposed native spool protocol. This is a library, not a complete
+thirteen-case coordinator or a command to run production tests. It has not
+performed any live mutation. The still-missing coordinator supplies the actual
+window observation and requests each lease from the sole native refresh owner.
+It must not treat a fixture boolean or a callback as production authorization.
+
+`Lease.from_spool` matches the exact outstanding `lease_cop_access` command
+bytes, digest, run, sequence and command ID against the native result before
+reading its fixed `private/access-<UPPERCASE UUID>.json` path. The owned private
+directories must be mode0700 and the single-link lease file0400/0600. The lease
+is for the fixed COP origin and issuer, actor A/B/C and at most60seconds within
+the window. No refresh token is accepted. Refresh remains exclusively in the
+native actor lifecycle. Neither leases nor private receipts belong in Git,
+stdout, environment variables, arguments or the public report.
+
+The driver creates at most one vehicle with the exact name
+`Owned vehicle acceptance <UPPERCASE RUN UUID>`, validates the returned A owner
+and operation, and writes the original receipt to `private/vehicle-created.json`.
+Further read, invitation, acceptance, member-removal and vehicle-close steps use
+only that returned vehicle. Only an invitation obtained for the corresponding
+test actor can be accepted. Existing user vehicles are never selected.
+
+Each POST has an exclusive, fsynced private intent before its single transport
+attempt. An uncertain response, failed receipt or HTTP202 is preserved; there
+is no automatic refresh/retry, second vehicle, fallback or claim of completed
+native removal. Restart reconciliation and deliberate same-operation pending
+replay must still be implemented/reviewed in the coordinator; an existing
+attempt is refused here. TLS calls have a fixed origin, finite routes and no
+redirect, cookie or proxy reuse. These boundary tests are offline; they do not
+prove production TLS, notification delivery or any native case.
+
 See [preparation facts](preparation.json),
 [offline constructor observation](constructor-observation.json),
 [source snapshot](source-snapshot.json) and the
