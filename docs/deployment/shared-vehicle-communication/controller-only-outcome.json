@@ -1,0 +1,82 @@
+{
+  "contractVersion": "cop-controller-only-execution-outcome-v1",
+  "date": "2026-11-04",
+  "sourceRevision": "5ff8c2b",
+  "executorSha256": "f476afad20da3c877bcd1a5d8a98ba0a54c12659830a41f8d51e989492bffbc3",
+  "bootstrapSha256": "665689b1d379b4e523bae6870b50086e2d39844bef65ac46bed0e0f645504238",
+  "controller": {
+    "userId": "@csm.vehicle.controller.v1:docker.home.cz",
+    "created": true,
+    "retained": true,
+    "custodyVerified": true,
+    "passwordless": true,
+    "nonAdminBot": true,
+    "noExternalBindingsDevicesCryptoTokensOrPendingDeactivation": true,
+    "dynamicWhoami": true,
+    "dynamicLogout": true,
+    "postLogoutStaticReadback": true,
+    "currentStaticReadback": true
+  },
+  "configurationAttempt": {
+    "accepted": false,
+    "failedContainerId": "77d647b5014315a4d2fd5832776f441062a71361fe649a975616ab0df6337e67",
+    "failedPinSha256": "15837d03fae096387ed6162d163b78586149f912c5bf65c9b5106880509a030e",
+    "startupFailureLocation": "CsmMessaging.AccountSafety.init account_safety.ex:143 startup_payload unavailable",
+    "guardDisabled": false,
+    "admissionEverEnabledByAction": false,
+    "applyRetried": false,
+    "fullTargetRuntimeParityProven": false
+  },
+  "manualRecovery": {
+    "sameImage": "sha256:e9c50077e596718f267b65422e5c95169ea6e3f88d55ce734c5d5939183b9907",
+    "currentContainerId": "c20c4a6452c3809d5bf234f4e05d6fd13db6201dbf9cf49090a768380019d3d7",
+    "originalPinSha256": "c2d70f07dd5df6cc62cd1dcc02acabc8d1afca29a516afeefc39f98a94d7e035",
+    "allOriginalInputHashesRestored": true,
+    "declaredRenderExactlyOriginal": true,
+    "managedRecordsBeforeReturn": 0,
+    "originalIdentityMappingMissingCount": 0,
+    "healthy": true,
+    "historicalRestartCount": 12,
+    "stableSameProcessSeconds": 10,
+    "liveHttpStatus": 200,
+    "readyHttpStatus": 200,
+    "controllerConfigured": false,
+    "runtimeCustodyFlag": false,
+    "admissionEnabled": false,
+    "automaticRollback": false,
+    "newTargetZeroRestartAcceptance": false,
+    "fullRawParityClaimed": false
+  },
+  "cop": {
+    "imageId": "sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d",
+    "sourceRevision": "00c854d56eb9fd4346e26dade622776c83bee9a5",
+    "generation": "55190b1dc87f4bf59dec02d3396c41a3",
+    "healthy": true,
+    "restartCount": 0,
+    "modified": false
+  },
+  "diagnostics": {
+    "twoIsolatedReadOnlyProbesRemoved": true,
+    "snapshotCatalogBindingsPrefixesPassed": true,
+    "providerFirstProbe": false,
+    "providerLaterProbe": true,
+    "laterProviderHttpStatus": 200,
+    "startupFailureRootCauseEstablished": false,
+    "loopback403NotClaimedAsCause": true,
+    "postgresQueriesReadOnly": true,
+    "rawLogsOrCredentialsPrinted": false,
+    "erasureReplayManuallyInvoked": false,
+    "watermarksManuallyChanged": false
+  },
+  "remaining": [
+    "Investigate cold-start provider/replay transient reliability while retaining mandatory fail-closed hydration",
+    "Do not reuse consumed controller-only apply, adopt an unknown controller, or clear its journal",
+    "Prepare a fresh bounded configuration-only case only after startup reliability acceptance",
+    "Keep general admission and Jizda gate OFF until explicit window and live paired acceptance"
+  ],
+  "rootEvidenceDirectory": "/srv/csm-messaging/account-safety/controller-only-v1",
+  "rootHealthObservation": "manual-recovery-health-observation.json",
+  "pairedAcceptanceComplete": false,
+  "phoneOrApnsAcceptanceClaimed": false,
+  "testFlightPublished": false
+}

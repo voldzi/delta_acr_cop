@@ -1,6 +1,8 @@
 # Controller and configuration review — 4 November 2026
 
-Prepared, not executed. No identity, configuration or admission changed.
+Executed controller-only attempt; account custody proved, runtime cutover failed,
+original configuration recovered healthy. Admission was never enabled.
+See [actual outcome](controller-only-outcome.json); the original apply is consumed.
 The exact machine-readable scope is [controller-config.review.json](controller-config.review.json).
 The 13-case [live acceptance plan](live-acceptance-plan.json) was copied byte-for-byte
 from Jízda's prepared plan; results remain empty.
@@ -86,8 +88,10 @@ remain unused and requires explicit recovery; it is not silently deleted.
 32 deterministic boundary/protocol tests passed. The actual default bootstrap
 also passed read-only against current COP and Messaging (404, SQL readback
 availability, exact CAS, current declared environment and planned pin hash).
-No provider write, installation or runtime change has been performed. Exact
-source/bootstrap hashes and evidence are in controller-config.review.json.
+Those tests/read-only proofs preceded the actual attempt. The controller and
+Root-frozen executor now exist, but no successful controller-config runtime
+receipt was issued. Exact source/bootstrap hashes are in controller-config.review.json;
+creation/custody and separate manual recovery evidence are in controller-only-outcome.json.
 A subsequent general admission window still requires a distinct COP config
 operation; the code-only broker remains unable to perform it.
 

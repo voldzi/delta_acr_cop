@@ -1,6 +1,6 @@
 {
   "contractVersion": "cop-vehicle-controller-config-review-v1",
-  "status": "bounded_controller_only_executor_prepared_live_readonly_preflight_passed",
+  "status": "executed_controller_custody_proven_config_cutover_failed_manual_original_config_recovered",
   "controller": {
     "matrixUserId": "@csm.vehicle.controller.v1:docker.home.cz",
     "namespace": "outside @cop_ managed human identity namespace",
@@ -20,8 +20,8 @@
       "errcode": "M_NOT_FOUND",
       "readOnly": true
     },
-    "custodyProven": false,
-    "created": false,
+    "custodyProven": true,
+    "created": true,
     "postCreateRequired": [
       "Exact returned name; admin=false; user_type=bot; active after supported removal of transient initial password",
       "No password hash (boolean database readback only), no threepids or external SSO bindings",
@@ -128,13 +128,13 @@
     "futureGlobalAdmissionStillNeedsSeparateCopConfigurationAuthority": true
   },
   "executionAllowedByThisDocument": false,
-  "productionChanged": false,
+  "productionChanged": true,
   "executor": {
     "path": "scripts/vehicle-controller/controller-only-off.py",
     "bootstrapPath": "scripts/vehicle-controller/bootstrap-controller-off.py",
     "defaultMode": "read-only",
-    "applyState": "not_executed",
-    "installed": false,
+    "applyState": "consumed_do_not_retry",
+    "installed": true,
     "allowedRuntimeDelta": [
       "CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID",
       "CSM_VEHICLE_CONTROLLER_CUSTODY_REVIEWED"
@@ -166,6 +166,8 @@
       "bootstrap-controller-off.py": "665689b1d379b4e523bae6870b50086e2d39844bef65ac46bed0e0f645504238",
       "test_controller_only_off.py": "5f8dfbf4f751eaad6dba8d75327c81f8210cfb1e5690e1a5a2a8e402b76b66e1",
       "test_bootstrap_controller_off.py": "61f0a468d39cc1f8785031c5022d7741f1e52c61db35e30fee1a667a4dc8b56d"
-    }
+    },
+    "executionOutcomePath": "controller-only-outcome.json",
+    "runtimeConfigAccepted": false
   }
 }

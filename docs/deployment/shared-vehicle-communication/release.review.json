@@ -1,7 +1,7 @@
 {
   "contractVersion": "cop-managed-vehicle-release-review-v1",
   "reviewDate": "2026-11-04",
-  "status": "paired_code_images_deployed_healthy_features_disabled",
+  "status": "code_images_healthy_controller_created_runtime_config_not_accepted_features_disabled",
   "productionActivated": true,
   "executableInstaller": false,
   "sources": {
@@ -86,7 +86,7 @@
     {
       "id": "controller_custody",
       "required": "Separately review/provision exactly one noninteractive nonadmin technical Matrix controller with no password, devices or crypto keys, outside reserved human namespace. Never reuse administrator/cop.ai.agent or alter immutable human safety baselines. Pin identity only after actual custody proof; no controller token stored/logged.",
-      "status": "pending_separate_acceptance_stage"
+      "status": "account_created_custody_proven_runtime_configuration_not_accepted"
     },
     {
       "id": "acceptance",
@@ -134,8 +134,9 @@
     "skeletonPassed": true
   },
   "remainingAuthority": [
-    "No additional authority needed for normal COP API code-only status/prepare/activate. Limited broker installed and used successfully; temporary Root terminal closed.",
-    "Dedicated Matrix controller custody and bounded feature configuration need separate review before enabling shared vehicle chat; live paired/native/APNs acceptance still pending."
+    "Normal COP code-only releases remain self-service through the existing broker; no Docker config permission was added.",
+    "Controller account custody is proven. Messaging cold-start reliability must be resolved before a fresh configuration-only transition; original consumed apply cannot be retried.",
+    "General admission still needs distinct bounded COP configuration authority and explicit global window plus live paired/native acceptance; phone/APNs are separate."
   ],
   "builderRecovery": {
     "contractVersion": "cop-dedicated-builder-recovery-v1",
@@ -149,9 +150,9 @@
   },
   "productionState": {
     "cop": "Healthy accepted1338179f/source00c854d56eb9fd4346e26dade622776c83bee9a5; release-4daef7fb69ea4e40a8d2dbb560255dbf; generation55190b1dc87f4bf59dec02d3396c41a3; zero restarts, pending absent.",
-    "messaging": "Healthy e9c50077/source50e590c, zero restarts, admission disabled; current runtime security/identity checks passed, historical raw parity and legacy creation-time bind policy remain unproven.",
+    "messaging": "Healthy e9c50077/source50e590c after original-config recovery; current CIDc20c4a64, historical12 restarts, live/ready200. Controller custody proven, runtime controller unset and admission false; no zero-restart or full raw-parity acceptance.",
     "messagingRawComparisonPassed": false,
-    "messagingEvidenceLimitation": "Original raw HostConfig/Mounts object was not retained after a failed equality check. Do not claim raw parity. Additional declared-contract validation currently stops on the pre-existing named volume without Compose ownership labels. No ownership guard exception accepted.",
+    "messagingEvidenceLimitation": "Original raw HostConfig/Mounts object was not retained after failed equality. Supplemental declared runtime observations do not establish full raw parity or legacy bind creation policy. The exact pre-existing named volume exception was separately user-approved; no relabel or volume change.",
     "legacyVolumeException": "User-approved 4Nov2026 only exact existing csm-messaging_messaging-data created2026-07-08T17:26:43Z without labels, source messaging-data target/data; no relabel or volume modification",
     "diagnostics": {
       "readOnlySnapshot": true,
@@ -217,5 +218,6 @@
   "pairedAcceptanceComplete": false,
   "quarantinedCopImage": "sha256:e4a94bb3f76bbcfe0d831b5aae993aabf79a2680208b10a10e552d5c8c5d6b49",
   "actualEnvironmentKeysChanged": [],
-  "effectiveNewFlags": "Absent new flag variables preserve source defaults:false. No false-key write, controller enrollment or enabling transition was performed."
+  "effectiveNewFlags": "Both admission flags remain false. Controller-only two-key configuration was attempted, failed guarded cold startup, and original protected pin/all inputs were manually restored. The new nonadmin controller is retained passwordless with verified custody, but runtime controller/custody keys remain unset/false.",
+  "controllerOnlyOutcome": "controller-only-outcome.json"
 }

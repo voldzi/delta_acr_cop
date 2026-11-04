@@ -11,7 +11,11 @@ separate states. This document does not authorize a configuration/identity chang
   session/vehicle requests401. Actual AI index and completed erasure-owner
   readiness are ok. An earlier owner aggregate timed out as pending; it was not
   treated as a completed negative or relabeled as success.
-- Messaging is running healthy one9c50077… / source50e590c. Admission remains off.
+- Messaging is healthy on e9c50077… / source50e590c after a manual return to
+  the exact original protected configuration. Current CIDc20c4a64… has12
+  historical restarts, retained explicitly; live/ready200 and stable same-process
+  observation passed. Admission remains off. This is not zero-restart acceptance
+  of the controller configuration.
 - The first COP candidatee4a94bb3… / dd545c2 failed guarded cold startup. It is
   quarantined; its stage and all failed proof/health artifacts are preserved.
 - COP vehicle conversation and Jízda gates remain off. No TestFlight publication,
@@ -84,8 +88,17 @@ remain available. Final source/current-state metadata are in release.review.json
 
 ## Next acceptance boundary
 
-Keep both features disabled until dedicated controller custody/configuration and
-live synthetic paired acceptance are completed with Jízda. Never reuse an
+Keep both features disabled. Dedicated controller account creation and custody
+are now proven, but its configuration cutover was not accepted. The two-key
+change exposed guarded cold-start replay failure in AccountSafety; restoring
+the same image/original inputs also initially failed before stabilizing. Read-only
+diagnostics verified catalog/bindings/prefixes and later provider capability,
+but did not establish the exact transient failure cause. No guard was weakened.
+The unused passwordless controller is retained; source intents and managed
+records were not removed. Original controller apply is consumed and cannot be
+replayed. Resolve cold-start reliability before a fresh configuration-only case
+and the separate general-admission/paired acceptance window with Jízda.
+See [actual execution and recovery](controller-only-outcome.json). Never reuse an
 administrator or cop.ai.agent as room controller. Verify exact ready/join-required,
 revocation/kick/invite readback, pending202/exact retry/restart, wrong actor,
 notification/native delivery denial and lifecycle cleanup. No real account is
@@ -106,4 +119,4 @@ at docs/integration/36_SHARED_VEHICLE_COMMUNICATION.md, and
 [archived working notes](../../archive/2026-11-04_SHARED_VEHICLE_RELEASE_WORKING_NOTES.md).
 
 Concrete next-step review: [controller identity, bounded configuration and acceptance](controller-review.md).
-This review records live absence and the actual configuration privilege boundary; it does not install an executor or enable admission.
+The review now contains the exact executor/bootstrap and32tests; execution proved account custody but failed runtime acceptance. Admission was never enabled. The actual outcome and original-config recovery are recorded separately.
