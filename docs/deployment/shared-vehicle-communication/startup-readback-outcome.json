@@ -72,11 +72,24 @@
     "digestReconstructionSucceeded": false,
     "automaticRetry": false,
     "automaticRollback": false,
-    "rootCase": "/srv/csm-messaging/account-safety/startup-image-19c9b39-v1"
+    "rootCase": "/srv/csm-messaging/account-safety/startup-image-19c9b39-v1",
+    "currentRuntimeObservation": {
+      "version": "cop-messaging-current-runtime-observation-v4",
+      "observedAt": "2026-11-04T21:30:25.960373+00:00",
+      "allSelectedChecksPassed": true,
+      "checksPassed": 20,
+      "receipt": "current-runtime-observation-v4.json",
+      "historicalRawParity": false,
+      "mountCreationTimePolicyProven": false,
+      "configurationChanged": false,
+      "runtimeDigest": "496a975027ca99911ec2fb2cb725a4b2b3b2c7f250a5b7bcf9b3cf5f56f8d460",
+      "renderDigest": "86e7c236daf66d0ff80a03a1646bf4852addd846609d06a46ef024f35299341c",
+      "pinSha256": "4862272bf384dd5ca290ec3f837fecb94600548c300021e345afe9d931ed10a7"
+    }
   },
   "releaseAcceptanceComplete": false,
   "pairedAcceptanceComplete": false,
   "testFlightPublished": false,
   "phoneOrApnsClaimed": false,
-  "next": "Close current-runtime semantic parity evidence without replacing the failed receipt, then a fresh existing-controller config-only case; general admission remains a separate gate."
+  "next": "Review separate successful current-runtime observation with Jizda; preserve failed image-only receipt. New controller-config-only case requires full fresh Root-private before snapshot and live owner readiness. General admission remains OFF."
 }
