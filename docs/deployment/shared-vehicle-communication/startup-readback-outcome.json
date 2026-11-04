@@ -111,5 +111,15 @@
   "pairedAcceptanceComplete": false,
   "testFlightPublished": false,
   "phoneOrApnsClaimed": false,
-  "next": "Review separate successful current-runtime observation with Jizda; preserve failed image-only receipt. New controller-config-only case requires full fresh Root-private before snapshot and live owner readiness. General admission remains OFF."
+  "next": "Prepare a distinct general-admission window and actual paired acceptance using authenticated proven production actors. COP broker remains code-only; no bypass of configuration authority. No synthetic local actor is production authority.",
+  "subsequentControllerConfigCase": {
+    "accepted": true,
+    "review": "owned-controller-config.review.json",
+    "currentContainer": "df775c70de0716b556ef0299716cc450584581a4021ca9189bdde7df6c1cc4e6",
+    "controllerConfigured": true,
+    "admissionEnabled": false,
+    "imageUnchanged": true,
+    "fullCurrentTransitionSemanticParity": true,
+    "initialImageOnlyFailurePreserved": true
+  }
 }

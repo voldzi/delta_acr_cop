@@ -1,6 +1,6 @@
 {
   "contractVersion": "cop-owned-controller-configuration-review-v1",
-  "state": "prepared_not_applied",
+  "state": "applied_config_only_accepted",
   "sourceScript": "scripts/vehicle-controller/configure-owned-controller.py",
   "scriptSha256": "501035c5b028637091b1c68930928188c663b1035bf20d5cf0820cb77fa59bea",
   "baseline": {
@@ -39,6 +39,34 @@
     "mode": "0400",
     "loader": "fd O_NOFOLLOW, regular file, Root400, one link, size bound, unchanged fd stat, exact SHA256, execute verified bytes",
     "installed": true,
-    "executionApplied": false
+    "executionApplied": true
+  },
+  "actualOutcome": {
+    "rootCase": "/srv/csm-messaging/account-safety/owned-controller-config-19c9b39-v1",
+    "receipt": "receipt.json",
+    "postObservation": "post-config-observation.json",
+    "container": "df775c70de0716b556ef0299716cc450584581a4021ca9189bdde7df6c1cc4e6",
+    "imageUnchanged": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+    "zeroRestarts": true,
+    "controllerConfigured": true,
+    "controllerCreated": false,
+    "custodyVerified": true,
+    "fullCurrentTransitionSemanticParity": true,
+    "freshPrivateBeforeAndAfterRoot400Verified": true,
+    "liveHttp": 200,
+    "readyHttp": 200,
+    "allReadinessChecksOk": true,
+    "capabilityWithoutActorHttp": 401,
+    "capabilityWithProvenActorTested": false,
+    "admissionEnabled": false,
+    "jizdaGateEnabled": false,
+    "copGenerationBeforeAndAfter": "55190b1dc87f4bf59dec02d3396c41a3",
+    "copHealthyZeroRestartsBeforeAndAfter": true,
+    "copConfigurationChanged": false,
+    "rolesKeysOrNetworkChanged": false,
+    "historicalImageOnlyRawParity": false,
+    "pairedAcceptanceComplete": false,
+    "automaticRetry": false,
+    "automaticRollback": false
   }
 }

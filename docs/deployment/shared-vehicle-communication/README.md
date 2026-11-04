@@ -15,8 +15,11 @@ separate states. This document does not authorize a configuration/identity chang
   Cold start succeeded, restart count is0 and live/ready return200 with all12
   readiness checks ok. Only the image in the protected pin changed. The original
   final raw-runtime comparison failed and remains recorded; current declared
-  environment/labels and peers match. Do not claim full historical raw parity or
-  complete release acceptance. See startup-readback-outcome.json.
+  environment/labels and peers match. A subsequent separate two-key controller
+  configuration case succeeded on CIDdf775c70… with full current-transition
+  semantic parity, Root-private before/after snapshots and zero restarts. The
+  controller is configured, admission remains off. Do not claim full historical
+  raw parity or complete feature acceptance. See startup-readback-outcome.json.
 - The first COP candidatee4a94bb3… / dd545c2 failed guarded cold startup. It is
   quarantined; its stage and all failed proof/health artifacts are preserved.
 - COP vehicle conversation and Jízda gates remain off. No TestFlight publication,
@@ -114,3 +117,27 @@ Historical raw parity and mount creation-time policy remain unproven. Review thi
 current-state evidence before a fresh controller-only configuration case; never replay the consumed controller-creation operation.
 Keep both general admission and Jízda gate off until the separate explicit
 window and real paired acceptance. No TestFlight/device acceptance is claimed.
+
+## Existing-controller configuration outcome
+
+The new case owned-controller-config-19c9b39-v1 completed using the reviewed
+Root400 artifact501035c5… through an fd/stat/SHA loader. It created no identity,
+retained the same image and changed exactly the two controller environment
+values. The fresh process df775c70… is healthy with zero restarts; live/ready
+return200. Before and after snapshots remain only in the protected COMM case,
+Root400, and full semantic runtime comparison passed for this transition.
+The final prewrite CAS includes the original PID/StartedAt, healthy/running
+state, zero restarts, exact inputs and peer identities. Twelve pure boundary
+tests passed locally and independently in Jízda. No role/key/network changed.
+
+COP status before/after remains healthy on generation55190b1dc87f4bf59dec02d3396c41a3
+with zero restarts and code-only deployment authority. Both admission/Jízda
+gates remain off. The protected capability endpoint correctly rejected a request
+without actor headers401; this is not an authenticated capability acceptance.
+No currently proven, authorized production diagnostic owner was available for
+live owner preflight. Neither a fictitious UUID nor an isolated fixture actor
+was promoted into production authority. See owned-controller-config.review.json.
+
+Next is the distinct general-admission window and paired functional acceptance,
+not another controller creation or replay of either consumed case. The original
+failed image-only receipt and historical parity limitation remain unchanged.
