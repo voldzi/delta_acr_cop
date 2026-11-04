@@ -1,0 +1,23 @@
+{
+  "scope": "source_compatibility_and_offline_checks_only",
+  "nativeSourceFreezeSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
+  "nativeBaselineHead": "964f197db55c6f878922ed709c83d452b2da701d",
+  "nativeSourceCommitted": false,
+  "nativeSourceFilesMatched": 16,
+  "copiedSwiftSourceMatched": true,
+  "builtHostInfoMatched": true,
+  "successfulHostBuildLogRead": true,
+  "hostBuildExecutedByCop": false,
+  "nativePythonTestsIndependentlyPassed": 29,
+  "nativeSwiftParserVectorsReportedByJizda": 57,
+  "nativeSwiftParserExecutedByCop": false,
+  "nativeActions": 17,
+  "copLeaseAndCreationReceiptCompatibilityReviewed": true,
+  "normalSdkSendDenialIsDirectMatrixSendProof": false,
+  "actualNativeIOSExecutionPerformed": false,
+  "simulatorStarted": false,
+  "liveCasesPassed": 0,
+  "liveCasesNotRun": 13,
+  "notificationHandoffProven": false,
+  "productionChanged": false
+}

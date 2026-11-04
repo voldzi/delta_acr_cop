@@ -1,0 +1,10 @@
+{
+  "scope": "offline_real_Python_spool_interop_with_stub_native_and_stub_HTTP",
+  "nativeManifestSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
+  "commandResultLeaseAndCreationReceiptInteropPassed": true,
+  "realNetworkRequests": 0,
+  "nativeIOSExecuted": false,
+  "simulatorStarted": false,
+  "productionChanged": false,
+  "aggregatePass": false
+}

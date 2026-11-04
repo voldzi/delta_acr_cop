@@ -62,7 +62,7 @@
   },
   "nativeFixtureContracts": {
     "fixtureSchemaSha256": "85f73a26fdf8f225f5db8ab468b2ba94dd5666dd5c69f94fa2efb3fedfe3e0c1",
-    "handoffSha256": "809f14e439ff47ae9b3dab8449434e7f05027057838444de6ceb02128aea6923",
+    "handoffSha256": "1e9e2cc6af86302ff51e1c8c0a4a380452db6d3f8028a12b301778edf9fa7ea2",
     "reportSchemaSha256": "9f5da24b182c2d3cd5b92b6e28dbef000afd42ebfcbcb8559fbc86a60f3f1ace"
   },
   "bounds": {
@@ -77,7 +77,7 @@
   "remainingBeforeAnyFinalWindowAuthorization": [
     "Proposed publisher/deadline/COMM adapter exist only as source; concrete Root installer, approval loader and supervisor integration remain incomplete. Actual host integration and armed timer are unproven.",
     "Existing-owner test addresses and verified csm-mobile token pairs have not been provided; no identities created",
-    "Native/core runner and owned simulator acceptance are not ready or executed",
+    "Dedicated native stage host compiled and source freeze reviewed; complete paired thirteen-case coordinator, checkpoint process reconciliation, owned simulator and live execution are still pending.",
     "Fresh Root scope must explicitly cover the one COP flag plus its missing map, unchanged ordinary code-only authority, timer and failure containment; no generic Root permission",
     "Actual thirteen-case server/native acceptance not executed; every case remains not_run"
   ],
@@ -95,7 +95,7 @@
     "readOnly": true
   },
   "localVerification": {
-    "sourceUnitTestsPassed": 71,
+    "sourceUnitTestsPassed": 78,
     "scope": "pure contracts, fake-host boundaries and local inherited-flock test; not production or native acceptance",
     "skeletonValidationPassed": true
   },
@@ -114,6 +114,17 @@
     "durableSingleAttemptJournal": true,
     "actualLiveMutations": 0,
     "fullCaseCoordinatorComplete": false,
-    "nativeRefreshOwnerExclusive": true
+    "nativeRefreshOwnerExclusive": true,
+    "finiteNativePumpPrepared": true,
+    "offlineRealPythonSpoolInteropPassed": true
+  },
+  "nativeStageSource": {
+    "freezeSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
+    "nativeSourceCommitted": false,
+    "sourceFilesVerified": 16,
+    "builtInfoVerified": true,
+    "nativeActions": 17,
+    "nativePythonTestsIndependentlyPassed": 29,
+    "nativeIOSExecuted": false
   }
 }

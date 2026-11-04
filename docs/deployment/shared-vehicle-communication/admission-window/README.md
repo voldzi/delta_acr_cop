@@ -47,11 +47,14 @@ fallback, erased-data restoration or durable-intent deletion is proposed.
    addresses. No accounts have been created. The human question for addresses
    is pending. A service credential, a fixture UUID or a fabricated verification
    claim cannot substitute for these sessions.
-3. Finish the actual Jízda native/core runner and notification handoff. Jízda
-   confirmed its current artifacts are schemas plus an offline validator, with
-   all thirteen cases `not_run`. Its old loopback harness cannot be promoted
-   into production evidence. An owned simulator is separately pending; do not
-   reuse another application's simulator or the user's shared session.
+3. Finish the complete paired coordinator, runtime evidence and notification
+   handoff. Jízda has now frozen and built a dedicated host with a finite native
+   stage executor; the sixteen source hashes, copied Swift source, built Info
+   and successful build log were independently checked. The source remains
+   uncommitted in Jízda's shared worktree. All thirteen live cases are still
+   `not_run`. Its old loopback harness cannot be promoted into production
+   evidence. An owned simulator is separately pending; do not reuse another
+   application's simulator or the user's shared session.
 4. Obtain approval of the exact complete one-window configuration capability
    only after these prerequisites are reviewable. The installed code-only
    broker still cannot change configuration.
@@ -101,6 +104,24 @@ replay must still be implemented/reviewed in the coordinator; an existing
 attempt is refused here. TLS calls have a fixed origin, finite routes and no
 redirect, cookie or proxy reuse. These boundary tests are offline; they do not
 prove production TLS, notification delivery or any native case.
+
+`native_pump.py` supplies the finite seventeen-action local IPC pump for the
+frozen Jízda `SpoolClient`. It records the exact attempt before publication,
+matches the native result, enforces the window during waiting and blocks further
+commands after uncertainty, failure, timeout, checkpoint or finish. Checkpoint
+resume deliberately still requires explicit process/cursor reconciliation; a
+constructor does not silently adopt an existing spool. The pump exports only
+selected structural observations and always keeps aggregate acceptance false.
+It does not launch, install or control a simulator or create an account.
+
+An offline interoperation check exercised the actual frozen Jízda Python
+`SpoolClient`, COP pump, lease reader, journal and vehicle receipt handoff. Native
+results and HTTP were explicitly stubs; no iOS or network code executed. See
+[interop observation](spool-interop-observation.json) and
+[native source review](native-source-review.json). The actual native SDK stage
+execution, full thirteen-case orchestration, checkpoint process reconciliation,
+public runtime/host flows and notification handoff remain unproven. A denied
+normal SDK send is distinct from a direct Matrix HTTP send denial.
 
 See [preparation facts](preparation.json),
 [offline constructor observation](constructor-observation.json),
