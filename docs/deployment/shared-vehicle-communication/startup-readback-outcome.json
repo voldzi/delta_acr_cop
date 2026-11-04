@@ -74,11 +74,11 @@
     "automaticRollback": false,
     "rootCase": "/srv/csm-messaging/account-safety/startup-image-19c9b39-v1",
     "currentRuntimeObservation": {
-      "version": "cop-messaging-current-runtime-observation-v6",
-      "observedAt": "2026-11-04T21:35:18.251748+00:00",
+      "version": "cop-messaging-current-runtime-observation-v7",
+      "observedAt": "2026-11-04T21:39:03.798646+00:00",
       "allSelectedChecksPassed": true,
       "checksPassed": 27,
-      "receipt": "current-runtime-observation-v6.json",
+      "receipt": "current-runtime-observation-v7.json",
       "historicalRawParity": false,
       "mountCreationTimePolicyProven": false,
       "configurationChanged": false,
@@ -90,7 +90,8 @@
       "exactGeneratedLabelKeys": true,
       "namespaceAndDeviceContract": true,
       "currentNetworkObjectAndPeerAttachments": true,
-      "allExposedBindAndStructuredMountOptions": true
+      "allExposedBindAndStructuredMountOptions": true,
+      "absentPeerAttachmentClaimedVerified": false
     },
     "priorCurrentRuntimeObservationV4": {
       "version": "cop-messaging-current-runtime-observation-v4",

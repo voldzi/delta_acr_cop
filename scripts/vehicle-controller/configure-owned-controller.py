@@ -24,6 +24,16 @@ def canonical_runtime(v,envmap):
   if len({m[key] for m in collection})!=len(collection):raise ValueError('AMBIGUOUS_MOUNT_TARGET')
  return x
 
+
+def prepublication_matches(before,fresh,envmap,expected_inputs,current_inputs,expected_peers,current_peers):
+ return (fresh['Id']==before['Id'] and fresh['Image']==before['Image'] and
+  fresh['State']['Pid']==before['State']['Pid'] and fresh['State']['StartedAt']==before['State']['StartedAt'] and
+  fresh['State']['Running'] and fresh['State'].get('Health',{}).get('Status')=='healthy' and fresh['RestartCount']==0 and
+  canonical_runtime(fresh,envmap)==canonical_runtime(before,envmap) and current_inputs==expected_inputs and current_peers==expected_peers)
+
+def fixed_error(e):
+ return str(e) if re.fullmatch('[A-Z0-9_]{1,80}',str(e)) else type(e).__name__
+
 def main():
  args=argparse.ArgumentParser();args.add_argument('--apply',action='store_true');a=args.parse_args()
  assert os.geteuid()==0 and socket.gethostname().split('.')[0]=='comm','ROOT_COMM_REQUIRED'
@@ -54,19 +64,34 @@ def main():
    finally:os.close(out)
   n['sync_dir'](case)
   dynamic=o.provider('probe');need(dynamic=={'identityProven':True,'logoutProven':True,'ttlBounded':True},'CONTROLLER_PROBE_FAILED');n['assert_custody'](o.provider('custody'))
-  need(o.inspect()['Id']==BASE_CID and canonical_runtime(o.inspect(),n['envmap'])==baseline and o.inputs()==inputs,'PRECONFIG_CAS_CHANGED')
-  o.publish_pin(targetraw);need(o.render()==expectedrender,'CONFIG_EXCEEDS_TWO_KEYS');o.restart();until=time.monotonic()+120
+  fresh=o.inspect();need(prepublication_matches(before,fresh,n['envmap'],inputs,o.inputs(),n['BASELINE']['peers'],o.peers()),'PRECONFIG_CAS_CHANGED')
+  o.publish_pin(targetraw);need(o.render()==expectedrender,'CONFIG_EXCEEDS_TWO_KEYS');o.restart();until=time.monotonic()+120;first=True
   while True:
-   after=o.inspect();need(after['Image']==IMAGE and after['RestartCount']==0 and after['State']['Running'],'TARGET_START_FAILED')
+   after=o.inspect()
+   if first:
+    out=os.open(case/'raw-after-first.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o400)
+    try:n['write_all'](out,enc(after));os.fsync(out)
+    finally:os.close(out)
+    first=False
+   need(after['Image']==IMAGE and after['RestartCount']==0 and after['State']['Running'],'TARGET_START_FAILED')
    if after['State'].get('Health',{}).get('Status')=='healthy':break
    need(time.monotonic()<until,'TARGET_HEALTH_TIMEOUT');time.sleep(1)
+  out=os.open(case/'raw-after-health.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o400)
+  try:n['write_all'](out,enc(after));os.fsync(out)
+  finally:os.close(out)
+  n['sync_dir'](case)
   expected=copy.deepcopy(baseline);expected['config']['Env'].update(n['DELTA']);actual=canonical_runtime(after,n['envmap']);need(actual==expected,'TARGET_FULL_SEMANTIC_PARITY_FAILED')
   targetinputs=dict(inputs);targetinputs[str(pin)]=sha(targetraw);need(o.inputs()==targetinputs and o.peers()==n['BASELINE']['peers'],'TARGET_INPUT_PARITY_FAILED');n['assert_custody'](o.provider('custody'))
   time.sleep(10);stable=o.inspect();need(stable['Id']==after['Id'] and stable['State']['Pid']==after['State']['Pid'] and stable['State']['StartedAt']==after['State']['StartedAt'] and stable['RestartCount']==0 and stable['State'].get('Health',{}).get('Status')=='healthy','TARGET_NOT_STABLE')
   result={'controllerConfigured':True,'controllerCreated':False,'controllerCustodyVerified':True,'admissionEnabled':False,'imageUnchanged':IMAGE,'container':after['Id'],'zeroRestarts':True,'fullCurrentTransitionSemanticParity':True,'historicalImageOnlyRawParity':False,'freshPrivateBeforeSnapshotRetained':True,'pairedAcceptanceComplete':False,'automaticRetry':False,'automaticRollback':False}
   o.journal('receipt.json',result);print(json.dumps(result))
+ except Exception as e:
+  if case.is_dir() and (case/'started.json').is_file():
+   try:o.journal('failure.json',{'code':fixed_error(e),'automaticRetry':False,'automaticRollback':False})
+   except Exception:pass
+  raise
  finally:os.close(fd)
 if __name__=='__main__':
  try:main()
  except Exception as e:
-  print(json.dumps({'configurationComplete':False,'code':str(e) if re.fullmatch('[A-Z0-9_]{1,80}',str(e)) else type(e).__name__,'automaticRetry':False,'automaticRollback':False}));raise SystemExit(1)
+  print(json.dumps({'configurationComplete':False,'code':fixed_error(e),'automaticRetry':False,'automaticRollback':False}));raise SystemExit(1)

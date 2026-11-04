@@ -2,7 +2,7 @@
   "contractVersion": "cop-owned-controller-configuration-review-v1",
   "state": "prepared_not_applied",
   "sourceScript": "scripts/vehicle-controller/configure-owned-controller.py",
-  "scriptSha256": "7d795fb4d8f6eeead913d37f20b750116145a94c412c65e3980f53338b02950c",
+  "scriptSha256": "501035c5b028637091b1c68930928188c663b1035bf20d5cf0820cb77fa59bea",
   "baseline": {
     "container": "d75a44cd259ececd4627fd8a06cf9cfdf3a2e96ce237dd461798d4e6bf95c811",
     "image": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
@@ -28,5 +28,17 @@
   "automaticRollback": false,
   "liveOwnerPreflightPerformed": false,
   "pairedAcceptanceComplete": false,
-  "generalAdmissionAuthorizedByThisPlan": false
+  "generalAdmissionAuthorizedByThisPlan": false,
+  "prepublicationCAS": "One fresh inspect: exact CID/image/PID/StartedAt, running healthy restartCount0, full canonical config, input hashes and peer IDs after custody probe",
+  "privateSnapshots": "Root400 raw-before.json, raw-after-first.json, raw-after-health.json; never exported",
+  "failureEvidence": "Append-only Root failure.json with sanitized fixed code; no automatic retry or rollback",
+  "pureBoundaryTestsPassed": 12,
+  "frozenExecution": {
+    "script": "/srv/csm-messaging/account-safety/owned-controller-config-501035c5b028.py",
+    "owner": "Root",
+    "mode": "0400",
+    "loader": "fd O_NOFOLLOW, regular file, Root400, one link, size bound, unchanged fd stat, exact SHA256, execute verified bytes",
+    "installed": true,
+    "executionApplied": false
+  }
 }

@@ -49,7 +49,14 @@ checks['namespaceModes']=all(host.get(k)==x for k,x in namespace.items()) and al
 checks['noUnexpectedDevicesOrVolumesFrom']=all(not host.get(k) for k in ('Devices','DeviceRequests','DeviceCgroupRules','VolumesFrom','ExtraHosts')) and all(not service.get(k) for k in ('devices','device_cgroup_rules','volumes_from','extra_hosts')) and not service.get('deploy',{}).get('resources',{}).get('reservations',{}).get('devices')
 net=json.loads(o.docker('network','inspect','csm-messaging_default'))[0];fixed_network='7a0181a5ec6632c76960f7dc7d3c2e0d6568ebfd361decfafadb8f498c314313'
 peervs=json.loads(o.docker('inspect',*n['BASELINE']['peers'].values()))
-checks['currentNetworkObjectAndPeerAttachments']=net['Id']==fixed_network and v['NetworkSettings']['Networks']['csm-messaging_default']['NetworkID']==fixed_network and v['Id'] in net['Containers'] and all(x['NetworkSettings']['Networks'].get('csm-messaging_default',{}).get('NetworkID',fixed_network)==fixed_network for x in peervs) and n['BASELINE']['peers']['/csm-matrix-synapse'] in net['Containers']
+peer_attachments=[]
+for x in peervs:
+ attachment=x['NetworkSettings']['Networks'].get('csm-messaging_default')
+ present=x['Id'] in net['Containers']
+ verified=present and attachment is not None and attachment.get('NetworkID')==fixed_network and net['Containers'][x['Id']].get('EndpointID')==attachment.get('EndpointID')
+ peer_attachments.append({'peer':x['Name'],'running':x['State']['Running'],'attachedToCurrentNetwork':present,'attachmentVerified':verified,'absentAttachmentClaimedVerified':False})
+checks['currentNetworkObjectAndPresentPeerAttachments']=net['Id']==fixed_network and v['NetworkSettings']['Networks']['csm-messaging_default']['NetworkID']==fixed_network and v['Id'] in net['Containers'] and all(not x['attachedToCurrentNetwork'] or x['attachmentVerified'] for x in peer_attachments) and any(x['peer']=='/csm-matrix-synapse' and x['attachmentVerified'] for x in peer_attachments)
+
 # Finite known mount profile. Reject an unhandled declared option, rather than
 # dropping it from comparison. Legacy create_host_path remains explicitly unproven.
 checks['mountDeclarationsSupported']=all(set(m)<={'type','source','target','read_only','bind','volume','consistency'} and not m.get('consistency') and set(m.get('bind',{}))<={'create_host_path','propagation'} and not m.get('bind',{}).get('propagation') and not m.get('volume',{}) for m in service.get('volumes',[]))
@@ -63,7 +70,7 @@ for m in service.get('volumes',[]):
 checks['allExposedBindAndStructuredOptions']=sorted(host.get('Binds') or [])==sorted(expectedbinds) and sorted(host.get('Mounts') or [],key=lambda m:m['Target'])==sorted(expectedstructured,key=lambda m:m['Target'])
 checks['peers']=o.peers()==n['BASELINE']['peers']
 time.sleep(10);w=o.inspect();checks['stableProcess']=w['Id']==v['Id'] and w['State']['Pid']==v['State']['Pid'] and w['State']['StartedAt']==v['State']['StartedAt'] and w['RestartCount']==0 and w['State'].get('Health',{}).get('Status')=='healthy'
-result={'contractVersion':'cop-messaging-current-runtime-observation-v6','observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'19c9b39669877dfeacbe1bd996e9c8da7c4cd1ec','image':v['Image'],'container':v['Id'],'checks':checks,'allSelectedChecksPassed':all(checks.values()),'historicalRawParity':False,'originalFailureRetained':True,'mountCreationTimePolicyProven':False,'historicalNetworkIdsProven':False,'uncheckedRuntimeFieldsRemainOutOfScope':True,'observationOnly':True,'configurationChanged':False,'erasureOwnerCompleteClaimed':False,'admissionEnabled':False,'runtimeDigest':sha(enc(n['runtime_spec'](v))),'renderDigest':sha(enc(render)),'pinSha256':sha(o.read(n['PIN']))}
+result={'contractVersion':'cop-messaging-current-runtime-observation-v7','observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'19c9b39669877dfeacbe1bd996e9c8da7c4cd1ec','image':v['Image'],'container':v['Id'],'checks':checks,'peerAttachmentObservation':peer_attachments,'allSelectedChecksPassed':all(checks.values()),'historicalRawParity':False,'originalFailureRetained':True,'mountCreationTimePolicyProven':False,'historicalNetworkIdsProven':False,'uncheckedRuntimeFieldsRemainOutOfScope':True,'observationOnly':True,'configurationChanged':False,'erasureOwnerCompleteClaimed':False,'admissionEnabled':False,'runtimeDigest':sha(enc(n['runtime_spec'](v))),'renderDigest':sha(enc(render)),'pinSha256':sha(o.read(n['PIN']))}
 print(json.dumps(result))
 if all(checks.values()):
- o.journal.__func__.__globals__['CASE']=case;o.journal('current-runtime-observation-v6.json',result)
+ o.journal.__func__.__globals__['CASE']=case;o.journal('current-runtime-observation-v7.json',result)
