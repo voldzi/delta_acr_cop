@@ -1,0 +1,7 @@
+{
+  "Sources/CSMCore/MatrixDraftSubmission.swift": "aa7d4b57a09501e2dbc63d28ac4f28b8d38f0bc80b19f397994be51e28246416",
+  "Sources/CSMCore/OfflineFirstMessagingClient.swift": "d829252096618f5d55d26a64073da819ae6b6561e247151d37d54384c0ad074b",
+  "Sources/CSMCore/MatrixRustE2EEMessagingClient.swift": "a54d29d4a0d7c67bd505787d107c238a123f34242768012fa669fe60766040ca",
+  "Sources/CSMCore/CommunicationModel.swift": "2aff74ab77440af27947a95f19731a1a9e6776cc5dc873184d8335085e8a2f3b",
+  "Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift": "a6136fc458b7fa8632d2ca0d73c0543246e248afdb9bf49cbab5ea654bccf088"
+}

@@ -1,0 +1,272 @@
+--- a/Sources/CSMCore/MatrixDraftSubmission.swift
++++ b/Sources/CSMCore/MatrixDraftSubmission.swift
+@@ -25,12 +25,14 @@
+     }
+     var scope: MatrixLocalStoreScope
+     var roomID: String
++    var recipientEpoch: String? = nil
+     var failure: Failure? = nil
+     var parts: [Part]
+ 
+-    init(scope: MatrixLocalStoreScope, draft: OutgoingMessageDraft, roomID: String) {
++    init(scope: MatrixLocalStoreScope, draft: OutgoingMessageDraft, roomID: String, recipientEpoch: String? = nil) {
+         self.scope = scope
+         self.roomID = roomID
++        self.recipientEpoch = recipientEpoch
+         let oneSafetyEvent = !draft.attachments.isEmpty && draft.attachments.allSatisfy { $0.kind == .safetyStatus }
+         self.parts = Array(repeating: Part(), count: oneSafetyEvent ? 1 : max(1, draft.attachments.count))
+     }
+@@ -39,7 +41,7 @@
+     var hasUncertainPart: Bool { parts.contains { $0.state == .queuing || $0.state == .queued } }
+ 
+     func canFollow(_ previous: MatrixDraftSubmission) -> Bool {
+-        guard scope == previous.scope, roomID == previous.roomID, parts.count == previous.parts.count else { return false }
++        guard scope == previous.scope, roomID == previous.roomID, recipientEpoch == previous.recipientEpoch, parts.count == previous.parts.count else { return false }
+         let rank: [State: Int] = [.notStarted: 0, .queuing: 1, .queued: 2, .confirmed: 3]
+         return zip(previous.parts, parts).allSatisfy { old, new in
+             rank[new.state, default: -1] >= rank[old.state, default: -1] &&
+--- a/Sources/CSMCore/OfflineFirstMessagingClient.swift
++++ b/Sources/CSMCore/OfflineFirstMessagingClient.swift
+@@ -1,6 +1,21 @@
+ import Foundation
+ 
+-actor OfflineFirstMessagingClient: MessagingSessionInvalidating, MessagingClientProtocol, MessagingClientDiagnostics, MessagingLifecycleControlling, MessagingLiveMessageStreaming, MessagingLiveLocationSharing, MessagingHistoryPaging, MessagingCachedSnapshotLoading, MessagingConversationPresentationEnriching, MessagingConversationAvatarUpdating, MatrixEncryptionRecoveryManaging, MatrixLocalStoreRecovering, MessagingLocalStoreDiagnosing, MessagingNotificationFencedSending {
++actor OfflineFirstMessagingClient: ManagedVehicleNativeMembership, MessagingSessionInvalidating, MessagingClientProtocol, MessagingClientDiagnostics, MessagingLifecycleControlling, MessagingLiveMessageStreaming, MessagingLiveLocationSharing, MessagingHistoryPaging, MessagingCachedSnapshotLoading, MessagingConversationPresentationEnriching, MessagingConversationAvatarUpdating, MatrixEncryptionRecoveryManaging, MatrixLocalStoreRecovering, MessagingLocalStoreDiagnosing, MessagingNotificationFencedSending {
++    func requireManagedVehicleJoined(_ conversation: Conversation) async throws {
++        guard isConfigured, liveClientReady,
++              let native = liveClient as? any ManagedVehicleNativeMembership else { throw CancellationError() }
++        let revision = configurationRevision
++        try await native.requireManagedVehicleJoined(conversation)
++        guard revision == configurationRevision else { throw CancellationError() }
++    }
++    func acceptManagedVehicleInvitation(_ conversation: Conversation) async throws {
++        guard isConfigured, liveClientReady,
++              let native = liveClient as? any ManagedVehicleNativeMembership else { throw CancellationError() }
++        let revision = configurationRevision
++        try await native.acceptManagedVehicleInvitation(conversation)
++        guard revision == configurationRevision else { throw CancellationError() }
++    }
++
+     private let liveClient: any MessagingClientProtocol
+     private let submissionKey = "outbox-send:" + UUID().uuidString
+     private let outbox: any MessageOutboxStoring
+@@ -354,6 +369,7 @@
+             }
+         }
+ 
++        guard !conversation.isManagedVehicleConversation else { throw CancellationError() }
+         let attemptedAt = Date()
+         do {
+             let sent = try await liveClient.sendMessage(draft, to: conversation)
+@@ -413,7 +429,8 @@
+         pending.requiresExactMatrixAcknowledgement = true
+         pending.senderId = scope.userID
+         pending.roomId = conversation.activeMatrixRoomId ?? conversation.conversationId
+-        let state = MatrixDraftSubmission(scope: scope, draft: draft, roomID: roomID)
++        guard !conversation.isManagedVehicleConversation || conversation.managedRecipientEpoch != nil else { throw CancellationError() }
++        let state = MatrixDraftSubmission(scope: scope, draft: draft, roomID: roomID, recipientEpoch: conversation.managedRecipientEpoch)
+         try await outbox.enqueueMatrixDraft(pending, conversation: conversation, submission: state)
+         guard revision == configurationRevision else { throw CancellationError() }
+         let record = PendingMessageRecord(conversationId: conversation.conversationId, message: pending)
+@@ -727,6 +744,7 @@
+             }
+         }
+ 
++        guard !conversation.isManagedVehicleConversation else { throw CancellationError() }
+         var result = MessageOutboxSyncResult.empty
+         result.delivered += await reconcilePendingMessagesAlreadyConfirmedIfPossible(for: conversation)
+         let records = try await outbox.pendingRecords(for: conversation.conversationId)
+@@ -818,7 +836,7 @@
+             // Unscoped historical sends are not proof that the SDK never queued
+             // them. Retain them for explicit reconciliation; never blind retry.
+             guard let submission = record.matrixSubmission, submission.scope == scope,
+-                  submission.roomID == conversation.activeMatrixRoomId else { continue }
++                  submission.roomID == conversation.activeMatrixRoomId, conversation.matchesManagedSubmission(submission) else { continue }
+             let reconciled = try await sender.reconcileMatrixDraft(submission, in: conversation)
+             guard revision == configurationRevision else { throw CancellationError() }
+             try await persistMatrixSubmission(reconciled, record: record, revision: revision)
+@@ -924,7 +942,7 @@
+             var removed = 0
+             for record in records where !activeSubmissions.contains(record.id) {
+                 guard var state = record.matrixSubmission, state.scope == scope,
+-                      state.roomID == conversation.activeMatrixRoomId else { continue }
++                      state.roomID == conversation.activeMatrixRoomId, conversation.matchesManagedSubmission(state) else { continue }
+                 let previous = state
+                 for message in liveMessages where message.isOwnMessage && message.id.hasPrefix("$") &&
+                     message.senderId == scope.userID && message.roomId == (conversation.activeMatrixRoomId ?? conversation.conversationId) {
+--- a/Sources/CSMCore/MatrixRustE2EEMessagingClient.swift
++++ b/Sources/CSMCore/MatrixRustE2EEMessagingClient.swift
+@@ -16,7 +16,7 @@
+ /// the SDK handle Megolm encryption, room key sharing, media encryption and
+ /// local crypto state. It deliberately checks encrypted-room state before
+ /// sending whenever COP/CSM policy marks the conversation as E2EE-required.
+-actor MatrixRustE2EEMessagingClient: MatrixDraftSending, MessagingSessionInvalidating, MessagingClientProtocol, MessagingLifecycleControlling, MessagingLiveMessageStreaming, MessagingLiveLocationSharing, MessagingHistoryPaging, MessagingConversationPresentationEnriching, MessagingConversationAvatarUpdating, MatrixEncryptionRecoveryManaging, MatrixLocalStoreRecovering, MessagingSessionAvailability {
++actor MatrixRustE2EEMessagingClient: ManagedVehicleNativeMembership, MatrixDraftSending, MessagingSessionInvalidating, MessagingClientProtocol, MessagingLifecycleControlling, MessagingLiveMessageStreaming, MessagingLiveLocationSharing, MessagingHistoryPaging, MessagingConversationPresentationEnriching, MessagingConversationAvatarUpdating, MatrixEncryptionRecoveryManaging, MatrixLocalStoreRecovering, MessagingSessionAvailability {
+     private static let userAgent = "COP Mobile iOS/0.1.2 MatrixRustSDK/26.06.23"
+     private static let preflightUserAgent = "COP Mobile iOS/0.1.2 Matrix preflight"
+     private static let historyPageSize: UInt16 = 100
+@@ -589,7 +589,7 @@
+         let context = try requireSessionContext()
+         let generation = timelineGeneration
+         guard let bootstrap = lastBootstrap, MatrixLocalStoreScope(bootstrap) == submission.scope,
+-              submission.roomID == conversation.activeMatrixRoomId,
++              submission.roomID == conversation.activeMatrixRoomId, conversation.matchesManagedSubmission(submission),
+               MatrixDraftSubmission(scope: submission.scope, draft: draft, roomID: submission.roomID).parts.count == submission.parts.count,
+               !draft.isEmpty else { throw CancellationError() }
+         if let invalid = MessageAttachmentPolicy.validationError(for: draft) { throw CSMServiceError.invalidState(invalid) }
+@@ -687,7 +687,7 @@
+     func reconcileMatrixDraft(_ submission: MatrixDraftSubmission, in conversation: Conversation) async throws -> MatrixDraftSubmission {
+         let generation = timelineGeneration
+         guard let bootstrap = lastBootstrap, MatrixLocalStoreScope(bootstrap) == submission.scope,
+-              submission.roomID == conversation.activeMatrixRoomId else { throw CancellationError() }
++              submission.roomID == conversation.activeMatrixRoomId, conversation.matchesManagedSubmission(submission) else { throw CancellationError() }
+         var result = submission
+         guard result.hasUncertainPart else { return result }
+         let room = try await joinedRoom(for: conversation)
+@@ -1214,12 +1214,36 @@
+ 
+     // MARK: - Room and timeline
+ 
++    func requireManagedVehicleJoined(_ conversation: Conversation) async throws {
++        guard conversation.isManagedVehicleConversation, conversation.managedRecipientEpoch != nil,
++              let roomId = conversation.activeMatrixRoomId,
++              let room = try requireClient().getRoom(roomId: roomId), room.membership() == .joined else {
++            throw CSMServiceError.unavailable("Nejprve přijměte ověřenou pozvánku vozidla.")
++        }
++    }
++
++    func acceptManagedVehicleInvitation(_ conversation: Conversation) async throws {
++        let generation = timelineGeneration
++        guard conversation.isManagedVehicleConversation, conversation.managedRecipientEpoch != nil,
++              let roomId = conversation.activeMatrixRoomId else { throw CancellationError() }
++        let client = try requireClient()
++        await syncOnceBestEffort(using: client, timeoutMs: 10_000, fullState: true, reason: "vehicle-explicit-invite")
++        guard generation == timelineGeneration, let room = try client.getRoom(roomId: roomId) else { throw CancellationError() }
++        if room.membership() == .invited { try await room.join() }
++        guard generation == timelineGeneration, room.membership() == .joined else { throw CancellationError() }
++    }
++
+     private func joinedRoom(for conversation: Conversation) async throws -> Room {
+         let matrixClient = try requireClient()
+         guard let roomId = conversation.activeMatrixRoomId else {
+             throw MatrixAPIError.missingRoomBinding(conversation.conversationId)
+         }
+ 
++        if conversation.isManagedVehicleConversation {
++            try await requireManagedVehicleJoined(conversation)
++            guard let room = try matrixClient.getRoom(roomId: roomId) else { throw CancellationError() }
++            return room
++        }
+         if let room = try matrixClient.getRoom(roomId: roomId) {
+             return try await prepareJoinedRoom(room)
+         }
+@@ -1282,6 +1306,10 @@
+     private func joinKnownInvitedRooms(using matrixClient: Client) async {
+         var joinedRoom = false
+         for room in matrixClient.rooms() {
++            // Conservative exclusion only, never an authorization grant. Managed
++            // room aliases are service-controlled and accepted explicitly.
++            let aliases = [room.canonicalAlias()].compactMap { $0 } + room.alternativeAliases()
++            guard !aliases.contains(where: { $0.hasPrefix("#cop.vehicle.") }) else { continue }
+             guard (try? await room.roomInfo().membership) == .invited else { continue }
+             do {
+                 try await room.join()
+--- a/Sources/CSMCore/CommunicationModel.swift
++++ b/Sources/CSMCore/CommunicationModel.swift
+@@ -2129,6 +2129,22 @@
+         }
+     }
+ 
++    func requireManagedVehicleJoined(_ conversation: Conversation) async throws {
++        let epoch = jizdaLifecycleSnapshot.generation
++        guard permitsCommunicationProducers(epoch: epoch),
++              let native = messaging as? any ManagedVehicleNativeMembership else { throw CancellationError() }
++        try await native.requireManagedVehicleJoined(conversation)
++        guard permitsCommunicationProducers(epoch: epoch) else { throw CancellationError() }
++    }
++
++    func acceptManagedVehicleInvitation(_ conversation: Conversation) async throws {
++        let epoch = jizdaLifecycleSnapshot.generation
++        guard permitsCommunicationProducers(epoch: epoch),
++              let native = messaging as? any ManagedVehicleNativeMembership else { throw CancellationError() }
++        try await native.acceptManagedVehicleInvitation(conversation)
++        guard permitsCommunicationProducers(epoch: epoch) else { throw CancellationError() }
++    }
++
+     func selectConversation(_ conversation: Conversation) async {
+         let epoch = jizdaLifecycleSnapshot.generation
+         guard permitsCommunicationProducers(epoch: epoch) else { return }
+--- a/Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift
++++ b/Tests/CSMCommunicationKitTests/MatrixDraftSubmissionTests.swift
+@@ -4,6 +4,46 @@
+ 
+ @MainActor
+ final class MatrixDraftSubmissionTests: XCTestCase {
++    func testManagedAudienceChangePreservesOldDraftWithoutReplayOrForeignAcknowledgement() async throws {
++        var (bootstrap, conversation) = try await setup()
++        conversation.metadata["scope"] = "shared_vehicle"
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        let outbox = InMemoryMessageOutbox()
++        let live = DraftSubmissionMessaging(confirmation: .pending)
++        let wrapper = OfflineFirstMessagingClient(liveClient: live, outbox: outbox)
++        try await wrapper.configure(with: bootstrap)
++        _ = try await wrapper.sendMessage("Synthetic private draft", to: conversation)
++        conversation.metadata["vehicleRecipientEpoch"] = "3" // removal/rejoin, same room
++        await live.confirm(transaction: DraftSubmissionMessaging.fullTransactionID, event: "$old-audience")
++        _ = try await wrapper.synchronizePendingMessages(for: conversation)
++        let records = try await outbox.pendingRecords(for: conversation.conversationId)
++        XCTAssertEqual(records.count, 1)
++        XCTAssertEqual(records.first?.matrixSubmission?.recipientEpoch, "1")
++        XCTAssertEqual(records.first?.matrixSubmission?.parts.first?.state, .queued)
++        let calls = await live.queuedParts
++        XCTAssertEqual(calls, [0])
++    }
++
++    func testManagedDraftEpochIsRequiredAndCannotBeReboundInJournal() async throws {
++        let (bootstrap, original) = try await setup()
++        let scope = try XCTUnwrap(MatrixLocalStoreScope(bootstrap))
++        let draft = OutgoingMessageDraft(body: "Synthetic draft")
++        let prior = MatrixDraftSubmission(scope: scope, draft: draft, roomID: original.activeMatrixRoomId!, recipientEpoch: "1")
++        var later = prior; later.recipientEpoch = "2"
++        XCTAssertFalse(later.canFollow(prior))
++        var conversation = original
++        conversation.metadata["scope"] = "shared_vehicle"
++        XCTAssertFalse(conversation.matchesManagedSubmission(prior))
++        conversation.metadata["vehicleRecipientEpoch"] = "1"
++        XCTAssertTrue(conversation.matchesManagedSubmission(prior))
++        let legacy = MatrixDraftSubmission(scope: scope, draft: draft, roomID: original.activeMatrixRoomId!)
++        XCTAssertFalse(conversation.matchesManagedSubmission(legacy))
++        for invalid in ["0", "01", "-1", "9007199254740992", "unknown"] {
++            conversation.metadata["vehicleRecipientEpoch"] = invalid
++            XCTAssertNil(conversation.managedRecipientEpoch)
++        }
++    }
++
+     private func setup() async throws -> (MessagingBootstrap, Conversation) {
+         var bootstrap = try await PreviewCopAPIClient().messagingBootstrap(deviceId: "synthetic-device")
+         bootstrap.userId = "@a:matrix.test"
+--- /dev/null
++++ b/Sources/CSMCore/ManagedVehicleNativeMembership.swift
+@@ -0,0 +1,22 @@
++import Foundation
++
++protocol ManagedVehicleNativeMembership: Sendable {
++    func requireManagedVehicleJoined(_ conversation: Conversation) async throws
++    func acceptManagedVehicleInvitation(_ conversation: Conversation) async throws
++}
++
++extension Conversation {
++    var isManagedVehicleConversation: Bool { metadata["scope"] == "shared_vehicle" }
++    var managedRecipientEpoch: String? {
++        guard isManagedVehicleConversation, let raw = metadata["vehicleRecipientEpoch"],
++              let value = UInt64(raw), value > 0, value <= 9_007_199_254_740_991,
++              String(value) == raw else { return nil }
++        return raw
++    }
++    func matchesManagedSubmission(_ submission: MatrixDraftSubmission) -> Bool {
++        if isManagedVehicleConversation {
++            return managedRecipientEpoch != nil && submission.recipientEpoch == managedRecipientEpoch
++        }
++        return submission.recipientEpoch == nil
++    }
++}

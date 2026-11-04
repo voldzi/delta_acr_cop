@@ -133,3 +133,10 @@ fixture were removed. The three tests cover competing CAS writers, durable pendi
 state despite a failed publication transaction and publication/handoff lock ordering.
 They do not establish real Synapse/SDK E2EE or APNs acceptance. No production flag,
 controller account, existing conversation, user history or GPS consent was changed.
+
+A subsequent source-only native handoff adds explicit invitation acceptance,
+nonjoining selection and recipient-epoch journal guards. The candidate full SDK
+built for iOS Simulator; all23 MatrixDraftSubmissionTests passed. Exact application
+instructions and baseline hashes are in the adjacent SDK `HANDOFF.md`. This
+supersedes the earlier checkpoint's statement that native facade source was
+missing; real Synapse/E2EE/push acceptance and server projection remain pending.
