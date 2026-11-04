@@ -1,0 +1,32 @@
+{
+  "contractVersion": "cop-owned-controller-configuration-review-v1",
+  "state": "prepared_not_applied",
+  "sourceScript": "scripts/vehicle-controller/configure-owned-controller.py",
+  "scriptSha256": "7d795fb4d8f6eeead913d37f20b750116145a94c412c65e3980f53338b02950c",
+  "baseline": {
+    "container": "d75a44cd259ececd4627fd8a06cf9cfdf3a2e96ce237dd461798d4e6bf95c811",
+    "image": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+    "source": "19c9b39669877dfeacbe1bd996e9c8da7c4cd1ec",
+    "pinSha256": "4862272bf384dd5ca290ec3f837fecb94600548c300021e345afe9d931ed10a7",
+    "zeroRestarts": true
+  },
+  "configurationDelta": {
+    "CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID": "@csm.vehicle.controller.v1:docker.home.cz",
+    "CSM_VEHICLE_CONTROLLER_CUSTODY_REVIEWED": "true"
+  },
+  "preflightActuallyPassed": true,
+  "preflightProductionChanged": false,
+  "targetPinSha256": "23927e64f99bd09782c415b61e8d82dcfa8d36109b1e1a0b1b2034ee0120f8a8",
+  "case": "/srv/csm-messaging/account-safety/owned-controller-config-19c9b39-v1",
+  "controllerCreationOrAdoptionAllowed": false,
+  "consumedCreateExecutorReused": false,
+  "rawBeforeSnapshot": "Root400 only on COMM; whole current inspect before mutation, never exported",
+  "canonicalComparison": "Exact Env map with duplicate rejection; only generated hostname/config-hash normalized; full Binds strings and complete structured Mounts sorted, no options discarded",
+  "admissionEnabled": false,
+  "imageChangeAllowed": false,
+  "automaticRetry": false,
+  "automaticRollback": false,
+  "liveOwnerPreflightPerformed": false,
+  "pairedAcceptanceComplete": false,
+  "generalAdmissionAuthorizedByThisPlan": false
+}

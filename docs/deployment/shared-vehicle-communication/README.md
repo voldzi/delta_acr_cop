@@ -103,11 +103,13 @@ arrays; the old raw object was retained only as a digest, so this is a known
 verification limitation, not grounds to invent parity. The independent current
 observation confirms declared environment/labels, unchanged peers, live/ready
 and read-only database/provider acceptance. The failed receipt stays intact.
-The separate current-runtime observation v4 passed all20 selected checks:
+The separate current-runtime observation v6 passed all27 selected checks:
 unchanged original inputs except image, exact resolved process/user/healthcheck,
 Env map with duplicate rejection, declared labels, port bindings, networks,
 security/restart settings, peers and all mount identities/RW/propagation with
-duplicate-destination rejection. Its Root receipt is current-runtime-observation-v4.json.
+duplicate-destination rejection. It also verifies exact label keys, current network
+object/peer attachments, namespace/device defaults, and all exposed bind/structured
+mount options; unsupported declared mount options fail. Its Root receipt is current-runtime-observation-v6.json.
 Historical raw parity and mount creation-time policy remain unproven. Review this
 current-state evidence before a fresh controller-only configuration case; never replay the consumed controller-creation operation.
 Keep both general admission and Jízda gate off until the separate explicit
