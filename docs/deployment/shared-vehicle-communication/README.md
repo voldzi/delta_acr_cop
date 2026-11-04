@@ -104,3 +104,6 @@ new completion permit and health observation are separately retained.
 See release.review.json for exact image/source pins, the integration contract
 at docs/integration/36_SHARED_VEHICLE_COMMUNICATION.md, and
 [archived working notes](../../archive/2026-11-04_SHARED_VEHICLE_RELEASE_WORKING_NOTES.md).
+
+Concrete next-step review: [controller identity, bounded configuration and acceptance](controller-review.md).
+This review records live absence and the actual configuration privilege boundary; it does not install an executor or enable admission.

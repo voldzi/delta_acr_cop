@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "state": "prepared-not-executed",
+  "productionAdmissionEnabled": false,
+  "clientGateEnabled": false,
+  "preconditions": [
+    "COP and Messaging exact runtime identities and health rechecked",
+    "Dedicated nonadmin technical controller with no password, devices or crypto keys; custody actually reviewed",
+    "Bounded configuration action authorized and sealed; code-only release path unchanged",
+    "Owned synthetic A/B vehicle members and C outsider; current canonical COP-to-Matrix mapping",
+    "Private fixture resources with short lifetime; no actual owner account replacement or key reset"
+  ],
+  "cases": [
+    {
+      "id": "stable-binding",
+      "expected": "A/B open the same stable vehicle conversation without duplicate room on exact retry/concurrent opening"
+    },
+    {
+      "id": "explicit-join",
+      "expected": "Invited is not joined; explicit accept then fresh exact receipt enables selection"
+    },
+    {
+      "id": "outsider",
+      "expected": "C cannot obtain ready authority, select, read or send to vehicle room"
+    },
+    {
+      "id": "source-pending",
+      "expected": "202 confirmed false remains pending; no successful UI, acknowledgement or duplicate operation"
+    },
+    {
+      "id": "pending-restart",
+      "expected": "Reload original stored operation and exact body/revisions after restart, including consumed invitation; only exact confirmed 200 completes"
+    },
+    {
+      "id": "revoke-joined",
+      "expected": "Removing B changes durable epoch and native joined membership; direct native read/send and future delivery denied"
+    },
+    {
+      "id": "revoke-invited",
+      "expected": "Outstanding invitation revoked; direct join after vehicle removal denied"
+    },
+    {
+      "id": "stale-context",
+      "expected": "Late old-epoch/revision/account result and stale outbox cannot select/send; wrong native actor rejected"
+    },
+    {
+      "id": "history-and-keys",
+      "expected": "New member cannot decrypt prejoin history; removed/rejoined member cannot decrypt gap; new messages decrypt using original persistent client stores"
+    },
+    {
+      "id": "notifications",
+      "expected": "Actual notification handoff revalidates current audience; removed/outsider denied, not just a cached roster decision"
+    },
+    {
+      "id": "vehicle-close",
+      "expected": "Exact bound vehicle conversation closes through durable cleanup; private DMs are retained"
+    },
+    {
+      "id": "lifecycle",
+      "expected": "Account change, cancellation and shutdown prevent late mutation/selection/replay; durable cleanup survives restart"
+    },
+    {
+      "id": "privacy-boundaries",
+      "expected": "Opening, joining and messaging request no GPS and start neither recording nor sharing; direct-call policy unchanged"
+    }
+  ],
+  "evidenceRules": [
+    "Source tests, isolated native crypto, live paired server/native, APNs and physical phone results remain separate",
+    "Store sanitized pass/fail counts and runtime/source receipts; never log tokens, passwords, chat bodies or real positions",
+    "Historical raw Messaging runtime parity remains unproven; do not relabel supplemental observations",
+    "After enrollment disable new admission/UI but retain cleanup-capable writers and durable intents"
+  ],
+  "excludedAcceptance": [
+    "physical iPhone delivery",
+    "APNs to physical phone",
+    "TestFlight publication",
+    "real account erasure"
+  ],
+  "results": []
+}

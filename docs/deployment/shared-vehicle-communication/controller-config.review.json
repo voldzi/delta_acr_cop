@@ -1,0 +1,123 @@
+{
+  "contractVersion": "cop-vehicle-controller-config-review-v1",
+  "status": "review_prepared_not_installed_not_executed",
+  "controller": {
+    "matrixUserId": "@csm.vehicle.controller.v1:docker.home.cz",
+    "namespace": "outside @cop_ managed human identity namespace",
+    "creation": {
+      "method": "PUT",
+      "path": "/_synapse/admin/v2/users/%40csm.vehicle.controller.v1%3Adocker.home.cz",
+      "body": {
+        "admin": false,
+        "user_type": "bot",
+        "password": null,
+        "threepids": [],
+        "external_ids": []
+      }
+    },
+    "absenceEvidence": {
+      "checkedAt": "2026-11-04T19:26:53.631820+00:00",
+      "httpStatus": 404,
+      "errcode": "M_NOT_FOUND",
+      "readOnly": true
+    },
+    "custodyProven": false,
+    "created": false,
+    "postCreateRequired": [
+      "Exact returned name; admin=false; user_type=bot; active",
+      "No password hash (boolean database readback only), no threepids or external SSO bindings",
+      "Empty devices, access/refresh tokens and E2EE device/cross-signing/signature keys before first use",
+      "No membership outside new owned vehicle rooms; no human mapping or baseline changes",
+      "Existing internal managed adapter: <=60s device-less impersonation token in memory, exact whoami, logout; never store or log token",
+      "Re-read no devices/crypto keys and no outstanding token after readiness; failed logout remains pending"
+    ]
+  },
+  "baseline": {
+    "cop": {
+      "imageId": "sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d",
+      "sourceRevision": "00c854d56eb9fd4346e26dade622776c83bee9a5",
+      "generation": "55190b1dc87f4bf59dec02d3396c41a3",
+      "healthyRuntimeVerified": true,
+      "restartCount": 0
+    },
+    "messaging": {
+      "imageId": "sha256:e9c50077e596718f267b65422e5c95169ea6e3f88d55ce734c5d5939183b9907",
+      "sourceRevision": "50e590c1078eb86ed1857cf336196c4bbf1c0fdc",
+      "health": "healthy",
+      "restartCount": 0
+    },
+    "freshCasRequired": true,
+    "rawHistoricalMessagingParityProven": false
+  },
+  "allowedEnvironmentDelta": {
+    "cop": {
+      "COP_SHARED_VEHICLE_COMMUNICATION_ENABLED": {
+        "baselineEffective": "false",
+        "afterAcceptanceWindowAuthorized": "true",
+        "containment": "false"
+      }
+    },
+    "messaging": {
+      "CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID": {
+        "baselineEffective": "",
+        "afterCustody": "@csm.vehicle.controller.v1:docker.home.cz",
+        "containment": "retain"
+      },
+      "CSM_VEHICLE_CONTROLLER_CUSTODY_REVIEWED": {
+        "baselineEffective": "false",
+        "afterActualCustody": "true",
+        "containment": "retain while cleanup needed"
+      },
+      "CSM_SHARED_VEHICLE_COMMUNICATION_ADMISSION_ENABLED": {
+        "baselineEffective": "false",
+        "acceptanceWindow": "true",
+        "containment": "false"
+      }
+    }
+  },
+  "preserve": [
+    "all image pins",
+    "all other environment values and secret values",
+    "networks and public ports",
+    "mounts and database roles",
+    "human identity baselines and erasure fences",
+    "personal chat, direct calls and GPS policy",
+    "existing pending operations and controller cleanup authority"
+  ],
+  "phases": [
+    "Recheck exact healthy baseline and Root-owned configuration bytes; preserve private originals",
+    "Create only the absent exact controller; never adopt or overwrite existing identity after race",
+    "Prove custody and stamp receipt; configure controller with both admission flags false",
+    "Fresh health/owner readiness + no unauthorized configuration delta",
+    "Authorize admission window explicitly: both flags are global, not a synthetic-user allowlist; client gate remains OFF",
+    "Run copied 13-case plan with at most 3 newly owned synthetic humans and 1 private vehicle; time budget 30min, stop on first unproven authorization/revocation",
+    "On failure/timeout close new admission first, retain cleanup-capable images/controller and original durable intents; do not reset data or return old writer",
+    "On success record actual per-case receipts; broad client gate release and phone/APNs acceptance are separate"
+  ],
+  "acceptance": {
+    "path": "live-acceptance-plan.json",
+    "sha256": "0f5604e5607f124378ffa75d3375d2f322a2ff666ebf7456a68ab064afbd66c2",
+    "cases": 13,
+    "results": [],
+    "maximumNewSyntheticHumans": 3,
+    "maximumVehicles": 1,
+    "windowMinutes": 30,
+    "physicalAPNsClaim": false,
+    "testFlightAuthorized": false
+  },
+  "actualPrivilegeBoundary": {
+    "copStatusCanChangeConfiguration": false,
+    "observedCommands": [
+      "cop-self-release status",
+      "cop-self-release prepare",
+      "cop-self-release activate"
+    ],
+    "copSudoNoninteractiveOtherApplicationAction": false,
+    "commSudoAvailable": true,
+    "existingBrokerWillNotBeExtendedImplicitly": true,
+    "missingAction": "A separately installed, Root-owned one-shot executor bound to this review and fresh runtime/config fingerprints; not yet implemented or installed",
+    "automaticReviewRejectionClaimed": false
+  },
+  "executionAllowedByThisDocument": false,
+  "productionChanged": false
+}
