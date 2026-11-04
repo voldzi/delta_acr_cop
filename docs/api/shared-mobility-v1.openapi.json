@@ -7342,7 +7342,8 @@
           "revocation",
           "serverTimestamp",
           "roomGeneration",
-          "state"
+          "state",
+          "recipientEpoch"
         ],
         "properties": {
           "operationId": {
@@ -7405,6 +7406,12 @@
           "state": {
             "type": "string",
             "const": "join_required"
+          },
+          "recipientEpoch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Server-owned audience epoch. Advances on accepted roster changes, including leave/rejoin; never selected by the client."
           }
         },
         "description": "Prepared invitation for the exact vehicle/account/operation/revision and current room generation. Not joined, not a confirmed receipt, never usable to select a chat. Explicit invitation acceptance and fresh joined readback are required."
@@ -7444,7 +7451,8 @@
           "historyPolicy",
           "revocation",
           "serverTimestamp",
-          "roomGeneration"
+          "roomGeneration",
+          "recipientEpoch"
         ],
         "properties": {
           "operationId": {
@@ -7503,6 +7511,12 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "recipientEpoch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Server-owned audience epoch. Advances on accepted roster changes, including leave/rejoin; never selected by the client."
           }
         },
         "description": "Staged vehicle communication contract. Not an availability capability. Confirmed only after authoritative roster, Matrix revocation and notification enforcement. No public route is enabled by declaring this schema."

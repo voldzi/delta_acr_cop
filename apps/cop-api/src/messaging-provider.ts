@@ -2137,6 +2137,9 @@ function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<stri
   return headers;
 }
 
+/** Shared server-only actor encoding; the native/browser request never supplies these headers. */
+export const managedMessagingActorHeaders = actorHeaders;
+
 /** App scope comes exclusively from the verified actor, never a browser header/body. */
 function matrixInstallationHeaders(actor: AuthenticatedActor, installationId?: string): Record<string, string> {
   if (installationId === undefined) return {};

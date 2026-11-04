@@ -8,6 +8,7 @@ export interface SharedVehicleConversationReceipt {
   accountId: string;
   vehicleId: string;
   membershipRevision: number;
+  recipientEpoch: number;
   roomGeneration: number;
   conversationId: string;
   roomId: string;
@@ -26,6 +27,7 @@ export interface SharedVehicleConversationRequest {
 export interface VehicleConversationEnforcement {
   vehicleId: string;
   membershipRevision: number;
+  recipientEpoch: number;
   roomGeneration: number;
   conversationId: string;
   roomId: string;
@@ -44,7 +46,7 @@ export interface VehicleConversationEnforcement {
 /** Deliberately requires the complete current roster, including absence of removed members. */
 export function assertVehicleConversationEnforcement(
   proof: VehicleConversationEnforcement,
-  current: { vehicleId: string; membershipRevision: number; memberAccountIds: string[] },
+  current: { vehicleId: string; membershipRevision: number; recipientEpoch: number; memberAccountIds: string[] },
   binding?: { conversationId: string; roomId: string; roomGeneration: number; membershipRevision: number }
 ): void {
   requireMobility(
@@ -59,6 +61,7 @@ export function assertVehicleConversationEnforcement(
   requireMobility(
     proof.vehicleId === current.vehicleId && proof.membershipRevision === current.membershipRevision &&
       Number.isSafeInteger(proof.membershipRevision) && proof.membershipRevision > 0 &&
+      proof.recipientEpoch === current.recipientEpoch && Number.isSafeInteger(proof.recipientEpoch) && proof.recipientEpoch > 0 &&
       Number.isSafeInteger(proof.roomGeneration) && proof.roomGeneration > 0 &&
       expected.size > 0 && expected.size === current.memberAccountIds.length &&
       actual.size === proof.memberAccountIds.length && actual.size === expected.size &&

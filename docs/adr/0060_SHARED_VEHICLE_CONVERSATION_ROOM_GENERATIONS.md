@@ -1,76 +1,63 @@
-# ADR 0060: managed vehicle chat and immutable Matrix room generations
+# ADR 0060: membership-controlled vehicle conversation
 
-Status: accepted implementation direction, not deployed. 2026-11-04.
+Status: accepted implementation direction, not deployed. Revised 2026-11-04.
 
-## Context
+## Context and scope
 
-Jízda requires a shared chat whose membership comes from accepted COP vehicle
-membership. Dispatch participants currently open a personal DM. The existing
-Messaging group adapter only adds members and cannot establish vehicle revocation.
-There is no existing vehicle chat to migrate.
+A vehicle has one server-owned conversation and one stable Matrix room. Accepted
+COP vehicle membership determines its audience. Personal conversations and calls
+keep their existing behavior; GPS still requires separate consent. There is no
+existing vehicle conversation to migrate.
 
-Revocation within one E2EE room requires both native membership/key handling and
-an immutable grant context for queued delivery, including notifications first
-delivered after someone has left and rejoined. A current user-only membership
-check cannot distinguish such an old delivery. A timestamp is not a membership
-epoch. A new Synapse enqueue plugin is outside the chosen implementation.
+The earlier staged proposal required rotating the physical room on every roster
+change. That is deferred optional hardening, not a prerequisite of this feature.
+Joined history enforces access at each actual membership period. A previously
+authorized historical event delivered after rejoining is not itself evidence of
+a new-content leak. Previously delivered plaintext and keys cannot be recalled.
 
 ## Decision
 
-- One server-owned logical conversation belongs to a vehicle. An actual change
-  to its accepted account roster creates a new, monotonically numbered Matrix
-  room generation. A capability/role change without a roster change advances the
-  vehicle membership revision but preserves the room generation.
-- A durable pending fence precedes external effects. The old room becomes read
-  only, with explicit plain/encrypted/call-event write thresholds and no active
-  ordinary members or outstanding invitations. Actual policy/member readback is
-  required. Old room IDs remain in the delivery deny registry.
-- The replacement room has E2EE, joined history, invitation-only access, no
-  guests and no federation from creation. A dedicated noninteractive nonadmin
-  service controller owns its policy. No password, token, crypto device or key
-  is given to clients on behalf of the controller. The existing administrator
-  account is not silently reused as a room member.
-- Current accepted members receive invitations. Nobody is force-joined. A
-  requester receives a confirmed receipt only after actual joined readback.
-  HTTP 202 with a typed `join_required` preparation is not confirmation.
-- A metadata CAS and a PostgreSQL transaction advisory lock serialize each
-  vehicle's policy cutover with the actual delivery handoff across processes.
-  Pending work cannot be superseded by a regrant that skips its native retirement
-  barrier. Unknown outcomes stay pending; old rooms are never a fallback.
-- Ordinary group member mutation/binding cannot modify a managed conversation.
-  Direct Matrix policy also prevents users changing invites, power levels or
-  history policy. A server-only actor/roster adapter derives identities from COP.
-- SDK selection, messages, paging, read state, notification actions and drafts
-  bind the account, logical conversation and exact room/generation. Old outbox
-  journals and drafts are preserved and cannot be resent to new recipients
-  automatically. Explicitly reusing text creates a new outgoing intent.
-- Historical room IDs/keys are not shared with newly accepted members. Already
-  delivered data cannot be recalled. Old local history remains account-owned;
-  it is not silently promoted to the current generation.
-- Direct calls remain in their existing personal conversations. This feature
-  introduces no vehicle group calls or PTT. GPS retains its independent consent.
+- Use one stable logical conversation and stable native room. Room generation
+  identifies a binding; normal roster changes do not replace it.
+- Set E2EE, joined history, invite-only access, no guests and no federation at
+  creation. A reviewed noninteractive nonadmin controller owns room policy.
+  Never silently reuse an administrator or AI bot with crypto devices.
+- Persist pending before native effects. Remove joined outsiders and cancel
+  their outstanding invitations, then verify actual policy and membership.
+  Never confirm a revocation merely because an HTTP action was accepted.
+- Invite current members without force-joining them. The client explicitly
+  accepts a verified exact invitation; selection does not autojoin arbitrary
+  rooms. A typed join_required preparation is not a confirmed receipt.
+- Serialize native cutover and actual notification handoff for each vehicle.
+  Immediately before handoff check current metadata, actual recipient joined
+  state and the recipient's access to the concrete event. Pending means deny.
+  Already handed-off notifications cannot be recalled.
+- COP owns recipientEpoch and advances it on every accepted roster change,
+  including removal/rejoin. Capability-only changes may keep the epoch.
+  Cached receipts also bind membershipRevision, actor and operation. Queued
+  outgoing drafts retain their captured audience epoch and never automatically
+  replay/re-encrypt to a different audience; retain the draft for explicit reuse.
+- A pending native revocation cannot be skipped by a later regrant. Persisted
+  operation identity and compare-and-swap reject late completions and writers.
+- Managed room membership and binding cannot be changed through generic group
+  APIs or ordinary Matrix member permissions. Server identity/roster come only
+  from canonical COP data, never from the mobile request.
+- Deleting a vehicle retires its room, removes ordinary senders and invitations,
+  and preserves only technical evidence necessary for delayed-delivery denial.
+  Account erasure must remove member identity references using the existing
+  owner lifecycle; it does not authorize retaining message bodies or keys.
 
-## Deployment and lifecycle
+## Acceptance and deployment
 
-The DTO/model publication is not a capability or an activation. The controller
-custody, real Synapse policy/negative tests, new-room E2EE roundtrip, source
-membership race/restart, stale delivery and native outbox regressions must pass
-before production activation. No TestFlight upload is authorized here.
-
-There is no automatic older-image rollback after managed metadata enrollment:
-an old writer could overwrite a newer whole-store fence. Recovery preserves the
-CAS, immutable generation registry and pending operation; forward repair is
-preferred. Existing protected production deployment controls remain in force.
-
-Technical retired-room evidence must survive while delayed delivery or a
-recoverable copy can refer to it. It does not authorize retaining message bodies,
-credentials or unnecessary user links. Existing account erasure must enumerate
-all generations through the Matrix owner and remove active metadata/user links.
-The implementation must test this lifecycle rather than infer it from schema
-or successful room creation.
+Staged DTOs are not an enabled capability. Required acceptance covers actual
+Synapse invite/kick readback, outsider prejoin and removed-member leave-gap event
+access, actual SDK E2EE/session key behavior, pending/restart/race handling and
+actual native push handoff. Mock transport tests alone are insufficient.
+No TestFlight upload is authorized. Production controls remain in force; an
+older writer must never overwrite enrolled pending state during recovery.
 
 ## References
 
-- [COP staged contract and acceptance](../integration/36_SHARED_VEHICLE_COMMUNICATION.md).
+- [Staged COP contract](../integration/36_SHARED_VEHICLE_COMMUNICATION.md).
+- [Matrix history visibility](https://spec.matrix.org/v1.16/client-server-api/#room-history-visibility).
 - [Matrix power levels](https://spec.matrix.org/v1.16/client-server-api/#mroompower_levels).
-- [Synapse impersonation without creating a device](https://element-hq.github.io/synapse/latest/admin_api/user_admin_api.html#login-as-a-user).

@@ -7,7 +7,7 @@ let request = CSMSharedVehicleConversationRequest(operationId: operation, expect
 let base: [String: Any] = [
     "contractVersion": "cop-shared-vehicle-communication-v1", "confirmed": true,
     "operationId": operation.uuidString, "accountId": account.uuidString, "vehicleId": vehicle.uuidString,
-    "membershipRevision": 3, "roomGeneration": 1, "conversationId": "conv_vehicle", "roomId": "!vehicle:synthetic.example",
+    "membershipRevision": 3, "recipientEpoch": 3, "roomGeneration": 1, "conversationId": "conv_vehicle", "roomId": "!vehicle:synthetic.example",
     "scope": "shared_vehicle", "historyPolicy": "from_membership", "revocation": "server_enforced",
     "serverTimestamp": "2026-11-04T10:00:00.123Z"
 ]

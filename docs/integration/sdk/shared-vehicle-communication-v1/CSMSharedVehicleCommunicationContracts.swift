@@ -24,6 +24,7 @@ public struct CSMSharedVehicleConversationReceipt: Decodable, Sendable, Equatabl
     public let accountId: UUID
     public let vehicleId: UUID
     public let membershipRevision: Int
+    public let recipientEpoch: Int
     public let roomGeneration: Int
     public let conversationId: String
     public let roomId: String
@@ -40,6 +41,7 @@ public struct CSMSharedVehicleConversationReceipt: Decodable, Sendable, Equatabl
         let dateIsValid = formatter.date(from: serverTimestamp) != nil || ISO8601DateFormatter().date(from: serverTimestamp) != nil
         return confirmed && self.accountId == accountId && self.vehicleId == vehicleId &&
         operationId == request.operationId && membershipRevision == request.expectedMembershipRevision &&
+        recipientEpoch > 0 && recipientEpoch <= 9_007_199_254_740_991 &&
         membershipRevision > 0 && membershipRevision <= 9_007_199_254_740_991 &&
         roomGeneration > 0 && roomGeneration <= 9_007_199_254_740_991 &&
         !conversationId.isEmpty && conversationId.utf8.count <= 255 &&
@@ -57,6 +59,7 @@ public struct CSMSharedVehicleConversationPending: Decodable, Sendable, Equatabl
     public let accountId: UUID
     public let vehicleId: UUID
     public let membershipRevision: Int
+    public let recipientEpoch: Int
     public let roomGeneration: Int
     public let conversationId: String
     public let roomId: String
@@ -70,7 +73,7 @@ public struct CSMSharedVehicleConversationPending: Decodable, Sendable, Equatabl
         !confirmed && CSMSharedVehicleConversationReceipt(
             contractVersion: contractVersion, operationId: operationId, confirmed: true,
             accountId: self.accountId, vehicleId: self.vehicleId, membershipRevision: membershipRevision,
-            roomGeneration: roomGeneration, conversationId: conversationId, roomId: roomId, scope: scope,
+            recipientEpoch: recipientEpoch, roomGeneration: roomGeneration, conversationId: conversationId, roomId: roomId, scope: scope,
             historyPolicy: historyPolicy, revocation: revocation, serverTimestamp: serverTimestamp
         ).matches(accountId: accountId, vehicleId: vehicleId, request: request)
     }

@@ -51,8 +51,8 @@ selectSharedVehicleConversation(
 ```
 
 The implementation direction is [ADR 0060](../adr/0060_SHARED_VEHICLE_CONVERSATION_ROOM_GENERATIONS.md):
-roster changes rotate the Matrix room under the same logical conversation.
-Capability-only changes do not rotate rooms. Native drafts/history/outbox and
+roster changes preserve the same logical conversation and Matrix room.
+COP advances recipientEpoch when the accepted audience changes. Native drafts/outbox and
 callback fences must distinguish the exact room, and retired rooms are never
 automatically reactivated or used as a delivery fallback.
 
@@ -109,3 +109,27 @@ Not yet verified: actual provider membership saga, direct Matrix bypass denial,
 new message and queued notification revocation, E2EE history/key behavior,
 restart/retry/late response integration, native runtime facade or production.
 No real account was used and nothing was uploaded to TestFlight.
+
+## 4 November implementation checkpoint (not activation)
+
+The request-only facade is staged alongside the DTO in
+`docs/integration/sdk/shared-vehicle-communication-v1/`. It uses the host's
+existing authenticated mobility transport, verifies the current mobility account
+and vehicle membership, and separates HTTP 200 ready from HTTP 202 join_required.
+It never selects or joins. `recipientEpoch` is server-owned; the client request
+still contains only operationId and expectedMembershipRevision.
+
+COP checks: 43 focused tests, API TypeScript check, focused ESLint, skeleton,
+OpenAPI validation (35 warnings), standalone DTO checks and request-facade Swift
+6 typecheck against minimal runtime stubs passed. The stub check is not an iOS
+SDK build or device acceptance. Native selection, explicit invitation acceptance
+and captured recipient-epoch checks on all outgoing queue paths remain pending.
+
+The separate Messaging candidate keeps the physical room stable, requires actual
+current recipient joined readback before handoff and includes a durable CAS fence.
+Its local suite passed 256 tests with 41 skips; three additional opted-in tests
+passed against an isolated PostgreSQL 17 instance, then its container and private
+fixture were removed. The three tests cover competing CAS writers, durable pending
+state despite a failed publication transaction and publication/handoff lock ordering.
+They do not establish real Synapse/SDK E2EE or APNs acceptance. No production flag,
+controller account, existing conversation, user history or GPS consent was changed.

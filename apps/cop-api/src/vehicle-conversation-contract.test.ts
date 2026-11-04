@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assertVehicleConversationEnforcement, type VehicleConversationEnforcement } from "./vehicle-conversation-contract.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
 
-const current = { vehicleId: "vehicle-a", membershipRevision: 3, memberAccountIds: ["account-a", "account-b"] };
+const current = { vehicleId: "vehicle-a", membershipRevision: 3, recipientEpoch: 3, memberAccountIds: ["account-a", "account-b"] };
 const valid = (): VehicleConversationEnforcement => ({
   ...current, memberAccountIds: [...current.memberAccountIds], conversationId: "conv_vehicle_a",
   roomGeneration: 1, retiredRoomIds: [], retirementVerified: true,
@@ -26,7 +26,7 @@ describe("vehicle conversation enforcement boundary", () => {
     expect(() => assertVehicleConversationEnforcement(proof, current)).not.toThrow();
   });
   it.each([
-    { membershipRevision: 2 }, { vehicleId: "other-vehicle" },
+    { membershipRevision: 2 }, { recipientEpoch: 2 }, { recipientEpoch: 0 }, { vehicleId: "other-vehicle" },
     { memberAccountIds: ["account-a"] }, { memberAccountIds: ["account-a", "account-b", "removed"] },
     { memberAccountIds: ["account-a", "account-b", "account-b"] },
     { notificationAudienceVerified: false }, { roomMembershipVerified: false },
