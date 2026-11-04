@@ -14,12 +14,20 @@ and Matrix binding on the server. A browser/mobile client must not choose any of
 these or submit an enforcement assertion.
 
 The receipt identifies the COP mobility account UUID (not the OIDC subject),
-vehicle UUID, operation UUID, current membership revision, stable conversation
-and Matrix room. Its fixed scope is `shared_vehicle`, history policy
+vehicle UUID, operation UUID, current membership revision, stable logical
+conversation, exact Matrix room and room generation. Its fixed scope is `shared_vehicle`, history policy
 `from_membership`, revocation `server_enforced`. A timestamp describes an
 observation, not an access credential or permission to use a cached receipt.
 `confirmed: true` is reserved for actual membership and notification enforcement.
 Pending, unknown or unavailable provider state cannot produce this receipt.
+
+HTTP 202 preparation uses `SharedVehicleConversationPending` with
+`confirmed: false` and `state: join_required`. The SDK represents it as the typed
+`CSMSharedVehicleConversationStateError.joinRequired`, code
+`VEHICLE_COMMUNICATION_JOIN_REQUIRED`. It does not select or join a room. The host
+checks its current account, operation, vehicle, revision and epoch before an
+explicit invitation action, then reloads membership and requests a fresh joined
+receipt. Retries are bounded and explicit.
 
 The additive SDK file is
 [`CSMSharedVehicleCommunicationContracts.swift`](sdk/shared-vehicle-communication-v1/CSMSharedVehicleCommunicationContracts.swift).
@@ -41,6 +49,12 @@ selectSharedVehicleConversation(
     expectedScope: String
 ) async throws
 ```
+
+The implementation direction is [ADR 0060](../adr/0060_SHARED_VEHICLE_CONVERSATION_ROOM_GENERATIONS.md):
+roster changes rotate the Matrix room under the same logical conversation.
+Capability-only changes do not rotate rooms. Native drafts/history/outbox and
+callback fences must distinguish the exact room, and retired rooms are never
+automatically reactivated or used as a delivery fallback.
 
 Before selection the host reloads both its account and vehicle membership,
 compares the exact operation, account, vehicle and revision, and checks its
@@ -82,9 +96,9 @@ only trusted server code may construct that evidence after actual readback.
 
 ## Verification so far
 
-- 18 isolated TypeScript checks passed: exact roster, two distinct accounts,
+- 21 isolated TypeScript checks passed: exact roster, two distinct accounts,
   duplicate/extra/missing/removed members, old revision, cross-vehicle evidence,
-  binding replacement and unknown enforcement. Client input cannot select actor,
+  binding replacement, verified generation retirement and unknown enforcement. Client input cannot select actor,
   members, conversation, room, history or revocation policy.
 - The standalone Swift executable passed DTO decoding, account/vehicle/operation
   isolation, late revision, invalid room/timestamp and unsupported enum checks.

@@ -7,7 +7,7 @@ let request = CSMSharedVehicleConversationRequest(operationId: operation, expect
 let base: [String: Any] = [
     "contractVersion": "cop-shared-vehicle-communication-v1", "confirmed": true,
     "operationId": operation.uuidString, "accountId": account.uuidString, "vehicleId": vehicle.uuidString,
-    "membershipRevision": 3, "conversationId": "conv_vehicle", "roomId": "!vehicle:synthetic.example",
+    "membershipRevision": 3, "roomGeneration": 1, "conversationId": "conv_vehicle", "roomId": "!vehicle:synthetic.example",
     "scope": "shared_vehicle", "historyPolicy": "from_membership", "revocation": "server_enforced",
     "serverTimestamp": "2026-11-04T10:00:00.123Z"
 ]
@@ -31,4 +31,13 @@ for key in ["contractVersion", "scope", "historyPolicy", "revocation"] {
 }
 let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
 precondition(Set(encoded.keys) == Set(["operationId", "expectedMembershipRevision"]))
+var pending = base
+pending["confirmed"] = false
+pending["state"] = "join_required"
+let pendingData = try JSONSerialization.data(withJSONObject: pending)
+let resolution = try JSONDecoder().decode(CSMSharedVehicleConversationResolution.self, from: pendingData)
+guard case .pending(let invite) = resolution else { fatalError("pending became a ready receipt") }
+precondition(invite.matches(accountId: account, vehicleId: vehicle, request: request))
+precondition(!invite.matches(accountId: UUID(), vehicleId: vehicle, request: request))
+precondition(CSMSharedVehicleConversationStateError.joinRequired(invite).code == "VEHICLE_COMMUNICATION_JOIN_REQUIRED")
 print("Shared vehicle communication DTO isolation and late-receipt checks passed")

@@ -5,6 +5,7 @@ import { acceptsMobilitySchema } from "./mobility-contract.js";
 const current = { vehicleId: "vehicle-a", membershipRevision: 3, memberAccountIds: ["account-a", "account-b"] };
 const valid = (): VehicleConversationEnforcement => ({
   ...current, memberAccountIds: [...current.memberAccountIds], conversationId: "conv_vehicle_a",
+  roomGeneration: 1, retiredRoomIds: [], retirementVerified: true,
   roomId: "!vehicle-a:synthetic.example", encrypted: true, historyPolicy: "from_membership",
   membershipAuthority: "cop_vehicle", roomMembershipVerified: true,
   notificationAudienceVerified: true, clientMembershipChangesDenied: true, revocation: "server_enforced"
@@ -31,14 +32,22 @@ describe("vehicle conversation enforcement boundary", () => {
     { notificationAudienceVerified: false }, { roomMembershipVerified: false },
     { clientMembershipChangesDenied: false }, { membershipAuthority: "client" },
     { historyPolicy: "shared" }, { revocation: "best_effort" }, { encrypted: false },
-    { roomId: "" }, { conversationId: "" }
+    { roomId: "" }, { conversationId: "" }, { roomGeneration: 0 }, { retirementVerified: false }
   ])("rejects stale, incomplete or unverified evidence %j", change => {
     expect(() => assertVehicleConversationEnforcement({ ...valid(), ...change } as VehicleConversationEnforcement, current))
       .toThrowError(expect.objectContaining({ status: 503, code: "VEHICLE_COMMUNICATION_UNPROVEN" }));
   });
   it("does not silently replace an existing server owned conversation or room", () => {
-    expect(() => assertVehicleConversationEnforcement(valid(), current, { conversationId: "other", roomId: valid().roomId })).toThrow();
-    expect(() => assertVehicleConversationEnforcement(valid(), current, { conversationId: valid().conversationId, roomId: "!other:synthetic.example" })).toThrow();
+    expect(() => assertVehicleConversationEnforcement(valid(), current, { conversationId: "other", roomId: valid().roomId, roomGeneration: 1, membershipRevision: 3 })).toThrow();
+    expect(() => assertVehicleConversationEnforcement(valid(), current, { conversationId: valid().conversationId, roomId: "!other:synthetic.example", roomGeneration: 1, membershipRevision: 3 })).toThrow();
+  });
+  it("allows a new room only across a newer roster revision and a verified retired binding", () => {
+    const previous = { conversationId: valid().conversationId, roomId: "!old:synthetic.example", roomGeneration: 1, membershipRevision: 2 };
+    const proof = { ...valid(), roomGeneration: 2, retiredRoomIds: [previous.roomId] };
+    expect(() => assertVehicleConversationEnforcement(proof, current, previous)).not.toThrow();
+    expect(() => assertVehicleConversationEnforcement({ ...proof, retiredRoomIds: [] }, current, previous)).toThrow();
+    expect(() => assertVehicleConversationEnforcement(proof, current, { ...previous, membershipRevision: 3 })).toThrow();
+    expect(() => assertVehicleConversationEnforcement(proof, current, { ...previous, roomGeneration: 2 })).toThrow();
   });
   it("rejects a late response after removal, including one with the new revision but old roster", () => {
     const afterRemoval = { ...current, membershipRevision: 4, memberAccountIds: ["account-a"] };

@@ -8,6 +8,7 @@ export interface SharedVehicleConversationReceipt {
   accountId: string;
   vehicleId: string;
   membershipRevision: number;
+  roomGeneration: number;
   conversationId: string;
   roomId: string;
   scope: "shared_vehicle";
@@ -25,6 +26,7 @@ export interface SharedVehicleConversationRequest {
 export interface VehicleConversationEnforcement {
   vehicleId: string;
   membershipRevision: number;
+  roomGeneration: number;
   conversationId: string;
   roomId: string;
   memberAccountIds: string[];
@@ -35,29 +37,42 @@ export interface VehicleConversationEnforcement {
   notificationAudienceVerified: true;
   clientMembershipChangesDenied: true;
   revocation: "server_enforced";
+  retiredRoomIds: string[];
+  retirementVerified: true;
 }
 
 /** Deliberately requires the complete current roster, including absence of removed members. */
 export function assertVehicleConversationEnforcement(
   proof: VehicleConversationEnforcement,
   current: { vehicleId: string; membershipRevision: number; memberAccountIds: string[] },
-  binding?: { conversationId: string; roomId: string }
+  binding?: { conversationId: string; roomId: string; roomGeneration: number; membershipRevision: number }
 ): void {
+  requireMobility(
+    proof && Array.isArray(proof.memberAccountIds) && Array.isArray(proof.retiredRoomIds) &&
+      proof.memberAccountIds.every(id => typeof id === "string" && id.length > 0) &&
+      proof.retiredRoomIds.every(id => typeof id === "string" && /^![^\s:]+:[^\s]+$/u.test(id)) &&
+      !proof.retiredRoomIds.includes(proof.roomId) && new Set(proof.retiredRoomIds).size === proof.retiredRoomIds.length,
+    503, "VEHICLE_COMMUNICATION_UNPROVEN", "Přístup ke komunikaci vozidla zatím není potvrzen."
+  );
   const actual = new Set(proof.memberAccountIds);
   const expected = new Set(current.memberAccountIds);
   requireMobility(
     proof.vehicleId === current.vehicleId && proof.membershipRevision === current.membershipRevision &&
       Number.isSafeInteger(proof.membershipRevision) && proof.membershipRevision > 0 &&
+      Number.isSafeInteger(proof.roomGeneration) && proof.roomGeneration > 0 &&
       expected.size > 0 && expected.size === current.memberAccountIds.length &&
       actual.size === proof.memberAccountIds.length && actual.size === expected.size &&
       [...expected].every(id => actual.has(id)) &&
       typeof proof.conversationId === "string" && proof.conversationId.length > 0 &&
       typeof proof.roomId === "string" && /^![^\s:]+:[^\s]+$/u.test(proof.roomId) &&
-      (!binding || (binding.conversationId === proof.conversationId && binding.roomId === proof.roomId)) &&
+      (!binding || (binding.conversationId === proof.conversationId &&
+        (binding.roomId === proof.roomId ? binding.roomGeneration === proof.roomGeneration :
+          proof.roomGeneration > binding.roomGeneration && current.membershipRevision > binding.membershipRevision &&
+            proof.retiredRoomIds.includes(binding.roomId)))) &&
       proof.encrypted === true && proof.historyPolicy === "from_membership" &&
       proof.membershipAuthority === "cop_vehicle" && proof.roomMembershipVerified === true &&
       proof.notificationAudienceVerified === true && proof.clientMembershipChangesDenied === true &&
-      proof.revocation === "server_enforced",
+      proof.revocation === "server_enforced" && proof.retirementVerified === true,
     503, "VEHICLE_COMMUNICATION_UNPROVEN", "Přístup ke komunikaci vozidla zatím není potvrzen."
   );
 }

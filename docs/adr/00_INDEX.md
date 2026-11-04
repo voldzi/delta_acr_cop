@@ -85,3 +85,4 @@ published paths are preserved for integration references.
 - [0058: Explicit assisted planning origin](0058_ASSISTED_PLANNING_ORIGIN.md): separate preview purpose, authenticated service delegation and full vehicle/closure proof checks.
 
 - [0059: Fresh planning flag enable](0059_FRESH_PLANNING_FLAG_ENABLE.md) — separate finite Root authority while preserving historical V3 readers and proofs.
+- [0060: Vehicle chat room generations](0060_SHARED_VEHICLE_CONVERSATION_ROOM_GENERATIONS.md) — staged logical conversation, native revocation and generation-bound client/delivery acceptance.
