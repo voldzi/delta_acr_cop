@@ -7324,6 +7324,98 @@
           "state",
           "items"
         ]
+      },
+      "SharedVehicleConversationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "expectedMembershipRevision"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "SharedVehicleConversationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "accountId",
+          "vehicleId",
+          "contractVersion",
+          "confirmed",
+          "membershipRevision",
+          "conversationId",
+          "roomId",
+          "scope",
+          "historyPolicy",
+          "revocation",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-shared-vehicle-communication-v1"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "conversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "roomId": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 255,
+            "pattern": "^![^\\s:]+:[^\\s]+$"
+          },
+          "scope": {
+            "type": "string",
+            "const": "shared_vehicle"
+          },
+          "historyPolicy": {
+            "type": "string",
+            "const": "from_membership"
+          },
+          "revocation": {
+            "type": "string",
+            "const": "server_enforced"
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Staged vehicle communication contract. Not an availability capability. Confirmed only after authoritative roster, Matrix revocation and notification enforcement. No public route is enabled by declaring this schema."
       }
     }
   },
