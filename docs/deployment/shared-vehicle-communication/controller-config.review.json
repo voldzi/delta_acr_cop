@@ -1,19 +1,18 @@
 {
   "contractVersion": "cop-vehicle-controller-config-review-v1",
-  "status": "review_prepared_not_installed_not_executed",
+  "status": "bounded_controller_only_executor_prepared_live_readonly_preflight_passed",
   "controller": {
     "matrixUserId": "@csm.vehicle.controller.v1:docker.home.cz",
     "namespace": "outside @cop_ managed human identity namespace",
     "creation": {
-      "method": "PUT",
-      "path": "/_synapse/admin/v2/users/%40csm.vehicle.controller.v1%3Adocker.home.cz",
-      "body": {
-        "admin": false,
-        "user_type": "bot",
-        "password": null,
-        "threepids": [],
-        "external_ids": []
-      }
+      "method": "POST",
+      "path": "/_synapse/admin/v1/register",
+      "semantics": "create-only registration; duplicate user fails atomically without entering admin update branch",
+      "inhibitLogin": true,
+      "admin": false,
+      "userType": "bot",
+      "transientPassword": "Cryptographically random, RAM only; endpoint requires password; supported immediate deactivation removes hash/credentials, then reactivation before custody/config. Never delivered to a human.",
+      "activation": "Only this invocation exact acknowledged create-only result permits deactivation/reactivation; collision, timeout or lost response cannot adopt/update any identity."
     },
     "absenceEvidence": {
       "checkedAt": "2026-11-04T19:26:53.631820+00:00",
@@ -24,12 +23,13 @@
     "custodyProven": false,
     "created": false,
     "postCreateRequired": [
-      "Exact returned name; admin=false; user_type=bot; active",
+      "Exact returned name; admin=false; user_type=bot; active after supported removal of transient initial password",
       "No password hash (boolean database readback only), no threepids or external SSO bindings",
       "Empty devices, access/refresh tokens and E2EE device/cross-signing/signature keys before first use",
       "No membership outside new owned vehicle rooms; no human mapping or baseline changes",
       "Existing internal managed adapter: <=60s device-less impersonation token in memory, exact whoami, logout; never store or log token",
-      "Re-read no devices/crypto keys and no outstanding token after readiness; failed logout remains pending"
+      "Re-read no devices/crypto keys and no outstanding token after readiness; failed logout remains pending",
+      "users_pending_deactivation exact controller count0 BEFORE reactivation, after dynamic logout and after runtime cutover"
     ]
   },
   "baseline": {
@@ -103,7 +103,12 @@
     "maximumVehicles": 1,
     "windowMinutes": 30,
     "physicalAPNsClaim": false,
-    "testFlightAuthorized": false
+    "testFlightAuthorized": false,
+    "clarificationV2": {
+      "path": "live-acceptance-plan-v2.json",
+      "sha256": "b5201f23439493747a18519d0a9d93af9da1ce36594ff6761afe9f0f83807cad",
+      "state": "prepared-not-executed"
+    }
   },
   "actualPrivilegeBoundary": {
     "copStatusCanChangeConfiguration": false,
@@ -115,9 +120,46 @@
     "copSudoNoninteractiveOtherApplicationAction": false,
     "commSudoAvailable": true,
     "existingBrokerWillNotBeExtendedImplicitly": true,
-    "missingAction": "A separately installed, Root-owned one-shot executor bound to this review and fresh runtime/config fingerprints; not yet implemented or installed",
-    "automaticReviewRejectionClaimed": false
+    "missingAction": "Controller-only COMM action now has pinned executor and fixed bootstrap using existing sudo -n. COP configuration change remains unavailable and is not part of this action.",
+    "automaticReviewRejectionClaimed": false,
+    "controllerOnlyNeedsDockerRoot": false,
+    "controllerOnlyNeedsNewSudoers": false,
+    "controllerOnlyNeedsGeneralRootSession": false,
+    "futureGlobalAdmissionStillNeedsSeparateCopConfigurationAuthority": true
   },
   "executionAllowedByThisDocument": false,
-  "productionChanged": false
+  "productionChanged": false,
+  "executor": {
+    "path": "scripts/vehicle-controller/controller-only-off.py",
+    "bootstrapPath": "scripts/vehicle-controller/bootstrap-controller-off.py",
+    "defaultMode": "read-only",
+    "applyState": "not_executed",
+    "installed": false,
+    "allowedRuntimeDelta": [
+      "CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID",
+      "CSM_VEHICLE_CONTROLLER_CUSTODY_REVIEWED"
+    ],
+    "admissionCanBeEnabled": false,
+    "copModified": false,
+    "sourceBaselines": "Exact current CID/image/runtime digest/input hashes/peer IDs in executor; fresh COP source/image/generation before and after bootstrap. Not a cross-host atomic transaction.",
+    "originalEvidence": "Exclusive Root journal before first provider write; fsync file and directory; preserve original protected pin. Full runtime/resolved render contain credentials and are never journaled, only their digests.",
+    "failure": "No automatic retry/adoption or rollback; retain partial controller/config journal; admission remains false.",
+    "sha256": "02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271",
+    "bootstrapSha256": "71fcd167cf0067556d92769e205c218ef3180b5a8209bed95980caeea9c7300e",
+    "testsPassed": 28,
+    "testsScope": "28 deterministic boundary/protocol tests: process/config/parity/retry, duplicate creation no PUT, registration HMAC/inhibit_login, pending-deactivation timeout no reactivation, wrong whoami/failed logout no custody publication, secret-free probe result, bootstrap hash/generation/modes.",
+    "liveReadonlyPreflight": {
+      "executorSha256": "02c0b82fe63573ad4d28d76a89e89ad9f0de4b8f193254ef469339ed664ca271",
+      "copGenerationRechecked": true,
+      "copModified": false,
+      "newPrivilegeGranted": false,
+      "preflightPassed": true,
+      "controllerAbsent": true,
+      "admissionEnabled": false,
+      "productionChanged": false,
+      "targetPinSha256": "15837d03fae096387ed6162d163b78586149f912c5bf65c9b5106880509a030e"
+    },
+    "dynamicCustody": "Explicit <=60s device-less impersonation, exact whoami, logout in finally and subsequent zero-token/device/crypto/pending readback BEFORE custodyReviewed publication; capability with admissionOFF is not claimed to perform it.",
+    "deactivationLifecycle": "Deployed _user_parter_loop removes users_pending_deactivation only after _part_user completes. Wait for zero while still deactivated, at most10s; only then reactivate. Pending row remains a mandatory zero surface in custody."
+  }
 }

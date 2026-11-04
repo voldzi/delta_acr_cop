@@ -19,6 +19,22 @@ inventory explicitly to the managed human namespace. No baseline rewrite or
 human identity exception is proposed. The installed Synapse UserRestServletV2
 source confirms that admin creation with password=null leaves password_hash=None
 and supports user_type=bot, admin=false, empty external IDs and threepids.
+However PUT is an upsert and is **not** the selected create path: a concurrent
+creator could enter its update branch. The executor uses shared-secret POST
+registration, whose deployed store uses INSERT and rejects duplicate user IDs.
+That endpoint requires a password: an unpredictable transient password remains
+only in process memory, inhibit_login prevents login/device creation, then the
+supported immediate deactivate/reactivate path removes the hash before custody
+and configuration. A timeout or unacknowledged create cannot authorize updates.
+Deployed activate_account does not drain pending deactivation. Therefore the
+executor keeps the controller deactivated while waiting (max10seconds) for
+users_pending_deactivation to reach zero. The deployed background loop deletes
+that row only after _part_user completes; timeout cannot reactivate or configure.
+Custody checks include this queue. Before publishing custodyReviewed it explicitly
+executes a <=60second device-less admin impersonation, exact whoami and logout
+in finally, followed by token/device/crypto/queue-zero SQL/API readback. This
+dynamic proof is not inferred from the admission-disabled capability endpoint.
+The original password=null PUT proposal is superseded, not silently reused.
 
 The deployed Messaging adapter verifies controller name/admin/bot/active state,
 empty devices and device keys on each managed operation; it obtains a temporary
@@ -45,13 +61,31 @@ Fresh `cop-self-release status` reported healthy runtime, generation
 operations; broader sudo requires an attended password. COMM has existing
 noninteractive sudo. No automatic approval rejection occurred in this review.
 
-The missing facility is a Root-owned one-shot configuration executor on Docker,
-bound to exact image/generation/config fingerprints and the four permitted keys.
-It has **not** been implemented or installed by this review. The code-only broker
-must remain unchanged; its prepare/activate cannot authorize configuration.
-Before asking for a privileged installation, prepare and review the executor,
-its exact digest, fresh source/config comparison and failure/containment paths.
-No administrator handoff or general Root shell is proposed.
+The controller-only phase needs no Docker configuration change. Its fixed
+executor and bootstrap are now implemented at `scripts/vehicle-controller/`.
+Existing COMM sudo can perform this exact action without installing a new
+sudoers grant, general Root session or administrator handoff. Default bootstrap
+is read-only; `--apply` freezes only the digest-pinned source as Root400 and
+runs it once, bound to exact current Messaging CID/runtime/config hashes and
+peer IDs. COP status/source/image/generation is rechecked before and after;
+COP itself is never modified. This is not an atomic two-host transaction.
+
+The only allowed Messaging runtime change is the two controller identity/custody
+keys, with admission remaining false. Actual custody must pass before pin
+publication. Full runtime and resolved Compose output are kept only in memory;
+private evidence records their hashes, not tokens. The original protected pin
+is retained. Journal and parent directories are fsynced before provider writes.
+Every collision, unknown custody result, changed source or parity failure stops
+without automatic adoption, retry or rollback. A partial technical account may
+remain unused and requires explicit recovery; it is not silently deleted.
+
+28 deterministic boundary/protocol tests passed. The actual default bootstrap
+also passed read-only against current COP and Messaging (404, SQL readback
+availability, exact CAS, current declared environment and planned pin hash).
+No provider write, installation or runtime change has been performed. Exact
+source/bootstrap hashes and evidence are in controller-config.review.json.
+A subsequent general admission window still requires a distinct COP config
+operation; the code-only broker remains unable to perform it.
 
 ## Acceptance and containment
 
