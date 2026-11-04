@@ -168,7 +168,8 @@ physical-iPhone acceptance remain separate. No TestFlight upload is authorized.
 
 ## Operations and rollback
 
-COP_SHARED_VEHICLE_COMMUNICATION_ENABLED defaults false. Messaging uses
+Compose explicitly forwards COP_SHARED_VEHICLE_COMMUNICATION_ENABLED with a
+false default; editing .env alone must not be mistaken for a runtime change. Messaging uses
 CSM_SHARED_VEHICLE_COMMUNICATION_ADMISSION_ENABLED=false plus a separately
 reviewed CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID and custody flag. Capability
 requires healthy database_v2 authority, PostgreSQL pool>=2 and actual controller
