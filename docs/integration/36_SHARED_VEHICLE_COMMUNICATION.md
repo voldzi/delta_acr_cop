@@ -1,8 +1,8 @@
 # Shared vehicle communication: contract and implementation boundary
 
-Status 2026-11-04: staged DTO and enforcement validation only. No new public
-endpoint, runtime capability, vehicle chat or production activation exists in
-this change. Existing personal messages, direct calls and GPS consent are unchanged.
+Status 2026-11-04: implemented source candidate with admission disabled; not
+deployed or production accepted. Personal messages, direct calls and GPS
+consent retain their existing behavior.
 
 ## Client contract
 
@@ -35,7 +35,7 @@ Copy only that file into the public SDK's CSMCommunicationKit source target;
 the adjacent `main.swift` is a standalone synthetic test, not a library source.
 This file alone does not add networking, select a chat, join a room or enable UI.
 
-Agreed runtime facade names (implementation pending):
+Runtime facade names (source handed to Jízda):
 
 ```swift
 requestSharedVehicleConversation(
@@ -94,56 +94,89 @@ revision, vehicle, existing binding and required enforcement evidence. Passing
 these structural checks does not establish that a provider performed the work;
 only trusted server code may construct that evidence after actual readback.
 
-## Verification so far
+## Implementation and acceptance, 4 November 2026
 
-- 21 isolated TypeScript checks passed: exact roster, two distinct accounts,
-  duplicate/extra/missing/removed members, old revision, cross-vehicle evidence,
-  binding replacement, verified generation retirement and unknown enforcement. Client input cannot select actor,
-  members, conversation, room, history or revocation policy.
-- The standalone Swift executable passed DTO decoding, account/vehicle/operation
-  isolation, late revision, invalid room/timestamp and unsupported enum checks.
-- OpenAPI validation passed with warnings, including two intentionally unused
-  staged components; no endpoint availability is implied.
+Source candidate includes the public conversation endpoint, source projection,
+retry worker and Messaging close path. Both production admission flags remain
+false; this is not a deployed capability. The SDK facade and fresh audience
+checker were handed to Jízda with exact hashes in the adjacent HANDOFF.md.
 
-Not yet verified: actual provider membership saga, direct Matrix bypass denial,
-new message and queued notification revocation, E2EE history/key behavior,
-restart/retry/late response integration, native runtime facade or production.
-No real account was used and nothing was uploaded to TestFlight.
+COP persists a single immutable intent and recipient epoch in VehicleState,
+in the same transaction as accepted membership changes. It stores no duplicate
+subjects, names, message text, keys or GPS context. Provider calls happen after
+commit, outside source transactions. A persistent 60-second lease and exact
+operation/revision compare-and-swap reject stale completion. Further membership
+changes cannot skip a pending cutover or active readback lease. Capability-only
+changes preserve the audience epoch. A bounded worker retries four pending cars
+at a time, retaining the exact original operation. Missing canonical identity or
+account erasure fences deny projection.
 
-## 4 November implementation checkpoint (not activation)
+For enrolled cars, membershipChange, inviteAccept and vehicleDelete may return
+HTTP202 with the original receipt plus confirmed:false and
+communicationState:pending. Source membership is committed, native access is
+not confirmed complete. Clients must preserve the exact operation/body and show
+pending until retry returns200confirmed:true. They must not discard local history
+or claim a successful native removal. Unenrolled cars retain their existing200
+behavior. Binding schemas are SharedVehicleMutationPending and
+SharedVehicleCreationPending. Conversation preparation itself has separate
+202join_required semantics; a provider outage returns503, never a ready receipt.
 
-The request-only facade is staged alongside the DTO in
-`docs/integration/sdk/shared-vehicle-communication-v1/`. It uses the host's
-existing authenticated mobility transport, verifies the current mobility account
-and vehicle membership, and separates HTTP 200 ready from HTTP 202 join_required.
-It never selects or joins. `recipientEpoch` is server-owned; the client request
-still contains only operationId and expectedMembershipRevision.
+Vehicle closure uses a separate strict server-only close operation with pinned
+issuer, existing service authentication and closed_vehicle purpose, without a
+human actor header. It can only retire an existing binding; it cannot create or
+grant a room. A deleted vehicle is not pruned before native closure completes.
+Account erasure cannot cross pending work or an active lease, including a
+just-removed historical member; its accepted purge queues the remaining owner
+or closed-vehicle cleanup without retaining a removed actor for impersonation.
 
-COP checks: 43 focused tests, API TypeScript check, focused ESLint, skeleton,
-OpenAPI validation (35 warnings), standalone DTO checks and request-facade Swift
-6 typecheck against minimal runtime stubs passed. The stub check is not an iOS
-SDK build or device acceptance. Native selection, explicit invitation acceptance
-and captured recipient-epoch checks on all outgoing queue paths remain pending.
+Messaging persists pending via whole-store CAS, uses a PostgreSQL vehicle lock
+for native side effects and actual notification handoff, and checks current
+joined membership plus concrete event access for each recipient. Identity and
+native provisioning use their existing owner locks before that publication lock;
+the caller must not hold recipient locks across a GenServer call that reacquires
+them. The owner regression test covers this cross-process deadlock.
 
-The separate Messaging candidate keeps the physical room stable, requires actual
-current recipient joined readback before handoff and includes a durable CAS fence.
-Its local suite passed 256 tests with 41 skips; three additional opted-in tests
-passed against an isolated PostgreSQL 17 instance, then its container and private
-fixture were removed. The three tests cover competing CAS writers, durable pending
-state despite a failed publication transaction and publication/handoff lock ordering.
-They do not establish real Synapse/SDK E2EE or APNs acceptance. No production flag,
-controller account, existing conversation, user history or GPS consent was changed.
+Evidence (separate acceptance surfaces):
 
-A subsequent source-only native handoff adds explicit invitation acceptance,
-nonjoining selection and recipient-epoch journal guards. The candidate full SDK
-built for iOS Simulator; all23 MatrixDraftSubmissionTests passed. Exact application
-instructions and baseline hashes are in the adjacent SDK `HANDOFF.md`. This
-supersedes the earlier checkpoint's statement that native facade source was
-missing; real Synapse/E2EE/push acceptance and server projection remain pending.
+- COP: 73 focused source tests plus4 signed local HTTP tests pass; API typecheck
+  and focused ESLint pass. Signed route checks include outsider denial, room
+  injection rejection, pending mutation202, exact-operation retry200 and replacement-owner recovery
+  after an expired lease without allowing the late former owner to overwrite it.
+- Messaging:260 tests pass,41 skip in an isolated data directory. Three earlier
+  PostgreSQL17 tests passed for competing CAS, durable pending despite rollback
+  and actual publication/cutover lock ordering. Local fake-owner tests cover
+  provisioning/lock order, ineffective kick remaining pending and machine closure.
+- Real isolated Synapse1.156.0 protocol checks passed: actual invite/kick readback,
+  prejoin and leave-gap denial, policy mutation denial and current joined proof.
+ 403 or404 without event data is a valid denied result. This ACL probe used
+  placeholder ciphertext and is not itself crypto acceptance.
+- Jízda independently ran the actual SDK Megolm test with persistent original
+  stores/devices: plaintext decryption, changed session after removal, rejoin
+  decryption and no leave-gap/new-member prejoin history. The first harness run
+  failed because it expected403 where Synapse returned404; its original evidence
+  is preserved. A read-only probe and continuation with the same stores/devices
+  passed. Status: actual-native-crypto-phased-acceptance-passed. No key reset,
+  import/export of prior keys, production users or real phones were involved.
+-31 SDK simulator tests and Jízda's app builds/domain tests passed separately.
+  They do not establish physical delivery or production acceptance.
 
-The c78169a cached epoch comparison is not by itself a fresh send authority.
-The required follow-up patch uses a server/own-native-identity checker before
-new managed handoff/replay.31 isolated simulator tests passed, including actual
-checker code over synthetic intercepted HTTP. See SDK HANDOFF.md patch2; the
-COP durable source projection/endpoint/lifecycle and actual Megolm acceptance
-remain missing and production activation is still prohibited by readiness.
+Still required before activation: Jízda typed mutation202 handling, dedicated
+controller custody/provisioning, guarded paired release, actual live COP source
+and native identity integration and notification handoff acceptance. APNs and
+physical-iPhone acceptance remain separate. No TestFlight upload is authorized.
+
+## Operations and rollback
+
+COP_SHARED_VEHICLE_COMMUNICATION_ENABLED defaults false. Messaging uses
+CSM_SHARED_VEHICLE_COMMUNICATION_ADMISSION_ENABLED=false plus a separately
+reviewed CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID and custody flag. Capability
+requires healthy database_v2 authority, PostgreSQL pool>=2 and actual controller
+readiness, including closed-vehicle cleanup support. No new service token or
+public Matrix management endpoint is introduced.
+
+After enrollment, rollback means disabling new admission/UI while keeping the
+same durable owner and cleanup-capable writer running. Never restore an older
+writer that can overwrite pending state; never clear a pending intent to obtain
+success. Retain source binding/operation evidence needed for denied late
+handoff. Already delivered text, keys, SDK transactions and APNs cannot be recalled.
+Personal messages/direct calls and independent GPS consent remain unchanged.

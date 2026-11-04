@@ -1,3 +1,5 @@
+import { VehicleConversationCoordinator } from "./vehicle-conversation-coordinator.js";
+import { type VehicleConversationProvider, HttpVehicleConversationProvider } from "./vehicle-conversation-provider.js";
 import { UserArrivalRequestError, UserArrivalVerificationError } from "./routing-user-arrival.js";
 import { cleanLifecycleActorConfigFromEnv } from "./clean-lifecycle-actor.js";
 import { createSimCleanLifecycleErasureAdapter } from "./sim-clean-lifecycle-erasure.js";
@@ -412,6 +414,8 @@ export interface BuildServerOptions {
   /** Guard-only dependency injection; never enables mobility or Dispatch intake. */
   accountSafetyStore?: MobilityStore;
   sharedMobilityEnabled?: boolean;
+  sharedVehicleCommunicationEnabled?: boolean;
+  vehicleConversationProvider?: VehicleConversationProvider;
   privateDispatchEnabled?: boolean;
   driverMeasurementConsentStore?: DriverMeasurementConsentStore;
   driverMeasurementSource?: DriverMeasurementSource;
@@ -1499,7 +1503,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   const directPeerForCall = (call: VoiceCallRecord, subject: string) => [call.initiatorSubjectId, ...call.participantSubjectIds].find(id => id !== subject)!;
 
-  const mobilityDependency = registerMobilityRoutes(app, {
+  const vehicleConversation = mobilityService && process.env.COP_OIDC_ISSUER ? new VehicleConversationCoordinator({
+    service: mobilityService, now, issuer: process.env.COP_OIDC_ISSUER,
+    enabled: options.sharedVehicleCommunicationEnabled ?? readBoolean(process.env.COP_SHARED_VEHICLE_COMMUNICATION_ENABLED, false),
+    provider: options.vehicleConversationProvider ?? new HttpVehicleConversationProvider(messagingProvider.config, now, process.env.COP_OIDC_ISSUER),
+    peerBindings: messagingPeerBindings,
+    asActor: (actor, run) => runWithProjectionActor({ issuer: actor.issuer!, subjectId: actor.subjectId }, run)
+  }) : undefined;
+  const mobilityDependency = registerMobilityRoutes(app, { vehicleConversation,
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),

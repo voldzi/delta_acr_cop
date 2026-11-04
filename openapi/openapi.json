@@ -9705,6 +9705,16 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "Source mutation committed; native communication is pending.200 semantics remain unchanged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleMutationPending"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -10114,6 +10124,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Source mutation committed; native communication is pending.200 semantics remain unchanged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleCreationPending"
                 }
               }
             }
@@ -12088,6 +12108,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Source mutation committed; native communication is pending.200 semantics remain unchanged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleMutationPending"
                 }
               }
             }
@@ -14780,6 +14810,154 @@
           "Map Catalog"
         ],
         "description": "Requires a verified COP OIDC identity. COP derives the opaque actor server-side and uses a separately configured, explicitly authorized SIM service credential. Client identity headers and credentials are never forwarded. No automatic retry, direct provider fallback, navigation authority or measurement authority. Ordinary routing and independent GPS recording remain separate."
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/conversation": {
+      "post": {
+        "operationId": "sharedVehicleConversation",
+        "summary": "Resolve the current membership-controlled shared vehicle conversation.",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fresh verified current membership and joined requester; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleConversationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Explicit invitation acceptance is required. Not a confirmed receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleConversationPending"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleConversationRequest"
+              }
+            }
+          }
+        },
+        "description": "Admission defaults off. Only the authenticated source actor may request; operationId and expectedMembershipRevision are the entire input. The source commits one durable pending intent before native work.200 confirms current source roster and actual requester joined;202 is a typed invitation preparation, never permission to select or send.503 means pending/unavailable. No room, actor, recipient or model choices are accepted from the client."
       }
     }
   },
@@ -36827,6 +37005,102 @@
           }
         },
         "description": "Additive ordinary-routing evidence only; absence means unknown/not requested, never strict acceptance. observedAt is latest successful full snapshot confirmation, not event onset or physical observation. exclusions length equals appliedClosureCount and closureId values are unique. With unknown source direction, both-direction avoidance is explicitly conservative and requires individual review of an official whole-structure closure statement plus exact graph geometry. Every applied closure uses separately reviewed graph geometry and fresh full TEC membership. Coverage is always incomplete. Configured source/graph/engine/expiry failures return an error without a discarded-exclusion fallback."
+      },
+      "SharedVehicleMutationPending": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-shared-vehicles-v1"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "eventSequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": false
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "communicationState": {
+            "type": "string",
+            "const": "pending"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "operationId",
+          "vehicleId",
+          "dataRevision",
+          "membershipRevision",
+          "eventSequence",
+          "confirmed",
+          "communicationState"
+        ],
+        "description": "Source change committed; native communication cutover is pending. Never present this as completed revocation. Retry the identical original operation for its final receipt."
+      },
+      "SharedVehicleCreationPending": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "confirmed",
+          "vehicle",
+          "communicationState"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": false
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/SharedVehicle"
+          },
+          "communicationState": {
+            "type": "string",
+            "const": "pending"
+          }
+        },
+        "description": "Source change committed; native communication cutover is pending. Never present this as completed revocation. Retry the identical original operation for its final receipt."
       }
     }
   },

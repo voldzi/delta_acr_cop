@@ -59,4 +59,25 @@ describe("internal managed vehicle provider", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ enabled: true, ready: true, contractVersion: "legacy" }))));
     expect(await new HttpVehicleConversationProvider(config, now).ready(actor)).toBe(false);
   });
+  it("closes only an existing server-selected vehicle purpose without impersonating a human", async () => {
+    const closed = { contractVersion: "csm-managed-vehicle-closed-v1", state: "closed", confirmed: true,
+      vehicleId, operationId, membershipRevision: 2, recipientEpoch: 2, conversationId: `conv_vehicle_${vehicleId}`,
+      roomId: "!current:synthetic.test", roomMembershipVerified: true, notificationAudienceVerified: true };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(closed))); vi.stubGlobal("fetch", fetcher);
+    expect(await new HttpVehicleConversationProvider(config, now, actor.issuer).close(vehicleId, { ...plan, phase: "remove_only" })).toMatchObject({ operationId });
+    const [url, request] = fetcher.mock.calls[0]!;
+    expect(url.toString()).toBe(`https://messaging.synthetic.test/api/v1/managed-vehicle-conversations/${vehicleId}/close`);
+    expect(request.headers["x-csm-managed-purpose"]).toBe("closed_vehicle");
+    expect(request.headers["x-csm-oidc-issuer"]).toBe(actor.issuer);
+    expect(request.headers["x-csm-user-id"]).toBeUndefined();
+    expect(JSON.parse(request.body)).toEqual({ contractVersion: "csm-managed-vehicle-close-v1", operationId,
+      expectedMembershipRevision: 1, membershipRevision: 2, recipientEpoch: 2 });
+  });
+  it("cannot use closure as a new grant or without pinned machine issuer", async () => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    await expect(new HttpVehicleConversationProvider(config, now, actor.issuer).close(vehicleId, plan)).rejects.toMatchObject({ status: 503 });
+    await expect(new HttpVehicleConversationProvider(config, now).close(vehicleId, { ...plan, phase: "remove_only" })).rejects.toMatchObject({ status: 503 });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
 });

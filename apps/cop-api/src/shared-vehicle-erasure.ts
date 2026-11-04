@@ -1,3 +1,4 @@
+import { queueVehicleConversationProjection } from "./vehicle-conversation-projection.js";
 import type { AccountErasureAssessment } from "./account-erasure.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
 import { mobilityAccountFenceKey, mobilityIdentityDigest, mobilityIdentityFenceKey } from "./mobility-erasure-guard.js";
@@ -94,6 +95,7 @@ export class SharedVehicleErasureService {
     ]));
     for (const { key, value: state } of vehicles) {
       if (!validVehicleState(state) || key !== `vehicle:${state.vehicle.vehicleId}`) return { ready: false };
+      if ((state.conversationProjection?.status === "pending" || state.conversationProjection?.lease) && hasErasedLink(state, id, new Set(), ownedRecords)) return { ready: false };
       if (!state.vehicle.deleted && state.vehicle.members.some(member => member.accountId === id && member.role === "owner")) return { ready: false };
       for (const record of Object.values(state.records)) {
         if (record.authorAccountId === id) continue;
@@ -138,6 +140,7 @@ export class SharedVehicleErasureService {
         // Invalidate every old cursor, even if the account had already left this vehicle.
         state.vehicle.membershipRevision++;
         affected.add(state.vehicle.vehicleId);
+        queueVehicleConversationProjection(state);
         await tx.set(entry.key, state);
       }
     }

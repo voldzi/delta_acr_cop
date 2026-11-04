@@ -1,3 +1,5 @@
+import type { VehicleConversationProvider } from "./vehicle-conversation-provider.js";
+import { acceptsMobilitySchema } from "./mobility-contract.js";
 import {describe,it,expect,afterEach,beforeEach} from "vitest";
 import {createSign,generateKeyPairSync,randomUUID} from "node:crypto";
 import {createServer,type Server} from "node:http";
@@ -37,6 +39,53 @@ describe("actual signed OIDC shared mobility HTTP",()=>{
    const unverified=await app.inject({url:"/api/v1/mobility/v1/invitations",headers:{authorization:"Bearer "+token("a",{email_verified:false})}});expect(unverified.statusCode).toBe(403);expect(unverified.json().error.code).toBe("EMAIL_VERIFICATION_REQUIRED");
    store.transact=async()=>{throw Error("synthetic outage")};const down=await app.inject({url:"/api/v1/mobility/v1/capabilities",headers});expect(down.statusCode).toBe(200);expect(down.json().serviceAvailability).toMatchObject({sharedVehicles:"unavailable",dispatch:"unavailable"});expect(down.body).not.toContain("synthetic outage");
   }finally{await app.close()}
+ });
+
+ it("exposes the staged chat route with signed identity and never confirms a pending membership cutover", async () => {
+  let pending = false, joined = false;
+  const provider: VehicleConversationProvider = {
+   ready: async () => true, snapshot: async () => undefined,
+   close: async (vehicleId, plan) => ({ vehicleId, ...plan, conversationId: `conv_vehicle_${vehicleId}`, roomId: "!vehicle:synthetic.test" }),
+   synchronize: async (_actor, vehicleId, plan, members) => pending ? { state: "pending" } : { state: "ready", proof: {
+    vehicleId, membershipRevision: plan.membershipRevision, recipientEpoch: plan.recipientEpoch, operationId: plan.operationId,
+    roomGeneration: 1, conversationId: `conv_vehicle_${vehicleId}`, roomId: "!vehicle:synthetic.test",
+    memberAccountIds: members.map(m => m.accountId), joinedAccountIds: joined ? members.map(m => m.accountId) : [],
+    encrypted: true, historyPolicy: "from_membership", membershipAuthority: "cop_vehicle", roomMembershipVerified: true,
+    notificationAudienceVerified: true, clientMembershipChangesDenied: true, revocation: "server_enforced", retiredRoomIds: [], retirementVerified: true
+   } }
+  };
+  const store = new MemoryMobilityStore(), app = buildServer({ mobilityStore: store, sharedMobilityEnabled: true,
+   sharedVehicleCommunicationEnabled: true, vehicleConversationProvider: provider });
+  try {
+   const aSub = randomUUID(), bSub = randomUUID(), outsider = randomUUID();
+   const a = { authorization: "Bearer " + token(aSub) }, b = { authorization: "Bearer " + token(bSub) };
+   const call = (method: "GET" | "POST", url: string, headers: Record<string,string> = a, payload?: unknown) => app.inject({method,url,headers,...(payload === undefined ? {} : {payload: payload as Record<string,unknown>})});
+   const accountB = (await call("GET", "/api/v1/mobility/v1/account", b)).json();
+   const created = (await call("POST", "/api/v1/shared-vehicles/v1/vehicles", a, {operationId:randomUUID(),details:{name:"Synthetic chat vehicle"}})).json();
+   const id = created.vehicle.vehicleId, path = `/api/v1/shared-vehicles/v1/vehicles/${id}/conversation`;
+   const invitation = (await call("POST", `/api/v1/shared-vehicles/v1/vehicles/${id}/invitations`, a,
+    {operationId:randomUUID(),expectedMembershipRevision:1,email:`${bSub}@example.test`,capabilities:["readVehicle"]})).json();
+   expect((await call("POST", "/api/v1/shared-vehicles/v1/invitations/accept", b,
+    {operationId:randomUUID(),invitationId:invitation.invitationId})).statusCode).toBe(200);
+   const request = {operationId:randomUUID(),expectedMembershipRevision:2};
+   expect((await call("POST", path, {}, request)).statusCode).toBe(401);
+   expect((await call("POST", path, {authorization:"Bearer "+token(outsider)}, request)).statusCode).toBe(404);
+   expect((await call("POST", path, a, {...request,roomId:"!chosen:elsewhere.test"})).statusCode).toBe(400);
+   const prepared = await call("POST", path, a, request); expect(prepared.statusCode).toBe(202);
+   expect(acceptsMobilitySchema("SharedVehicleConversationPending", prepared.json())).toBe(true);
+   joined = true;
+   const ready = await call("POST", path, a, request); expect(ready.statusCode).toBe(200);
+   expect(acceptsMobilitySchema("SharedVehicleConversationReceipt", ready.json())).toBe(true);
+   pending = true;
+   const removal = {operationId:randomUUID(),expectedMembershipRevision:2,accountId:accountB.accountId,action:"remove"};
+   const result = await call("POST", `/api/v1/shared-vehicles/v1/vehicles/${id}/members`, a, removal);
+   expect(result.statusCode).toBe(202); expect(result.json().confirmed).toBe(false);
+   expect(acceptsMobilitySchema("SharedVehicleMutationPending", result.json())).toBe(true);
+   expect((await call("POST", path, b, request)).statusCode).toBe(404);
+   pending = false;
+   const completed = await call("POST", `/api/v1/shared-vehicles/v1/vehicles/${id}/members`, a, removal);
+   expect(completed.statusCode).toBe(200); expect(completed.json().confirmed).toBe(true);
+  } finally { await app.close(); }
  });
 
 });

@@ -1,7 +1,9 @@
 # Source handoff to Jízda (4 November 2026)
 
-Not production activation. The route and durable COP source projection are still
-pending, as are real Synapse/E2EE/APNs acceptance and controller provisioning.
+Not production activation. COP route and durable source projection are implemented
+in a source candidate. Real isolated Synapse/SDK E2EE phased acceptance has passed;
+live COP, APNs, physical device and controller provisioning remain separate gates.
+For current evidence and typed mutation202 semantics see ../../36_SHARED_VEHICLE_COMMUNICATION.md.
 
 Apply only after checking every original file against
 `native-membership-baseline-sha256.json`. Apply the candidate patch to the SDK

@@ -14,7 +14,7 @@ export interface ManagedVehicleSnapshot {
   roomGeneration: number;
   operationId: string;
   phase: "remove_only" | "reconcile";
-  state: "pending" | "ready" | "revocation_enforced";
+  state: "pending" | "ready" | "revocation_enforced" | "closed";
   roomId?: string;
 }
 export interface ManagedVehiclePlan {
@@ -28,7 +28,9 @@ export type ManagedVehicleResult = { state: "pending" } | {
   state: "ready" | "revocation_enforced";
   proof: VehicleConversationEnforcement & { operationId: string; joinedAccountIds: string[] };
 };
+export interface ClosedVehicleConversationProof { vehicleId: string; operationId: string; membershipRevision: number; recipientEpoch: number; conversationId: string; roomId: string }
 export interface VehicleConversationProvider {
+  close(vehicleId: string, plan: ManagedVehiclePlan): Promise<ClosedVehicleConversationProof | undefined>;
   ready(actor: AuthenticatedActor): Promise<boolean>;
   snapshot(actor: AuthenticatedActor, vehicleId: string): Promise<ManagedVehicleSnapshot | undefined>;
   synchronize(actor: AuthenticatedActor, vehicleId: string, plan: ManagedVehiclePlan,
@@ -37,12 +39,12 @@ export interface VehicleConversationProvider {
 
 /** Separate, bounded, authenticated internal path. No generic group or external-model fallback. */
 export class HttpVehicleConversationProvider implements VehicleConversationProvider {
-  constructor(readonly config: MessagingProviderConfig, readonly now: () => Date) {}
+  constructor(readonly config: MessagingProviderConfig, readonly now: () => Date, readonly issuer?: string) {}
 
   async ready(actor: AuthenticatedActor): Promise<boolean> {
     try {
       const { status, body } = await this.request(actor, "/api/v1/managed-vehicle-conversations/capability");
-      return status === 200 && record(body) && body.contractVersion === contractVersion && body.enabled === true && body.ready === true;
+      return status === 200 && record(body) && body.contractVersion === contractVersion && body.enabled === true && body.ready === true && body.authorityMode === "database_v2" && body.closedVehicleCleanupSupported === true;
     } catch { return false; }
   }
 
@@ -54,7 +56,7 @@ export class HttpVehicleConversationProvider implements VehicleConversationProvi
       body.vehicleId === vehicleId && typeof body.conversationId === "string" && body.conversationId === `conv_vehicle_${vehicleId}` &&
       integer(body.membershipRevision, 1) && integer(body.recipientEpoch, 1) && integer(body.roomGeneration, 0) && typeof body.operationId === "string" && uuid.test(body.operationId) &&
       (body.phase === "remove_only" || body.phase === "reconcile") &&
-      (body.state === "pending" || body.state === "ready" || body.state === "revocation_enforced") &&
+      (body.state === "pending" || body.state === "ready" || body.state === "revocation_enforced" || body.state === "closed") &&
       (body.roomId === null || body.roomId === undefined || roomId(body.roomId)),
     503, "VEHICLE_COMMUNICATION_UNPROVEN", "Stav komunikace vozidla není potvrzen.");
     return { vehicleId, conversationId: body.conversationId, membershipRevision: body.membershipRevision as number,
@@ -96,16 +98,34 @@ export class HttpVehicleConversationProvider implements VehicleConversationProvi
     } };
   }
 
-  private async request(actor: AuthenticatedActor, path: string, body?: object): Promise<{ status: number; body: unknown }> {
+  async close(vehicleId: string, plan: ManagedVehiclePlan): Promise<ClosedVehicleConversationProof | undefined> {
+    requireMobility(uuid.test(vehicleId) && plan.phase === "remove_only", 503, "VEHICLE_COMMUNICATION_UNPROVEN", "Uzavření komunikace není potvrzené.");
+    const { status, body } = await this.request(undefined, `/api/v1/managed-vehicle-conversations/${vehicleId}/close`, {
+      contractVersion: "csm-managed-vehicle-close-v1", operationId: plan.operationId,
+      expectedMembershipRevision: plan.expectedMembershipRevision, membershipRevision: plan.membershipRevision,
+      recipientEpoch: plan.recipientEpoch
+    }, true);
+    if (status === 202 && record(body) && body.contractVersion === contractVersion && body.state === "pending" && body.confirmed === false) return undefined;
+    requireMobility(status === 200 && record(body) && body.contractVersion === "csm-managed-vehicle-closed-v1" &&
+      body.state === "closed" && body.confirmed === true && body.vehicleId === vehicleId && body.operationId === plan.operationId &&
+      body.membershipRevision === plan.membershipRevision && body.recipientEpoch === plan.recipientEpoch &&
+      body.conversationId === `conv_vehicle_${vehicleId}` && roomId(body.roomId) &&
+      body.roomMembershipVerified === true && body.notificationAudienceVerified === true,
+    503, "VEHICLE_COMMUNICATION_UNPROVEN", "Uzavření komunikace není potvrzené.");
+    return { vehicleId, operationId: plan.operationId, membershipRevision: plan.membershipRevision,
+      recipientEpoch: plan.recipientEpoch, conversationId: body.conversationId, roomId: body.roomId };
+  }
+
+  private async request(actor: AuthenticatedActor | undefined, path: string, body?: object, closing = false): Promise<{ status: number; body: unknown }> {
     requireMobility(this.config.enabled && this.config.authorityMode === "database_v2" && this.config.token &&
-      actor.authMode === "oidc" && actor.issuer && uuid.test(actor.subjectId),
+      (closing ? !actor && typeof this.issuer === "string" && this.issuer.length > 0 : actor?.authMode === "oidc" && actor.issuer && uuid.test(actor.subjectId)),
     503, "VEHICLE_COMMUNICATION_UNAVAILABLE", "Komunikace vozidla není dostupná.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
       const response = await fetch(new URL(`${this.config.baseUrl.replace(/\/+$/u, "")}${path}`), {
         method: body ? "PUT" : "GET", redirect: "error", signal: controller.signal,
-        headers: { ...managedMessagingActorHeaders(actor), Accept: "application/json",
+        headers: { ...(closing ? { "x-csm-managed-purpose": "closed_vehicle", "x-csm-oidc-issuer": this.issuer! } : managedMessagingActorHeaders(actor!)), Accept: "application/json",
           Authorization: `Bearer ${this.config.token}`, "X-COP-Request-At": this.now().toISOString(),
           ...(body ? { "Content-Type": "application/json" } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {})

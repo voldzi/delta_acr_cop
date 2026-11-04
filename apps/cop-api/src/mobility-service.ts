@@ -1,3 +1,4 @@
+import { queueVehicleConversationProjection, type VehicleConversationProjection } from "./vehicle-conversation-projection.js";
 import { activeCareReminders, validSharedRoutingProfile, writeAudit } from "./mobility-vehicle-audit.js";
 import { canonicalJson } from "./routing-trip.js";
 import { sharedMileageViews, validateSharedRideRecord } from "./mobility-mileage.js";
@@ -19,6 +20,7 @@ export class MobilityFailure extends Error {
   }
 }
 export type VehicleState = {
+  conversationProjection?: VehicleConversationProjection;
   vehicle: Wire.SharedVehicle;
   records: Record<string, Wire.SharedVehicleRecord>;
   events: Wire.SharedVehicleSyncItem[];
@@ -90,7 +92,7 @@ export class MobilityService {
       }
       for (const entry of await tx.scan<{expiresAt:string}>("invite-notification:")) if (Date.parse(entry.value.expiresAt) <= cutoff) await tx.remove(entry.key);
       for (const entry of await tx.scan<Invite>("invite:")) if (Date.parse(entry.value.expiresAt) <= cutoff) await tx.remove(entry.key);
-      for (const entry of await tx.scan<VehicleState>("vehicle:")) if (entry.value.deletedAt && Date.parse(entry.value.deletedAt) <= cutoff) await tx.remove(entry.key);
+      for (const entry of await tx.scan<VehicleState>("vehicle:")) if (entry.value.deletedAt && Date.parse(entry.value.deletedAt) <= cutoff && (!entry.value.conversationProjection || entry.value.conversationProjection.status === "closed")) await tx.remove(entry.key);
       for (const entry of await tx.scan<GroupState>("group:")) {
         const state = entry.value;
         if (state.deletedAt && Date.parse(state.deletedAt) <= cutoff) {
@@ -243,6 +245,7 @@ export class MobilityService {
       "VEHICLE_HISTORY_LIMIT",
       "Evidence dosáhla limitu; kontaktujte správce."
     );
+    queueVehicleConversationProjection(state);
     await tx.set(`vehicle:${state.vehicle.vehicleId}`, state);
   }
   vehicleReceipt(state: VehicleState, operationId: string, recordId?: string): Wire.SharedVehicleReceipt {

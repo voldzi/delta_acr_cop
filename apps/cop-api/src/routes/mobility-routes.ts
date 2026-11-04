@@ -1,3 +1,5 @@
+import type { VehicleConversationCoordinator } from "../vehicle-conversation-coordinator.js";
+import type { SharedVehicleConversationRequest } from "../vehicle-conversation-contract.js";
 import { MobilityInvitationOutbox } from "../mobility-invitation-outbox.js";
 import type { FastifyInstance } from "fastify";
 import { actorFromRequest } from "../security.js";
@@ -10,7 +12,7 @@ import type * as Wire from "../mobility-types.js";
 
 import type { MessagingProvider } from "../messaging-provider.js";
 import { openDispatchParticipant } from "../mobility-participant.js";
-type Options = { messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date;
+type Options = { vehicleConversation?: VehicleConversationCoordinator; messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date;
   /** The same guarded instances are shared with the account erasure owner. */
   service?: SharedMobilityService; invitationOutbox?: MobilityInvitationOutbox };
 export function registerMobilityRoutes(app: FastifyInstance, options: Options): () => { name: string; status: "ok" | "unavailable" | "disabled"; detail: string } {
@@ -20,8 +22,8 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
   if (options.dispatchEnabled && !options.enabled) throw new Error("Private Dispatch requires shared mobility.");
   const invitationOutbox = options.invitationOutbox ?? (options.enabled && options.store && options.messagingProvider ? new MobilityInvitationOutbox(options.store, options.messagingProvider, options.now) : undefined);
   let retentionTimer: NodeJS.Timeout | undefined;
-  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); invitationOutbox?.start(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
-  app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); await invitationOutbox?.close(); if (options.enabled) await options.store?.close(); });
+  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); invitationOutbox?.start(); options.vehicleConversation?.start(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
+  app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); await options.vehicleConversation?.close(); await invitationOutbox?.close(); if (options.enabled) await options.store?.close(); });
   for (const [path, methods] of Object.entries(mobilityContract.paths)) for (const [method, operation] of Object.entries(methods)) {
     const routePath = path.replace(/\{([^}]+)\}/gu, ":$1");
     app.route({ method: method.toUpperCase() as "GET" | "POST" | "PUT" | "PATCH", url: routePath,
@@ -56,6 +58,15 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
           if (!bodySchema && request.body !== undefined) throw new MobilityFailure(400, "VALIDATION_ERROR", "Tato operace nepřijímá obsah.");
           if (!bodySchema && request.body !== undefined) throw new MobilityFailure(400, "VALIDATION_ERROR", "Tato operace nepřijímá obsah.");
           const body: unknown = bodySchema ? normalizeMobilityInput(bodySchema, request.body) : undefined;
+          const settleVehicleMutation = async <T extends { confirmed: boolean }>(result: T, vehicleId: string) => {
+            if (!options.vehicleConversation) {
+              const enrolled = await options.store!.transact([], async tx =>
+                !!(await tx.get<import("../mobility-service.js").VehicleState>(`vehicle:${vehicleId}`))?.conversationProjection);
+              if (!enrolled) return result;
+            } else if (await options.vehicleConversation.settle(vehicleId)) return result;
+            reply.code(202);
+            return { ...result, confirmed: false, communicationState: "pending" };
+          };
           const execute = async () => {
           const account = await service.account(actor); const id = (params.vehicleId ?? params.groupId ?? params.shareId ?? "").toLowerCase();
           switch (operation.operationId) {
@@ -65,13 +76,23 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
             case "sharedVehicleCreate": return {operationId: (body as Wire.SharedVehicleCreate).operationId, confirmed:true, vehicle: await service.createVehicle(account, body as Wire.SharedVehicleCreate)} satisfies Wire.SharedVehicleCreationReceipt;
             case "sharedVehicleGet": return await service.getVehicle(account, id);
             case "sharedVehicleUpdate": return await service.updateVehicle(account, id, body as Wire.SharedVehicleUpdate);
-            case "sharedVehicleMembershipChange": return await service.membership(account, id, body as Wire.SharedVehicleMembershipChange);
+            case "sharedVehicleMembershipChange": return settleVehicleMutation(await service.membership(account, id, body as Wire.SharedVehicleMembershipChange), id);
             case "sharedVehicleInvite": return await service.createInvitation(account, "vehicle", id, body as Wire.MobilityInvitationCreate);
             case "sharedVehicleInviteRevoke": return await service.revokeInvitation(account, "vehicle", id, body as Wire.MobilityInvitationRevoke);
-            case "sharedVehicleInviteAccept": return {operationId:(body as Wire.MobilityInvitationAccept).operationId, confirmed:true, vehicle:await service.acceptInvitation(account, "vehicle", body as Wire.MobilityInvitationAccept)};
+            case "sharedVehicleInviteAccept": {
+              const vehicle = await service.acceptInvitation(account, "vehicle", body as Wire.MobilityInvitationAccept);
+              if (!("vehicleId" in vehicle)) throw new MobilityFailure(503, "MOBILITY_UNAVAILABLE", "Vozidlo není potvrzené.");
+              return settleVehicleMutation({ operationId: (body as Wire.MobilityInvitationAccept).operationId, confirmed: true, vehicle }, vehicle.vehicleId);
+            }
+            case "sharedVehicleConversation": {
+              if (!options.vehicleConversation) throw new MobilityFailure(503, "VEHICLE_COMMUNICATION_UNAVAILABLE", "Komunikace vozidla není zapnutá.");
+              const result = await options.vehicleConversation.open(actor, account, id, body as SharedVehicleConversationRequest);
+              if (!result.confirmed) reply.code(202);
+              return result;
+            }
             case "sharedVehicleRecordWrite": return await service.writeRecord(account, id, body as Wire.SharedVehicleRecordWrite);
             case "sharedVehicleRecordDelete": return await service.deleteRecord(account, id, body as Wire.SharedVehicleRecordDelete);
-            case "sharedVehicleDelete": return await service.deleteVehicle(account, id, body as Wire.SharedVehicleDelete);
+            case "sharedVehicleDelete": return settleVehicleMutation(await service.deleteVehicle(account, id, body as Wire.SharedVehicleDelete), id);
             case "sharedVehicleSync": {
               if (Object.keys(query).some(k => !["cursor", "limit"].includes(k)) || (query.cursor?.length ?? 0) > 120 || (query.limit && !/^(?:[1-9][0-9]?|100)$/u.test(query.limit))) throw new MobilityFailure(400, "INVALID_CURSOR", "Neplatné stránkování.");
               return await service.syncVehicle(account, id, query.cursor, query.limit ? Number(query.limit) : 100);
