@@ -158,11 +158,14 @@ Evidence (separate acceptance surfaces):
   is preserved. A read-only probe and continuation with the same stores/devices
   passed. Status: actual-native-crypto-phased-acceptance-passed. No key reset,
   import/export of prior keys, production users or real phones were involved.
--31 SDK simulator tests and Jízda's app builds/domain tests passed separately.
+-39 SDK simulator tests (including4 typed pending-response checks) and Jízda's
+  app builds/domain tests passed separately. COP reviewed the4 exact SDK pending
+  files against their frozen hashes and binding wire contract.
   They do not establish physical delivery or production acceptance.
 
-Still required before activation: Jízda typed mutation202 handling, dedicated
-controller custody/provisioning, guarded paired release, actual live COP source
+Jízda typed mutation202 handling is implemented and compatibility-reviewed.
+Still required before activation: dedicated controller custody/provisioning,
+guarded paired release, actual live COP source
 and native identity integration and notification handoff acceptance. APNs and
 physical-iPhone acceptance remain separate. No TestFlight upload is authorized.
 

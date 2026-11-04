@@ -1,0 +1,126 @@
+{
+  "contractVersion": "cop-managed-vehicle-release-review-v1",
+  "reviewDate": "2026-11-04",
+  "status": "source_ready_root_build_and_seal_required",
+  "productionActivated": false,
+  "executableInstaller": false,
+  "sources": {
+    "cop": {
+      "repository": "voldzi/delta_acr_cop",
+      "revision": "dd545c2060e0996385122bc0cec9269a5b1af9f2",
+      "branch": "codex/cop-pg-disconnect-recovery",
+      "contractSha256": "532331343343b36f857f7816cebf1bbb1bb043e6bc4c2a71f3a2823ca299ca12"
+    },
+    "messaging": {
+      "repository": "voldzi/csm_messaging",
+      "revision": "50e590c1078eb86ed1857cf336196c4bbf1c0fdc",
+      "branch": "codex/managed-vehicle-conversations",
+      "contractSha256": "cb30d34a903faeb08114603f63e00e1d4e94604e0fd0f5a882c404073ee19de7"
+    }
+  },
+  "observedBaseline": {
+    "cop": {
+      "host": "docker.home.cz",
+      "container": "cop-cop-api-1",
+      "imageId": "sha256:51a10099616c4b2bbd2607391413de975fdf49ba0b2df403db6d3e9785eb9094"
+    },
+    "messaging": {
+      "host": "comm.home.cz",
+      "container": "csm-messaging-api",
+      "imageId": "sha256:531a5282d086300df960f270e5e17d4aa928abc3180af4d14a23d3edc18d9d25",
+      "sourceRevision": "6908586125b6610416a20257e0eb5899fc61ee2c"
+    },
+    "health": "both healthy at read-only inspection; recheck immediately before any change"
+  },
+  "targetImages": {
+    "cop": null,
+    "messaging": null,
+    "reason": "No privileged build or deployment performed; never treat source SHAs as image digests."
+  },
+  "allowedRuntimeDelta": {
+    "cop": {
+      "codeOnlyCandidate": true,
+      "newEnvironment": {
+        "COP_SHARED_VEHICLE_COMMUNICATION_ENABLED": "false"
+      }
+    },
+    "messaging": {
+      "codeOnlyCandidate": true,
+      "newEnvironment": {
+        "CSM_SHARED_VEHICLE_COMMUNICATION_ADMISSION_ENABLED": "false",
+        "CSM_VEHICLE_CONTROLLER_MATRIX_USER_ID": "",
+        "CSM_VEHICLE_CONTROLLER_CUSTODY_REVIEWED": "false"
+      }
+    },
+    "preserve": [
+      "all other environment values",
+      "credentials and token values",
+      "networks and ports",
+      "mounts and storage custody",
+      "database endpoints and roles",
+      "account erasure fences",
+      "personal chat and direct calls",
+      "GPS consent",
+      "all other applications"
+    ]
+  },
+  "steps": [
+    {
+      "id": "root_build",
+      "required": "Root verifies existing dedicated COP X5 builder and Messaging approved builder/custody, creates immutable exact-source contexts, builds with resolved approved base digests and no shared-builder reconfiguration. Record target image IDs and source/base/dependency receipts."
+    },
+    {
+      "id": "seal",
+      "required": "Root independently compares live baseline/source/runtime config and seals exact target images plus only four declared environment keys. Existing generic runtime guard remains; old hotfix-only broker is not authority for this candidate."
+    },
+    {
+      "id": "stage_disabled",
+      "required": "Deploy Messaging first, COP second, admission disabled; preserve all original runtime fields and current healthy references. Fresh live/ready/dependency probes; verify personal messages/calls and erasure readiness unchanged. No real user account deletion."
+    },
+    {
+      "id": "controller_custody",
+      "required": "Separately review/provision exactly one noninteractive nonadmin technical Matrix controller with no password, devices or crypto keys, outside reserved human namespace. Never reuse administrator/cop.ai.agent or alter immutable human safety baselines. Pin identity only after actual custody proof; no controller token stored/logged."
+    },
+    {
+      "id": "acceptance",
+      "required": "Only after fresh healthy guarded staging, enable bounded synthetic acceptance using approved temporary accounts and current COP canonical actor mapping. Exercise ready/join-required, kick+invite cancellation/readback, source pending202/exact retry/restart, wrong actor, native delivery deny, account lifecycle and actual push handoff. Source/APNs/device results stay separate."
+    },
+    {
+      "id": "activate",
+      "required": "Only after matching Jizda typed202 handling and live paired acceptance, seal enabling values and release UI according to user approval. No TestFlight publication in this task."
+    }
+  ],
+  "rollback": {
+    "beforeAnyEnrollment": "Return through the existing guard to exact healthy baseline images only after proving no managed source intents and no managed Messaging rooms/records were created. Recheck current config and health; no automatic older-image fallback.",
+    "afterEnrollment": "Disable new COP/Messaging admission and hide UI while retaining cleanup-capable writers and all durable intents/bindings. Continue exact pending revocation/closure; do not restore pre-feature writers or wipe state. Existing admitted members and required cleanup must not silently disappear.",
+    "interruptedRelease": "Keep original evidence and pending operation. Reconcile actual live image/state under existing guard; no generic reset, repeated source mutation or source-membership rollback."
+  },
+  "evidence": {
+    "copFocusedTestsPassed": 77,
+    "messagingTestsPassed": 260,
+    "messagingTestsSkipped": 41,
+    "postgresTestsPreviouslyPassed": 3,
+    "sdkTestsPreviouslyPassed": 39,
+    "nativeCrypto": "isolated phased acceptance passed; original403/404 harness failure retained, same stores/devices continuation",
+    "productionAcceptance": false,
+    "physicalDeviceAcceptance": false,
+    "apnsAcceptance": false,
+    "testFlightUploaded": false,
+    "jizdaDomainReported": {
+      "xctest": 1238,
+      "swiftTesting": 3
+    },
+    "sdkPendingCompatibilityReview": {
+      "source": "Jizda source-pending-v3-overlay.json",
+      "reviewedFileCount": 4,
+      "allFrozenHashesMatched": true,
+      "executedBy": "Jizda; independently source-reviewed by COP",
+      "findings": "No blocking wire-contract mismatch found."
+    }
+  },
+  "remainingAuthority": [
+    "Current NOPASSWD cop-reviewed-release CLI is pinned to an older login/location hotfix and rejects status; it cannot build/seal/activate these targets.",
+    "Existing COP X5 builder verification fails for current unprivileged invocation; do not build with a shared/default builder to bypass it.",
+    "Root must perform the bounded build/custody/seal steps and give the application executor a fixed noninteractive action for only the resulting release. No generic sudo, arbitrary commands or credential disclosure requested."
+  ]
+}
