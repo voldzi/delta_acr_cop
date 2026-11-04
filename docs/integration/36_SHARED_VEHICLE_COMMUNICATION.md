@@ -123,8 +123,9 @@ SharedVehicleCreationPending. Conversation preparation itself has separate
 
 Vehicle closure uses a separate strict server-only close operation with pinned
 issuer, existing service authentication and closed_vehicle purpose, without a
-human actor header. It can only retire an existing binding; it cannot create or
-grant a room. A deleted vehicle is not pruned before native closure completes.
+human actor header. It can only retire the exact existing conversation and room binding; it cannot
+create or grant a room. A closure proof for a different conversation remains
+pending even if the room string matches. A deleted vehicle is not pruned before native closure completes.
 Account erasure cannot cross pending work or an active lease, including a
 just-removed historical member; its accepted purge queues the remaining owner
 or closed-vehicle cleanup without retaining a removed actor for impersonation.

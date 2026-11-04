@@ -10,14 +10,14 @@ import type { ClosedVehicleConversationProof, ManagedVehiclePlan, ManagedVehicle
 const issuer = "https://synthetic.example/realms/cop";
 const actor = (subjectId: string): AuthenticatedActor => ({ authMode: "oidc", issuer, subjectId, username: "synthetic", displayName: "Synthetic", email: `${subjectId}@example.test`, emailVerified: true, roles: [] });
 class Provider implements VehicleConversationProvider {
-  pending = false; joined = true; unavailable = false; closePending = false;
+  pending = false; joined = true; unavailable = false; closePending = false; closeWrongBinding = false;
   calls: Array<{ vehicleId: string; plan: ManagedVehiclePlan; members: Array<{ accountId: string; userId: string }> }> = [];
   duringSync?: () => Promise<void>;
   async ready(): Promise<boolean> { return !this.unavailable; }
   async snapshot(): Promise<undefined> { return undefined; }
   async close(vehicleId: string, plan: ManagedVehiclePlan): Promise<ClosedVehicleConversationProof | undefined> {
     if (this.closePending) return undefined;
-    return { vehicleId, ...plan, conversationId: `conv_vehicle_${vehicleId}`, roomId: "!vehicle:synthetic.test" };
+    return { vehicleId, ...plan, conversationId: this.closeWrongBinding ? "conv_foreign" : `conv_vehicle_${vehicleId}`, roomId: "!vehicle:synthetic.test" };
   }
   async synchronize(_actor: AuthenticatedActor, vehicleId: string, plan: ManagedVehiclePlan, members: Array<{ accountId: string; userId: string }>): Promise<ManagedVehicleResult> {
     this.calls.push(structuredClone({ vehicleId, plan, members })); await this.duringSync?.();
@@ -107,7 +107,10 @@ describe("source/native vehicle conversation coordinator", () => {
     const vehicle = await f.service.getVehicle(f.a, f.id);
     await f.service.deleteVehicle(f.a, f.id, { operationId: randomUUID(), expectedMembershipRevision: 2, expectedDataRevision: vehicle.dataRevision, reason: "Synthetic vehicle closure" });
     f.provider.closePending = true; expect(await f.coordinator.settle(f.id)).toBe(false);
-    f.provider.closePending = false; expect(await f.coordinator.settle(f.id)).toBe(true);
+    f.provider.closePending = false; f.provider.closeWrongBinding = true;
+    expect(await f.coordinator.settle(f.id)).toBe(false);
+    expect((await f.state())?.conversationProjection?.status).toBe("pending");
+    f.provider.closeWrongBinding = false; expect(await f.coordinator.settle(f.id)).toBe(true);
     expect((await f.state())?.conversationProjection?.status).toBe("closed");
   });
   it("resumes the persisted operation in a new owner after an expired lease, rejecting late completion", async () => {

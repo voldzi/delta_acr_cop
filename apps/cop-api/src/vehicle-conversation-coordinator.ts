@@ -125,7 +125,8 @@ export class VehicleConversationCoordinator {
         if (!closed) return undefined;
         await service.store.transact([`vehicle:${vehicleId}`], async tx => {
           const state = await this.claimed(tx, vehicleId, nonce, work.projection.intent.operationId);
-          requireMobility(state.vehicle.deleted && state.conversationProjection?.binding?.roomId === closed.roomId,
+          requireMobility(state.vehicle.deleted && state.conversationProjection?.binding?.roomId === closed.roomId &&
+            state.conversationProjection.binding.conversationId === closed.conversationId,
             503, "VEHICLE_COMMUNICATION_UNPROVEN", "Uzavření komunikace není potvrzené.");
           state.conversationProjection!.status = "closed"; delete state.conversationProjection!.lease;
           await tx.set(`vehicle:${vehicleId}`, state);
