@@ -1,15 +1,16 @@
 {
   "contractVersion": "cop-managed-vehicle-release-review-v1",
   "reviewDate": "2026-11-04",
-  "status": "previous_cop_restored_healthy_startup_fix_candidate_verified_locally",
-  "productionActivated": false,
+  "status": "paired_code_images_deployed_healthy_features_disabled",
+  "productionActivated": true,
   "executableInstaller": false,
   "sources": {
     "cop": {
       "repository": "voldzi/delta_acr_cop",
-      "revision": "dd545c2060e0996385122bc0cec9269a5b1af9f2",
+      "revision": "00c854d56eb9fd4346e26dade622776c83bee9a5",
       "branch": "codex/cop-pg-disconnect-recovery",
-      "contractSha256": "532331343343b36f857f7816cebf1bbb1bb043e6bc4c2a71f3a2823ca299ca12"
+      "contractSha256": "532331343343b36f857f7816cebf1bbb1bb043e6bc4c2a71f3a2823ca299ca12",
+      "featurePayloadRevision": "dd545c2060e0996385122bc0cec9269a5b1af9f2"
     },
     "messaging": {
       "repository": "voldzi/csm_messaging",
@@ -33,10 +34,10 @@
     "health": "both healthy at read-only inspection; recheck immediately before any change"
   },
   "targetImages": {
-    "cop": "sha256:e4a94bb3f76bbcfe0d831b5aae993aabf79a2680208b10a10e552d5c8c5d6b49",
+    "cop": "sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d",
     "messaging": "sha256:e9c50077e596718f267b65422e5c95169ea6e3f88d55ce734c5d5939183b9907",
     "messagingBuilderArtifact": "sha256:60a8959ca1f226ed1f7e3d26de72c714cf5650b4c178db51256450ea84619eaa",
-    "reason": "Actual built images. Docker save/load normalized Messaging manifest identity; full Config and RootFS verified identical."
+    "reason": "Actual deployed image digests; Messaging builder/loaded identity normalization preserved separately."
   },
   "allowedRuntimeDelta": {
     "cop": {
@@ -68,27 +69,34 @@
   "steps": [
     {
       "id": "root_build",
-      "required": "Root verifies existing dedicated COP X5 builder and Messaging approved builder/custody, creates immutable exact-source contexts, builds with resolved approved base digests and no shared-builder reconfiguration. Record target image IDs and source/base/dependency receipts."
+      "required": "Root verifies existing dedicated COP X5 builder and Messaging approved builder/custody, creates immutable exact-source contexts, builds with resolved approved base digests and no shared-builder reconfiguration. Record target image IDs and source/base/dependency receipts.",
+      "status": "complete"
     },
     {
       "id": "seal",
-      "required": "Root independently compares live baseline/source/runtime config and seals exact target images plus only four declared environment keys. Existing generic runtime guard remains; old hotfix-only broker is not authority for this candidate."
+      "required": "Root independently compares live baseline/source/runtime config and seals exact target images plus only four declared environment keys. Existing generic runtime guard remains; old hotfix-only broker is not authority for this candidate.",
+      "status": "complete_code_only",
+      "actual": "Sealed image-only changedKeys[]; no environment keys changed."
     },
     {
       "id": "stage_disabled",
-      "required": "Deploy Messaging first, COP second, admission disabled; preserve all original runtime fields and current healthy references. Fresh live/ready/dependency probes; verify personal messages/calls and erasure readiness unchanged. No real user account deletion."
+      "required": "Deploy Messaging first, COP second, admission disabled; preserve all original runtime fields and current healthy references. Fresh live/ready/dependency probes; verify personal messages/calls and erasure readiness unchanged. No real user account deletion.",
+      "status": "code_deployed_healthy_full_paired_acceptance_pending"
     },
     {
       "id": "controller_custody",
-      "required": "Separately review/provision exactly one noninteractive nonadmin technical Matrix controller with no password, devices or crypto keys, outside reserved human namespace. Never reuse administrator/cop.ai.agent or alter immutable human safety baselines. Pin identity only after actual custody proof; no controller token stored/logged."
+      "required": "Separately review/provision exactly one noninteractive nonadmin technical Matrix controller with no password, devices or crypto keys, outside reserved human namespace. Never reuse administrator/cop.ai.agent or alter immutable human safety baselines. Pin identity only after actual custody proof; no controller token stored/logged.",
+      "status": "pending_separate_acceptance_stage"
     },
     {
       "id": "acceptance",
-      "required": "Only after fresh healthy guarded staging, enable bounded synthetic acceptance using approved temporary accounts and current COP canonical actor mapping. Exercise ready/join-required, kick+invite cancellation/readback, source pending202/exact retry/restart, wrong actor, native delivery deny, account lifecycle and actual push handoff. Source/APNs/device results stay separate."
+      "required": "Only after fresh healthy guarded staging, enable bounded synthetic acceptance using approved temporary accounts and current COP canonical actor mapping. Exercise ready/join-required, kick+invite cancellation/readback, source pending202/exact retry/restart, wrong actor, native delivery deny, account lifecycle and actual push handoff. Source/APNs/device results stay separate.",
+      "status": "pending_separate_acceptance_stage"
     },
     {
       "id": "activate",
-      "required": "Only after matching Jizda typed202 handling and live paired acceptance, seal enabling values and release UI according to user approval. No TestFlight publication in this task."
+      "required": "Only after matching Jizda typed202 handling and live paired acceptance, seal enabling values and release UI according to user approval. No TestFlight publication in this task.",
+      "status": "pending_separate_acceptance_stage"
     }
   ],
   "rollback": {
@@ -97,7 +105,7 @@
     "interruptedRelease": "Keep original evidence and pending operation. Reconcile actual live image/state under existing guard; no generic reset, repeated source mutation or source-membership rollback."
   },
   "evidence": {
-    "copFocusedTestsPassed": 77,
+    "copFocusedTestsPassed": 109,
     "messagingTestsPassed": 260,
     "messagingTestsSkipped": 41,
     "postgresTestsPreviouslyPassed": 3,
@@ -117,11 +125,17 @@
       "allFrozenHashesMatched": true,
       "executedBy": "Jizda; independently source-reviewed by COP",
       "findings": "No blocking wire-contract mismatch found."
-    }
+    },
+    "copActualImageTestsPassed": 109,
+    "operatorBoundaryTestsPassed": 18,
+    "copProductionCodeReleaseAccepted": true,
+    "buildPassed": true,
+    "targetedLintPassed": true,
+    "skeletonPassed": true
   },
   "remainingAuthority": [
-    "Current NOPASSWD cop-reviewed-release CLI is pinned to an older login/location hotfix and rejects status; it cannot build/seal/activate these targets.",
-    "Root must perform the bounded build/custody/seal steps and give the application executor a fixed noninteractive action for only the resulting release. No generic sudo, arbitrary commands or credential disclosure requested."
+    "No additional authority needed for normal COP API code-only status/prepare/activate. Limited broker installed and used successfully; temporary Root terminal closed.",
+    "Dedicated Matrix controller custody and bounded feature configuration need separate review before enabling shared vehicle chat; live paired/native/APNs acceptance still pending."
   ],
   "builderRecovery": {
     "contractVersion": "cop-dedicated-builder-recovery-v1",
@@ -134,8 +148,8 @@
     "applicationRestarted": false
   },
   "productionState": {
-    "cop": "Healthy accepted51a10099/sourceb8d1897, generationddf7ce6eccab439bb336f18118a0cd5c, CIDca463e197883878c22607246f0fd2e8e74321cb6bee62b4e29e25f8041584a28, pending closed; health-only completion no recreate/no new restarts",
-    "messaging": "new image running healthy, admission disabled; supplemental runtime security/identity observations passed, historical raw parity and legacy creation-time bind policy remain unproven",
+    "cop": "Healthy accepted1338179f/source00c854d56eb9fd4346e26dade622776c83bee9a5; release-4daef7fb69ea4e40a8d2dbb560255dbf; generation55190b1dc87f4bf59dec02d3396c41a3; zero restarts, pending absent.",
+    "messaging": "Healthy e9c50077/source50e590c, zero restarts, admission disabled; current runtime security/identity checks passed, historical raw parity and legacy creation-time bind policy remain unproven.",
     "messagingRawComparisonPassed": false,
     "messagingEvidenceLimitation": "Original raw HostConfig/Mounts object was not retained after a failed equality check. Do not claim raw parity. Additional declared-contract validation currently stops on the pre-existing named volume without Compose ownership labels. No ownership guard exception accepted.",
     "legacyVolumeException": "User-approved 4Nov2026 only exact existing csm-messaging_messaging-data created2026-07-08T17:26:43Z without labels, source messaging-data target/data; no relabel or volume modification",
@@ -161,9 +175,24 @@
       "live": 200,
       "ready": 200,
       "authLogin": 302,
-      "loginRedirectHost": "login.zeleznalady.cz"
+      "loginRedirectHost": "login.zeleznalady.cz",
+      "aiContextIndex": "ok",
+      "copAccountErasureOwners": "ok",
+      "messagingProvider": "ok",
+      "unauthenticatedSession": 401,
+      "unauthenticatedVehicles": 401
     },
-    "failedCopImageQuarantined": true
+    "failedCopImageQuarantined": true,
+    "copGuardedWarmup": "ai-context-index ok after actual guarded refresh; no empty/degraded result relabeled as success",
+    "ownerReadiness": {
+      "status": "ok",
+      "completedVerifiedSnapshot": true,
+      "note": "An earlier2500ms aggregate request returned pending/unavailable; the completed cached result was verified ok. No deletion operation executed."
+    },
+    "sharedVehicleChatEnabled": false,
+    "vehicleAdmissionEnabled": false,
+    "controllerConfigured": false,
+    "controllerCustodyReviewed": false
   },
   "selfDeployment": {
     "installed": true,
@@ -176,16 +205,17 @@
     "configurationChangeAuthority": false,
     "actualStatusPassed": true,
     "actualPreparePassed": true,
-    "actualActivationPassed": false,
+    "actualActivationPassed": true,
     "statusIncludesRealHealthAndPendingCheck": true,
-    "normalFutureImageTestMinimum": 109
+    "normalFutureImageTestMinimum": 109,
+    "normalCodeReleaseNeedsUserPassword": false,
+    "temporaryRootClosed": true,
+    "temporarySocketAndReadyMarkerAbsent": true
   },
-  "nextCandidate": {
-    "sourceRevision": null,
-    "imageId": null,
-    "change": "asynchronous guarded optional AI warmup, bounded early retry and shutdown cancellation; all owner initialization/publication/readiness guards preserved",
-    "localFocusedTests": 109,
-    "localOperatorBoundaryTests": 18,
-    "productionActivated": false
-  }
+  "productionImagesDeployed": true,
+  "featureAdmissionEnabled": false,
+  "pairedAcceptanceComplete": false,
+  "quarantinedCopImage": "sha256:e4a94bb3f76bbcfe0d831b5aae993aabf79a2680208b10a10e552d5c8c5d6b49",
+  "actualEnvironmentKeysChanged": [],
+  "effectiveNewFlags": "Absent new flag variables preserve source defaults:false. No false-key write, controller enrollment or enabling transition was performed."
 }

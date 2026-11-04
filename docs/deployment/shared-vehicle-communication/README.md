@@ -5,10 +5,12 @@ separate states. This document does not authorize a configuration/identity chang
 
 ## Current production state
 
-- COP is restored and accepted on51a10099… / sourceb8d1897, generation
-  ddf7ce6eccab439bb336f18118a0cd5c, CIDca463e19… . Pending recovery is closed.
-  The health-only completion did not recreate the container or add restarts.
-  HTTPS live/ready200 and auth/login302 to login.zeleznalady.cz passed.
+- COP is deployed and accepted on1338179f… / source00c854d, generation
+  55190b1dc87f4bf59dec02d3396c41a3, release4daef7fb… . Zero restarts and no pending
+  operation. HTTPS live/ready200, login302 to login.zeleznalady.cz, unauthenticated
+  session/vehicle requests401. Actual AI index and completed erasure-owner
+  readiness are ok. An earlier owner aggregate timed out as pending; it was not
+  treated as a completed negative or relabeled as success.
 - Messaging is running healthy one9c50077… / source50e590c. Admission remains off.
 - The first COP candidatee4a94bb3… / dd545c2 failed guarded cold startup. It is
   quarantined; its stage and all failed proof/health artifacts are preserved.
@@ -18,7 +20,7 @@ separate states. This document does not authorize a configuration/identity chang
 The original image also initially failed cold startup before stabilizing. Guard
 snapshot/local jobs/configuration/dataset and the separately approved normal
 assertCurrent check passed. The captured startup error was in guarded AI index
-warmup. A new source candidate makes this optional warmup asynchronous while
+warmup. The deployed repair makes this optional warmup asynchronous while
 retaining every mandatory owner/fence initialization, publication check and
 readiness dependency. It does not change provider/erasure decisions, financial
 limits, Router model routing or external context. The empty index stays degraded
@@ -64,6 +66,21 @@ approved only the exact existing csm-messaging_messaging-data volume(created
 8July2026) without Compose labels; it was not changed, deleted or relabeled.
 The observation explicitly keeps complete/raw parity false and is not paired
 acceptance. Its Root receipt is in the original vehicle-image-release directory.
+
+## Accepted evidence
+
+Local9-file109-test set, actual-image109 tests,18 operator-boundary tests,
+TypeScript API build, targeted ESLint and skeleton validation passed. The first
+local HTTP fixture attempt hit environment EPERM on127.0.0.1; rerun with only
+required test-loopback permission passed. No check was disabled to obtain success.
+Source00c854d is published and is the deployed payload; later documentation
+commits do not change that image identity. No real account was deleted.
+
+The application executor completed the actual new-source build, prepare and
+activate using the limited broker, without another password or infrastructure
+handoff. The temporary attended Root terminal is closed; its socket/ready marker
+are absent. The prior image/manual-return evidence and quarantined failed image
+remain available. Final source/current-state metadata are in release.review.json.
 
 ## Next acceptance boundary
 
