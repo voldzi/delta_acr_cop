@@ -1,6 +1,8 @@
 # Global vehicle chat activation
 
-Current evidence: 2026-11-05 preparation; NOT installed or enabled by this record.
+Current evidence: 2026-11-05 06:39 UTC: both fixed helpers installed and both
+production admission flags ON; fresh healthy readbacks with zero restarts.
+[Machine-readable readbacks](global-activation-20261105.json).
 Owner scope: all authorized vehicle members, until explicitly disabled.
 No allowlist, synthetic-account or phone-readiness prerequisite applies to server
 activation. Membership and generation checks remain mandatory.
@@ -55,8 +57,13 @@ Never restore an old image or delete data to clear a guard.
   reader, matched actual runtime/source/lock permissions, and verified that the
   only planned source differences are one flag and one Compose mapping. All
   other dotenv bytes were preserved in RAM. Production remained unchanged.
-- Root installation, both runtime enable receipts and phone/owner/notification
-  acceptance remain distinct outstanding claims until recorded after execution.
+- Root installation completed on both hosts. Messaging enable completed first,
+  then COP enable completed. Both fixed helpers wrote accepted enable receipts;
+  independent status calls confirmed their new container IDs, ON flags, healthy
+  state and zero restarts at 06:39:42 UTC. Public COP readiness returned HTTP 200
+  with status `ok` afterward. Application images are unchanged.
+- Phone, authenticated owner chat and notification delivery remain unverified by
+  this server activation record. No TestFlight upload occurred.
 
 A later image update retains the historical admission proof. This bundle's OFF
 operation rejects a different image rather than restoring an older writer. A

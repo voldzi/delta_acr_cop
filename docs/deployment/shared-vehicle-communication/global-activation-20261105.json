@@ -1,0 +1,43 @@
+{
+  "checkedAt": "2026-11-05T06:39:42.153981+00:00",
+  "sourceRevision": "f086408",
+  "scope": "global_authorized_vehicle_members",
+  "admissionLifetime": "until_explicit_disable",
+  "freshRuntimeReadbacks": [
+    {
+      "host": "docker",
+      "windowId": "2de05258-d5da-43a2-bb6b-162b33e0cc21",
+      "scope": "global_authorized_vehicle_members",
+      "admissionLifetime": "until_explicit_disable",
+      "activationEntryExpiresAt": 1793864092,
+      "imageId": "sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d",
+      "containerId": "9e78f46e18f9ad91eb008642ac70020745c0bdfadd2b0c538b6e527481cb013c",
+      "enabled": true,
+      "healthy": true,
+      "restartCount": 0,
+      "ordinaryConfigAuthority": false
+    },
+    {
+      "host": "comm",
+      "windowId": "2de05258-d5da-43a2-bb6b-162b33e0cc21",
+      "scope": "global_authorized_vehicle_members",
+      "admissionLifetime": "until_explicit_disable",
+      "activationEntryExpiresAt": 1793864092,
+      "imageId": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+      "containerId": "415fedcf74e4867f91559a098c805ab59e60c2d297ba2248072a556362918ec2",
+      "enabled": true,
+      "healthy": true,
+      "restartCount": 0,
+      "ordinaryConfigAuthority": false
+    }
+  ],
+  "enableCommandsCompletedWithAcceptedReceipt": true,
+  "phoneAcceptance": false,
+  "ownerChatAcceptance": false,
+  "notificationDeliveryAcceptance": false,
+  "testFlightUploaded": false,
+  "publicReadiness": {
+    "httpStatus": 200,
+    "status": "ok"
+  }
+}
