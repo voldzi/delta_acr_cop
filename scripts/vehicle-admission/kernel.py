@@ -36,6 +36,15 @@ def root_document(r,reference,prefix):
  raw=r.private_read(p,0,mode=0o640,gid=1000);need(sha(raw)==reference['sha256'],'WINDOW_ROOT_BYTES_CHANGED');return parse(raw)
 def window(r,p,fresh=False):
  w=root_document(r,p['windowReference'],'vehicle-window-')
+ if w.get('contractVersion')=='cop-root-vehicle-admission-release-v1':
+  fields={'contractVersion','windowId','approvedManifestSha256','scope','purpose','admissionLifetime','approvedAt','activateBefore','releaseClientGateRemainsOff','debugClientMayBeEnabled','containment'}
+  need(set(w)==fields and r.PROFILE_UUID.fullmatch(w['windowId']) and digest(w['approvedManifestSha256']),'ADMISSION_ROOT_RELEASE_SCHEMA')
+  need(w['scope']=='global_authorized_vehicle_members' and w['purpose']=='human_requested_activation' and w['admissionLifetime']=='until_explicit_disable' and w['releaseClientGateRemainsOff'] is True and w['debugClientMayBeEnabled'] is True and w['containment']=='close_cop_then_messaging_keep_cleanup_writers','ADMISSION_ROOT_RELEASE_SCOPE')
+  need(type(w['approvedAt']) is int and type(w['activateBefore']) is int and 0<w['activateBefore']-w['approvedAt']<=3600,'ADMISSION_ROOT_RELEASE_TIME')
+  if fresh:
+   now=int(r.datetime.now(r.timezone.utc).timestamp());need(now>=w['approvedAt'],'WINDOW_NOT_STARTED')
+   if p['stage']=='open':need(now<w['activateBefore'],'ADMISSION_RELEASE_ACTIVATION_EXPIRED')
+  return {**w,'notBefore':w['approvedAt'],'openBefore':w['activateBefore'],'deadline':w['activateBefore']}
  fields={'contractVersion','windowId','approvedManifestSha256','scope','actorIds','vehicleBudget','durationSeconds','notBefore','openBefore','deadline','containment','clientGateRemainsOff'}
  need(isinstance(w,dict) and set(w)==fields and w['contractVersion']=='cop-root-vehicle-window-v1' and r.PROFILE_UUID.fullmatch(w['windowId']) and digest(w['approvedManifestSha256']),'WINDOW_AUTHORITY_SCHEMA')
  need(w['scope']=='global_not_isolated' and w['vehicleBudget']==1 and type(w['vehicleBudget']) is int and type(w['durationSeconds']) is int and 0<w['durationSeconds']<=1800 and w['clientGateRemainsOff'] is True and w['containment']=='close_cop_then_messaging_keep_cleanup_writers','WINDOW_AUTHORITY_BOUNDS')

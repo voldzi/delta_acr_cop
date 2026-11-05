@@ -88,3 +88,5 @@ published paths are preserved for integration references.
 - [0060: Vehicle chat room generations](0060_SHARED_VEHICLE_CONVERSATION_ROOM_GENERATIONS.md) — staged logical conversation, native revocation and generation-bound client/delivery acceptance.
 
 - [0061: Application-owned code releases](0061_APPLICATION_OWNED_CODE_RELEASE.md) — limited Root broker, unchanged historical proofs, code-only cases and separate live acceptance.
+
+- [0062: Global vehicle chat admission](0062_GLOBAL_VEHICLE_CHAT_ADMISSION.md) — separate one-time enable authority and persistent membership-based admission.

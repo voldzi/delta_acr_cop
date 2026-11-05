@@ -60,10 +60,10 @@ def execute(approval,r,store,k,contract,proposal,execution,storage_fd,stage,base
   for name,raw in originals.items():
    if name!='.env':root_write(phase/('original-'+name),raw)
   fresh=store.docker.current(store.active()[1]);need(prewrite_matches(r,k,public,fresh,store.pointer(),store.docker.peers(store.active()[1]),r.environment_metadata(store.source/'.env',1000)),'WINDOW_PUBLISHER_PREWRITE_PROCESS_CHANGED')
-  for name,original in originals.items():need(r.private_read(store.source/name,1000,limit=1048576)==original,'WINDOW_PUBLISHER_PREWRITE_FILE_CHANGED')
+  for name,original in originals.items():need(contract.read_source(r,store.source,1000,name)==original,'WINDOW_PUBLISHER_PREWRITE_FILE_CHANGED')
   for name,after in writes.items():replace_source(store.source/name,originals[name],after,transition)
-  for name,after in writes.items():need(r.private_read(store.source/name,1000,limit=1048576)==after,'WINDOW_POSTWRITE_SOURCE_DRIFT')
-  metadata=r.environment_metadata(store.source/'.env',1000);hashes={name:k.sha(r.private_read(store.source/name,1000,limit=65536)) for name in r.FILES};built=prepared.finalize(metadata,hashes)
+  for name,after in writes.items():need(contract.read_source(r,store.source,1000,name)==after,'WINDOW_POSTWRITE_SOURCE_DRIFT')
+  metadata=r.environment_metadata(store.source/'.env',1000);hashes={name:k.sha(contract.read_source(r,store.source,1000,name)) for name in r.FILES};built=prepared.finalize(metadata,hashes)
   for name,raw in built['documents'].items():root_write(PROFILE/name,raw,group=1000,mode=0o640)
   prepared_result=execution.run_worker({'action':'prepare','proof':built['proofPath'],'attestation':built['attestationPath']},storage_fd);root_write(phase/'prepared.json',k.encode(prepared_result));active=execution.run_worker({'action':'activate','releaseId':prepared_result['releaseId'],'expected':built['expected']},storage_fd);root_write(phase/'activated.json',k.encode(active))
   pointer,directory,binding,profile=store.active();after=store.docker.current(directory);need(pointer['imageId']==k.IMAGE and binding['sourceRevision']==k.SOURCE and after['Id']==pointer['containerId'] and after['RestartCount']==0 and after['State']['Running'] and after['State'].get('Health',{}).get('Status')=='healthy','WINDOW_PUBLISHER_TARGET_UNPROVEN');rows=[x.split('=',1) for x in after['Config']['Env']];need(all(len(x)==2 for x in rows) and len({x[0] for x in rows})==len(rows),'WINDOW_TARGET_ENV_AMBIGUOUS');need(dict(rows).get(k.FLAG)==('true' if stage=='open' else 'false'),'WINDOW_PUBLISHER_TARGET_FLAG');root_write(phase/'raw-after.json',k.encode(after))

@@ -1,5 +1,6 @@
 """Offline finite admission contract. No authority, credentials or host mutation."""
 import copy,datetime,hashlib,json,re
+from pathlib import Path
 COP_FLAG='COP_SHARED_VEHICLE_COMMUNICATION_ENABLED'
 MESSAGING_FLAG='CSM_SHARED_VEHICLE_COMMUNICATION_ADMISSION_ENABLED'
 COP_IMAGE='sha256:1338179f0f66abf904aad04da82fc87f82f9676d758842bd00eec4b9e0662d7d'
@@ -12,12 +13,16 @@ BASE_COMPOSE_SHA='25d29b0e1d8c9a87fbc1c74d402ca4d9ec268581ecdf4c7cbfa0ade4797ecc
 ANCHOR=b'      COP_ROUTING_PLANNING_ENABLED: "${COP_ROUTING_PLANNING_ENABLED:-false}"\n'
 MAPPING=b'      COP_SHARED_VEHICLE_COMMUNICATION_ENABLED: "${COP_SHARED_VEHICLE_COMMUNICATION_ENABLED:-false}"\n'
 CASES=('stable-binding','explicit-join','outsider','source-pending','pending-restart','revoke-joined','revoke-invited','stale-context','history-and-keys','notifications','vehicle-close','lifecycle','privacy-boundaries')
+SOURCE_COMPOSE_MODES={'docker-compose.yml':0o644,'docker-compose.driver-measurements.yml':0o664,'docker-compose.x5.yml':0o600,'docker-compose.ai-router.yml':0o600}
 UUID=re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}')
 class Rejected(ValueError):pass
 def need(v,code):
  if not v:raise Rejected(code)
 def encode(v):return json.dumps(v,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
 def sha(raw):return hashlib.sha256(raw).hexdigest()
+def read_source(r,source,uid,name):
+ need(source==Path('/srv/cop') and uid==1000 and name in {'.env',*SOURCE_COMPOSE_MODES},'ADMISSION_SOURCE_PATH')
+ return r.private_read(source/name,uid,limit=1048576 if name=='.env' else 65536,mode=0o600 if name=='.env' else SOURCE_COMPOSE_MODES[name],gid=1000)
 def parse(raw):
  need(isinstance(raw,bytes) and len(raw)<=65536,'WINDOW_DOCUMENT_BOUND')
  def pairs(items):
@@ -56,6 +61,14 @@ def compose_delta(before,stage):
  at=before.index(ANCHOR);next_service=re.search(rb'(?m)^  [a-zA-Z0-9_-]+:\s*$',before[len(b'services:\n  cop-api:\n'):]);need(next_service is None or at<len(b'services:\n  cop-api:\n')+next_service.start(),'WINDOW_MAPPING_WRONG_SERVICE')
  return before.replace(ANCHOR,ANCHOR+MAPPING,1)
 def validate_window(w,now,*,opening):
+ if isinstance(w,dict) and w.get('contractVersion')=='cop-global-vehicle-admission-release-v1':
+  fields={'contractVersion','windowId','approvedManifestSha256','scope','purpose','admissionLifetime','approvedAt','activateBefore','releaseClientGateRemainsOff','debugClientMayBeEnabled','containment'}
+  need(set(w)==fields and isinstance(w['windowId'],str) and UUID.fullmatch(w['windowId']) and isinstance(w['approvedManifestSha256'],str) and re.fullmatch('[a-f0-9]{64}',w['approvedManifestSha256']),'ADMISSION_RELEASE_SCHEMA')
+  need(w['scope']=='global_authorized_vehicle_members' and w['purpose']=='human_requested_activation' and w['admissionLifetime']=='until_explicit_disable' and w['releaseClientGateRemainsOff'] is True and w['debugClientMayBeEnabled'] is True and w['containment']=='close_cop_then_messaging_keep_cleanup_writers','ADMISSION_RELEASE_SCOPE')
+  need(type(w['approvedAt']) is int and type(w['activateBefore']) is int and 0<w['activateBefore']-w['approvedAt']<=3600 and type(now) is int and now>=w['approvedAt'],'ADMISSION_RELEASE_TIME')
+  if opening:need(now<w['activateBefore'],'ADMISSION_RELEASE_ACTIVATION_EXPIRED')
+  # These aliases bound the one config transition, NOT the life of admission.
+  return {**w,'notBefore':w['approvedAt'],'openBefore':w['activateBefore'],'deadline':w['activateBefore']}
  fields={'contractVersion','windowId','approvedManifestSha256','scope','identityBudget','vehicleBudget','durationSeconds','notBefore','openBefore','deadline','actorIds','cases','clientGateRemainsOff','containment'}
  need(isinstance(w,dict) and set(w)==fields and w['contractVersion']=='cop-global-vehicle-admission-window-v1','WINDOW_SCHEMA')
  need(isinstance(w['windowId'],str) and UUID.fullmatch(w['windowId']) and isinstance(w['approvedManifestSha256'],str) and re.fullmatch('[0-9a-f]{64}',w['approvedManifestSha256']),'WINDOW_BINDING')

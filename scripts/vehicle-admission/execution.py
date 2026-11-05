@@ -20,7 +20,7 @@ def owned_storage_lock(storage):
  storage.preflight()
  path=Path('/srv/cop/.storage.lock');fd=os.open(path,os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK)
  try:
-  info=os.fstat(fd);need(stat.S_ISREG(info.st_mode) and info.st_uid==1000 and stat.S_IMODE(info.st_mode)==0o600 and info.st_nlink==1,'WINDOW_STORAGE_LOCK_CUSTODY');fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB);storage.preflight();yield fd
+  info=os.fstat(fd);need(stat.S_ISREG(info.st_mode) and info.st_uid==1000 and info.st_gid==1000 and stat.S_IMODE(info.st_mode)==0o664 and info.st_nlink==1,'WINDOW_STORAGE_LOCK_CUSTODY');fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB);storage.preflight();yield fd
  finally:os.close(fd)
 
 def run_worker(value,storage_fd):

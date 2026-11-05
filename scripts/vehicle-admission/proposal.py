@@ -30,7 +30,7 @@ def propose(r,store,k,contract,stage,window_reference,baseline_raw):
  parentref=copy.deepcopy(binding['accountErasureConfig']);parent_raw=r.private_read(Path(parentref['path']),0,mode=0o640,gid=1000);k.need(k.sha(parent_raw)==parentref['sha256'],'WINDOW_PARENT_PROOF_CHANGED');parent=k.parse(parent_raw)
  if stage=='open':k.need(parent['contractVersion']==k.VERSION,'WINDOW_OPEN_PARENT')
  else:k.need(parent['contractVersion']==k.WINDOW_VERSION and parent['stage']=='open' and parent['windowReference']==window_reference,'WINDOW_CLOSE_PARENT')
- before_env=r.private_read(store.source/'.env',store.uid,limit=1048576);before_metadata=r.environment_metadata(store.source/'.env',store.uid);files={name:r.private_read(store.source/name,store.uid,limit=65536) for name in r.FILES};before_hashes={name:k.sha(raw) for name,raw in files.items()}
+ before_env=contract.read_source(r,store.source,store.uid,'.env');before_metadata=r.environment_metadata(store.source/'.env',store.uid);files={name:contract.read_source(r,store.source,store.uid,name) for name in r.FILES};before_hashes={name:k.sha(raw) for name,raw in files.items()}
  k.need(before_metadata==parent['environmentMetadata'] and before_hashes==parent['composeHashes'],'WINDOW_SOURCE_FILES_CHANGED')
  after_env=contract.env_delta(before_env,stage);after_files=copy.deepcopy(files);after_files['docker-compose.yml']=contract.compose_delta(files['docker-compose.yml'],stage);after_hashes={name:k.sha(raw) for name,raw in after_files.items()};desired={**actual,k.FLAG:'true' if stage=='open' else 'false'};contract.effective_delta(actual,desired,stage)
  r.health_statuses(k.parse(baseline_raw));old_release=r.private_read(directory/'release.json',store.uid)
