@@ -10,6 +10,12 @@ import re
 import time
 import uuid
 
+NATIVE_WIRE_BOUND = 262144
+# JSON ensure_ascii can turn one native wire byte (DEL) into six bytes, or a
+# four-byte UTF-8 scalar into two six-byte surrogate escapes. Structural
+# canonicalization adds no spaces; Journal.save adds exactly one newline.
+OWN_CANONICAL_BOUND = 6 * NATIVE_WIRE_BOUND + 1
+
 CASES = frozenset(('stable-binding', 'explicit-join', 'outsider', 'source-pending',
     'pending-restart', 'revoke-joined', 'revoke-invited', 'stale-context',
     'history-and-keys', 'notifications', 'vehicle-close', 'lifecycle', 'privacy-boundaries'))
@@ -93,6 +99,13 @@ class Pump:
             self.sleep(min(0.1, max(0, bound - self.monotonic())))
         raise Unproven('PUMP_RESULT_NOT_OBSERVED')
 
+    def _prefix_read(self, path):
+        root = Path(self.spool.root)
+        need(path.parent in (root / 'private', root / 'commands', root / 'results'),
+             'PUMP_PREFIX_PATH')
+        bound = OWN_CANONICAL_BOUND if path.parent == root / 'private' else NATIVE_WIRE_BOUND
+        return self.steps.private_read(path, bound=bound)
+
     def _own_checkpoint_prefix(self, checkpoint):
         boundary = checkpoint['sequence']
         need(type(boundary) is int and 1 <= boundary < 128 and
@@ -111,7 +124,7 @@ class Pump:
                      for kind in ('intent', 'observation')]
             paths += [root / 'commands' / stem, root / 'results' / stem]
             for path in paths:
-                raw_files[path] = self.steps.private_read(path)
+                raw_files[path] = self._prefix_read(path)
             intent, own_result, command, result = [self.steps.parse(raw_files[path]) for path in paths]
             need(raw_files[paths[0]] == self.steps.canonical(intent) + b'\n' and
                  raw_files[paths[1]] == self.steps.canonical(own_result) + b'\n' and
@@ -157,7 +170,7 @@ class Pump:
                  self.steps.private_read(Path(self.spool.root) / 'fixture.json', bound=262144)).hexdigest() and
              isinstance(proof['receipt_sha256'], str) and re.fullmatch('[a-f0-9]{64}', proof['receipt_sha256']),
              'PUMP_RESUME_OBSERVATION_UNPROVEN')
-        need(all(self.steps.private_read(path) == raw for path, raw in files.items()) and
+        need(all(self._prefix_read(path) == raw for path, raw in files.items()) and
              self.now() < self.deadline and self.window_open(), 'PUMP_RESUME_DRIFT')
         # From here an uncertain receipt write must also remain a hard stop.
         self.blocked = True
@@ -170,8 +183,8 @@ class Pump:
     def lease(self, case, actor):
         command, _ = self.request(case, actor, 'lease_cop_access')
         stem = f'{command["sequence"]:04d}.json'
-        raw = self.steps.private_read(Path(self.spool.root) / 'commands' / stem)
-        result = self.steps.private_read(Path(self.spool.root) / 'results' / stem)
+        raw = self._prefix_read(Path(self.spool.root) / 'commands' / stem)
+        result = self._prefix_read(Path(self.spool.root) / 'results' / stem)
         try:
             return self.steps.Lease.from_spool(self.spool.root, raw, result, self.deadline, self.now())
         except Exception:

@@ -156,6 +156,23 @@ See [resume source review](native-resume-source-review.json) and
 restart acceptance, complete case coordination and the production window remain
 pending; no runtime, account, simulator or production gate changed.
 
+Jízda's narrow review then reproduced a read-size mismatch: a valid71008-byte
+native result was accepted and journaled, but checkpoint prefix reconciliation
+used the generic64KiB private-read default. The pump now uses explicit local
+bounds on both initial prefix reads and the post-observation reread: native
+wire remains at262144bytes, while its own canonical journal is bounded by
+`6 * 262144 + 1`bytes. `ensure_ascii` may expand one native DEL byte into six
+bytes (or one UTF-8 scalar into escaped code units); the journal adds one newline.
+The generic64KiB reader, custody, canonical-byte equality, hash, prefix and CAS
+checks are unchanged.
+
+All88 COP source tests pass, including large ASCII, UTF-8 Unicode, DEL expansion
+and rejection above the unchanged native wire limit. The independent Jízda
+reproduction now reaches the separate process-proof gate instead of failing
+the file-size check. Its native producer and process proof remain stubs; this
+is not native runtime acceptance. See
+[bounded-result regression](result-bound-regression.json).
+
 See [preparation facts](preparation.json),
 [offline constructor observation](constructor-observation.json),
 [source snapshot](source-snapshot.json) and the

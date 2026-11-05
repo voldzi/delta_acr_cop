@@ -1,5 +1,6 @@
 import importlib.util
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -89,7 +90,7 @@ class NativePump(unittest.TestCase):
         with self.assertRaises(ValueError):
             p.Pump(self.spool, s.Journal(self.root / 'private'), s, 130, lambda: True)
 
-    def checkpoint_fixture(self):
+    def checkpoint_fixture(self, large_text=None):
         """Synthetic producer/process observations only; no native execution."""
         for folder in ('commands', 'results'):
             (self.root / folder).chmod(0o700)
@@ -108,12 +109,21 @@ class NativePump(unittest.TestCase):
                     'commandSHA256': hashlib.sha256(s.private_read(self.root / 'commands' / stem)).hexdigest(),
                     'caseID': command['caseID'], 'action': command['action'], 'status': 'passed',
                     'reasonCode': 'STAGE_OBSERVED', 'processId': 123}
-                s.Journal(self.root / 'results').save(stem, value)
-            value = s.parse(s.private_read(target))
+                if command['action'] == 'resolve_conversation' and large_text is not None:
+                    value['binding'] = {'conversation': {'metadata': {'synthetic': large_text}}}
+                # Model the producer's native UTF-8 JSON, not Python's escaped
+                # canonical copy in the coordinator journal.
+                target.write_bytes(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode())
+                target.chmod(0o600)
+            value = s.parse(s.private_read(target, bound=p.NATIVE_WIRE_BOUND))
             return value, {'action': command['action'], 'status': value['status']}
         self.spool.publish, self.spool.result = publish, result
+        if large_text is not None:
+            self.pump.request('stable-binding', 'a', 'resolve_conversation',
+                operationId='44444444-4444-4444-8444-444444444444',
+                membershipRevision=1, expectedResolution='ready')
         command, _ = self.pump.request('pending-restart', 'a', 'checkpoint_exit')
-        proof = {'run_id': RUN, 'checkpoint_id': command['id'], 'next_sequence': 2,
+        proof = {'run_id': RUN, 'checkpoint_id': command['id'], 'next_sequence': self.pump.sequence,
             'old_process_id': 123, 'new_process_id': 124,
             'old_launch_id': '22222222-2222-4222-8222-222222222222',
             'new_launch_id': '33333333-3333-4333-8333-333333333333',
@@ -169,6 +179,37 @@ class NativePump(unittest.TestCase):
     def test_finish_never_authorizes_resume(self):
         command, _ = self.pump.request('lifecycle', 'a', 'finish')
         with self.assertRaises(ValueError): self.pump.resume(command)
+
+    def assert_large_prefix_resume(self, text):
+        command, _ = self.checkpoint_fixture(large_text=text)
+        native = self.root / 'results/0001.json'
+        own = self.root / 'private/coordinator-0001-observation.json'
+        self.assertGreater(native.stat().st_size, 65536)
+        self.assertLessEqual(native.stat().st_size, p.NATIVE_WIRE_BOUND)
+        self.assertLessEqual(own.stat().st_size, p.OWN_CANONICAL_BOUND)
+        with self.assertRaises(ValueError): s.private_read(native)  # Default unchanged.
+        self.pump.resume(command)
+        self.assertFalse(self.pump.checkpointed)
+        self.assertEqual(self.pump.sequence, 3)
+        self.assertFalse(self.pump.public_observations()['aggregatePass'])
+
+    def test_accepted_large_ascii_result_reconciles_on_both_reads(self):
+        self.assert_large_prefix_resume('A' * 70000)
+
+    def test_native_utf8_unicode_has_larger_finite_canonical_journal(self):
+        self.assert_large_prefix_resume('á' * 50000)
+        self.assertGreater((self.root / 'private/coordinator-0001-observation.json').stat().st_size,
+                           p.NATIVE_WIRE_BOUND)
+
+    def test_del_escape_expansion_is_covered_by_sixfold_finite_bound(self):
+        self.assert_large_prefix_resume('\x7f' * 70000)
+        self.assertGreater((self.root / 'private/coordinator-0001-observation.json').stat().st_size,
+                           p.NATIVE_WIRE_BOUND)
+
+    def test_wire_bound_still_rejects_oversize_native_file(self):
+        target = self.root / 'results/0001.json'
+        target.write_bytes(b' ' * (p.NATIVE_WIRE_BOUND + 1));target.chmod(0o600)
+        with self.assertRaises(ValueError): self.pump._prefix_read(target)
 
 
 if __name__ == '__main__':

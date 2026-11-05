@@ -1,0 +1,15 @@
+{
+  "scope": "offline_independent_Jizda_large_result_reproduction_against_fixed_COP_source",
+  "originalReproductionSha256": "032ea9154e1f205a7ed4f45cf938ce544f0dbfa4cbc2084bd9fc62bb74f9422f",
+  "acceptedNativeResultBytesFromOriginalReproduction": 71008,
+  "prefixReadNowReachesIndependentProcessProofGate": true,
+  "nativeWireBound": 262144,
+  "ownCanonicalJournalBound": 1572865,
+  "globalPrivateReadDefaultUnchanged": 65536,
+  "sourceUnitTestsIncludingAsciiUnicodeAndDelCases": 88,
+  "nativeProducerStubbed": true,
+  "processProbeActuallyExecuted": false,
+  "networkRequests": 0,
+  "productionChanged": false,
+  "aggregatePass": false
+}

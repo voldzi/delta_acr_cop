@@ -9,7 +9,7 @@
     "scripts/vehicle-admission/inspect-oidc-entrypoints.py": "f06161528fb17fca53ac315f338cec916cde4bbca8f2446e3bd8c7a82a57e5f7",
     "scripts/vehicle-admission/kernel.py": "1f9539afb9540bfa0e4274e4443288ed70362690df751a6593a00f1a4eca2914",
     "scripts/vehicle-admission/messaging.py": "7f3157cf33a26c3105ad7cd6a0538a3b6c853ebd6828b5acdf8ebc1bc1c3aa87",
-    "scripts/vehicle-admission/native_pump.py": "34a43a394c9dbcb2907c6903a2f7fcd77e2e18657901b9299c878cddcdb89dca",
+    "scripts/vehicle-admission/native_pump.py": "61ac551e1db4d56ff31169f08ed0b0c7cc4b862cdab09252850ab52ac7a31284",
     "scripts/vehicle-admission/proposal.py": "513da73744506baea4536c4724bcb3200670cd77ba7459a94413490234cb59a8",
     "scripts/vehicle-admission/publisher.py": "c32084dfa88d8c4354a6f32f828b6a71483a57c108decef8a8a7134ab0463a56",
     "scripts/vehicle-admission/server_steps.py": "6d75b07a5590aef9898b2da5f44309edf2fd03794e917455bec8a62447015dd2",
@@ -20,7 +20,7 @@
     "scripts/vehicle-admission/test_execution.py": "575eaccfc96a5e8094d15911632975fab0548dabccd60423a3917c44a2c780b8",
     "scripts/vehicle-admission/test_kernel.py": "7805af5ae8abc277f3274fbb8826101f6edc4de9ef7b1376929639c2a600c8a6",
     "scripts/vehicle-admission/test_messaging.py": "bd8a7709628a2e3eae626803215ac5740c71552c2665a4d6929ff08c8a030b7f",
-    "scripts/vehicle-admission/test_native_pump.py": "95b1b926dce167da194a15fc8dd1ddac2ae1cc02dc05b071d98b04816cf7c79b",
+    "scripts/vehicle-admission/test_native_pump.py": "3fc643d5cd935fef8f6d1f39ebb921b9f46dd1843b4633be573903eec69019af",
     "scripts/vehicle-admission/test_proposal.py": "57c34d34db9c3cbc6e0589d54a123fb91d0bf8bcad760a3d0f12210879717b68",
     "scripts/vehicle-admission/test_publisher.py": "ff7769fbb466649a082b362657f1ea67dce392b2ea139b46caa8ef37487d2142",
     "scripts/vehicle-admission/test_server_steps.py": "f9545f7e953836a23fe6097890c833a4d7f136ff3fa21550db6adab1c3781412",
@@ -31,7 +31,7 @@
     "scripts/vehicle-admission/worker.py": "685c5842ccb840d19f5dc949cd05037dcfb9f7bea7bfa33a88d3e386fc2765c9"
   },
   "tests": {
-    "passed": 84,
+    "passed": 88,
     "productionAcceptance": false
   },
   "approvalGranted": false,

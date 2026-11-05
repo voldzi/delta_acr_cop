@@ -95,7 +95,7 @@
     "readOnly": true
   },
   "localVerification": {
-    "sourceUnitTestsPassed": 84,
+    "sourceUnitTestsPassed": 88,
     "scope": "pure contracts, fake-host boundaries and local inherited-flock test; not production or native acceptance",
     "skeletonValidationPassed": true
   },
@@ -118,7 +118,10 @@
     "finiteNativePumpPrepared": true,
     "offlineRealPythonSpoolInteropPassed": true,
     "explicitNativeResumeSourcePrepared": true,
-    "actualNativeProcessRestartProven": false
+    "actualNativeProcessRestartProven": false,
+    "nativeWireReadBound": 262144,
+    "ownCanonicalPrefixReadBound": 1572865,
+    "genericPrivateReadDefaultUnchanged": 65536
   },
   "nativeStageSource": {
     "freezeSha256": "8e9e8a2c039a37dfb60378087ea374ae5c8023af3542f2385f406204c4f41873",
