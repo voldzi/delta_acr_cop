@@ -173,6 +173,15 @@ the file-size check. Its native producer and process proof remain stubs; this
 is not native runtime acceptance. See
 [bounded-result regression](result-bound-regression.json).
 
+Jízda independently closed this specific P2 against the unchanged native freeze:
+17 focused COP tests passed and four independent vectors verified ASCII, Unicode,
+the exact262144-byte native boundary and rejection at262145bytes. The reviewed
+pump and unchanged server-step hashes match the current files. Its
+[closure record](jizda-result-bound-closure.json) retains explicit stubbed
+native/process observers, zero HTTP/iOS execution and no admission approval.
+No additional blocker was reported within this narrow resume compatibility
+review; this does not close the remaining thirteen-case live acceptance.
+
 See [preparation facts](preparation.json),
 [offline constructor observation](constructor-observation.json),
 [source snapshot](source-snapshot.json) and the

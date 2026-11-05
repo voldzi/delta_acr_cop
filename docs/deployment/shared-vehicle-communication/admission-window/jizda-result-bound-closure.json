@@ -1,0 +1,51 @@
+{
+  "scope": "close only NATIVE_PRIVATE_RESULT_READ_BOUND_MISMATCH",
+  "state": "closed-source-fix-and-offline-interop-verified",
+  "copReportedRevision": "426bd9e",
+  "nativePumpSHA256": "61ac551e1db4d56ff31169f08ed0b0c7cc4b862cdab09252850ab52ac7a31284",
+  "serverStepsSHA256": "6d75b07a5590aef9898b2da5f44309edf2fd03794e917455bec8a62447015dd2",
+  "serverStepsUnchanged": true,
+  "copAuthoredFocusedTestsIndependentlyPassed": 17,
+  "independentBoundVectors": {
+    "cases": [
+      {
+        "kind": "ascii",
+        "nativeBytes": 71008,
+        "canonicalObservationBytes": 71009,
+        "boundedResumePassed": true
+      },
+      {
+        "kind": "unicode",
+        "nativeBytes": 120867,
+        "canonicalObservationBytes": 360868,
+        "boundedResumePassed": true
+      },
+      {
+        "kind": "exact_native_bound",
+        "nativeBytes": 262144,
+        "canonicalObservationBytes": 262145,
+        "boundedResumePassed": true
+      },
+      {
+        "kind": "over_native_bound",
+        "nativeBytes": 262145,
+        "oversizeRejectedBeforeAcceptance": true
+      }
+    ],
+    "nativeProducerStubbed": true,
+    "processObserverStubbed": true,
+    "httpRequests": 0,
+    "iOSRuntimeExecuted": false,
+    "aggregatePass": false
+  },
+  "nativeContractFreezeUnchanged": "8d81f92ed1c84a1b9a4aba5d1c0d966e619d046d4fb17b6718e69d30843161da",
+  "sourceBoundaries": {
+    "nativeWire": 262144,
+    "ownCanonicalPrefix": 1572865,
+    "genericPrivateReader": 65536,
+    "initialAndPostProbeReadersAligned": true
+  },
+  "productionChanged": false,
+  "actualNativeProcessRestartAccepted": false,
+  "globalAdmissionGo": false
+}
