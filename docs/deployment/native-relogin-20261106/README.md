@@ -104,3 +104,27 @@ Jízda owns the signed build84 and its native integration. The phone was unavail
 at final handoff: installation, fresh same-owner login, actual chat/pusher repair,
 vehicle access and historical decryption are not claimed as physical acceptance.
 No owner recovery request was made by these production probes. No TestFlight upload.
+
+## Subsequent physical-device investigation and audience correction
+
+Jízda subsequently installed final build84 on the owner's iPhone. The explicit
+recovery flow stopped at DeviceRegistry DELETE401 before any COP reconcile,
+prepare or issue POST. Matching Keycloak events identified the exact cause:
+the `csm-mobile` access token did not include `csm-messaging` in its audience.
+This is distinct from the earlier missing introspection client and old Matrix
+`M_UNKNOWN_TOKEN`; see `oidc-client-repair/device401-audience-hop.sanitized.json`.
+
+Added exactly one Audience mapper to existing `csm-mobile-dedicated`, ID
+`8ec32597-305f-4b38-ac81-5abe789c802f`. It includes only `csm-messaging` in access
+tokens; ID-token, lightweight-token and introspection additions are disabled.
+Fresh reload of the saved detail and independent mapper list confirmed the
+configuration and exactly one mapper. Existing Full Scope Allowed remains true;
+no roles, grants, credentials or audience-verification rules were changed.
+The closed plan and sanitized readback are in `oidc-client-repair/`.
+
+The change applies to newly issued access tokens. Jízda coordinates one fresh
+same-owner login and native recovery acceptance; successful owner recovery is
+still pending and must not be inferred from the configuration readback. No
+vehicle, local history, crypto, pending records or registration was reset.
+Rollback is limited to removing this exact new mapper after verifying its
+unchanged name, provider and configuration; preserve all other settings.

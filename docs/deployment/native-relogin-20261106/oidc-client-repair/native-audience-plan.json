@@ -1,0 +1,59 @@
+{
+  "contractVersion": "cop-native-messaging-audience-plan-v1",
+  "realm": "cop",
+  "sourceClient": {
+    "clientId": "csm-mobile",
+    "clientUuid": "20278da3-1c94-48c7-91da-6a5b45e63f3c",
+    "enabled": true,
+    "clientAuthentication": false,
+    "standardFlow": true,
+    "directAccessGrants": false,
+    "implicitFlow": false,
+    "serviceAccounts": false
+  },
+  "scope": "csm-mobile-dedicated",
+  "before": {
+    "dedicatedMappers": [],
+    "fullScopeAllowed": true,
+    "assignedDefaultScopes": [
+      "acr",
+      "basic",
+      "email",
+      "profile",
+      "roles",
+      "web-origins"
+    ],
+    "assignedOptionalScopes": [
+      "address",
+      "microprofile-jwt",
+      "offline_access",
+      "organization",
+      "phone"
+    ]
+  },
+  "mapper": {
+    "name": "csm-messaging access audience",
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-audience-mapper",
+    "config": {
+      "included.client.audience": "csm-messaging",
+      "access.token.claim": "true",
+      "id.token.claim": "false",
+      "lightweight.claim": "false",
+      "introspection.token.claim": "false"
+    }
+  },
+  "allowedChange": "Add exactly one audience mapper to the existing dedicated csm-mobile scope; do not modify realm-wide/shared scopes or other mappers.",
+  "invariants": [
+    "existing audiences retained",
+    "existing fullScopeAllowed true retained without expansion",
+    "no changes to roles or grants",
+    "no ID token audience",
+    "no client secret changes",
+    "no audience-check bypass",
+    "no registration reset"
+  ],
+  "cas": "Immediately before saving re-read dedicated mapper list and verify empty/no matching mapper; do not overwrite existing mapper.",
+  "rollback": "Only remove newly created mapper ID if name/provider/config still match the exact added mapper; preserve every other mapper and token policy.",
+  "validation": "Fresh readback of saved mapper, original assigned scopes/capabilities/fullScopeAllowed; subsequent one owner-issued fresh login required. Old JWT is not rewritten."
+}

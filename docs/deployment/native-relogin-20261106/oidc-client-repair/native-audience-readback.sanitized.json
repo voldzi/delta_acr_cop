@@ -1,0 +1,26 @@
+{
+  "contractVersion": "cop-native-messaging-audience-readback-v1",
+  "observedAt": "2026-11-06T12:45:23.612417+00:00",
+  "realm": "cop",
+  "sourceClientId": "csm-mobile",
+  "sourceClientUuid": "20278da3-1c94-48c7-91da-6a5b45e63f3c",
+  "scope": "csm-mobile-dedicated",
+  "mapperId": "8ec32597-305f-4b38-ac81-5abe789c802f",
+  "beforeDedicatedMappers": [],
+  "afterDedicatedMapperCount": 1,
+  "mapper": {
+    "name": "csm-messaging access audience",
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-audience-mapper",
+    "config": {
+      "included.client.audience": "csm-messaging",
+      "access.token.claim": "true",
+      "id.token.claim": "false",
+      "lightweight.claim": "false",
+      "introspection.token.claim": "false"
+    }
+  },
+  "verification": "Freshly reloaded mapper detail and independent mapper list; existing Full Scope Allowed remains true. No token export or owner impersonation.",
+  "ownerAcceptance": "pending_fresh_same_owner_login",
+  "rollback": "Only exact new mapper ID after matching name/provider/config; preserve all other settings."
+}

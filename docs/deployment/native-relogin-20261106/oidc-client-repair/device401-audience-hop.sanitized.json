@@ -1,0 +1,54 @@
+{
+  "readOnly": true,
+  "windowStart": "2026-11-06T12:26:40Z",
+  "windowEnd": "2026-11-06T12:27:10Z",
+  "deviceDeletes": [
+    {
+      "startedAt": "2026-11-06T12:26:46.996603391Z",
+      "completedAt": "2026-11-06T12:26:47.104524268Z",
+      "requestId": "a7865f89-2264-48f7-b1ff-43387d1d4693",
+      "pathTemplate": "/api/v1/devices/{deviceId}",
+      "method": "DELETE",
+      "status": 401,
+      "keycloakEventAt": "2026-11-06T12:26:47.096164207Z"
+    },
+    {
+      "startedAt": "2026-11-06T12:27:02.397994806Z",
+      "completedAt": "2026-11-06T12:27:02.413463271Z",
+      "requestId": "ba1e8ca6-2d66-41bf-a80e-934a1afe1ef4",
+      "pathTemplate": "/api/v1/devices/{deviceId}",
+      "method": "DELETE",
+      "status": 401,
+      "keycloakEventAt": "2026-11-06T12:27:02.409945196Z"
+    }
+  ],
+  "keycloak": {
+    "clientId": "csm-messaging",
+    "tokenIssuedFor": "csm-mobile",
+    "type": "INTROSPECT_TOKEN_ERROR",
+    "error": "invalid_token",
+    "reasonCode": "INTROSPECTION_AUDIENCE_MISSING"
+  },
+  "copRecoveryPostsObserved": 0,
+  "copCapabilitiesGets": [
+    {
+      "timeUtc": "2026-11-06T12:26:15.956Z",
+      "status": 200
+    },
+    {
+      "timeUtc": "2026-11-06T12:26:46.611Z",
+      "status": 200
+    },
+    {
+      "timeUtc": "2026-11-06T12:26:46.902Z",
+      "status": 200
+    },
+    {
+      "timeUtc": "2026-11-06T12:27:33.900Z",
+      "status": 200
+    }
+  ],
+  "ownerOperationPerformedByAgent": false,
+  "serverMutationPerformed": false,
+  "limits": "Only pre-existing request/audit metadata read; no tokens, claims payloads, bodies, identities or IP addresses exported."
+}
