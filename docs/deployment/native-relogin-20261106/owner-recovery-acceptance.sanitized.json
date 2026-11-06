@@ -1,0 +1,91 @@
+{
+  "contractVersion": "cop-jizda-owner-recovery-acceptance-v1",
+  "observedAt": "2026-11-06T19:45:21.324223Z",
+  "ownerReported": "Communication appeared after explicit native recovery",
+  "physicalUiAcceptanceReportedVia": "existing Jizda chat",
+  "cop": {
+    "observedAt": "2026-11-06T19:45:21.324223+00:00",
+    "windowSeconds": 600,
+    "readOnly": true,
+    "logReadSucceeded": true,
+    "requests": [
+      {
+        "time": 1793994229984,
+        "method": "GET",
+        "path": "/api/v1/mobile/host-pushers/capabilities",
+        "httpStatus": 200,
+        "requestId": "req-885",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994250105,
+        "method": "GET",
+        "path": "/api/v1/mobile/host-pushers/capabilities",
+        "httpStatus": 200,
+        "requestId": "req-88d",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994250292,
+        "method": "GET",
+        "path": "/api/v1/mobile/host-pushers/capabilities",
+        "httpStatus": 200,
+        "requestId": "req-88f",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994251899,
+        "method": "POST",
+        "path": "/api/v1/mobile/host-pushers/reconcile",
+        "httpStatus": 200,
+        "requestId": "req-88i",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994252504,
+        "method": "POST",
+        "path": "/api/v1/mobile/host-chat-sessions/prepare",
+        "httpStatus": 200,
+        "requestId": "req-88p",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994253883,
+        "method": "POST",
+        "path": "/api/v1/mobile/host-chat-sessions",
+        "httpStatus": 200,
+        "requestId": "req-88s",
+        "machineCode": null,
+        "correlationId": null
+      },
+      {
+        "time": 1793994279038,
+        "method": "GET",
+        "path": "/api/v1/mobile/host-pushers/capabilities",
+        "httpStatus": 200,
+        "requestId": "req-89o",
+        "machineCode": null,
+        "correlationId": null
+      }
+    ],
+    "limits": "Response machine codes, correlation headers and operation UUIDs are not reconstructed from absent audit fields; request bodies, identities, credentials and other paths are excluded."
+  },
+  "messagingDeviceDelete": {
+    "readOnly": true,
+    "lookbackSeconds": 600,
+    "logReadSucceeded": true,
+    "deviceDeletes": [],
+    "limits": "Device ID and all raw lines excluded; absent machine codes are not reconstructed."
+  },
+  "backendRecoveryFlowCompleted": true,
+  "ownerOperationPerformedByDiagnostics": false,
+  "messageDeliveryVerified": false,
+  "notificationDeliveryVerified": false,
+  "historicalDecryptionVerified": false,
+  "limitations": "Current successful recovery has three POST200 observations. No Device DELETE was observed in this same 10 minute window; prior Device DELETE200 is separate evidence. Completion logs do not expose machine codes or response correlation headers."
+}

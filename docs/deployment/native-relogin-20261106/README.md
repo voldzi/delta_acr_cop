@@ -167,3 +167,19 @@ not described as fresh before/after raw equality. See
 Owner recovery on the phone still requires the explicit pending-operation retry
 coordinated by Jízda. Healthy deployment and read-only capabilities alone do not
 prove chat restoration, historical decryption or notification delivery.
+
+## Subsequent owner recovery acceptance
+
+The owner subsequently confirmed through Jízda that communication appeared after
+the explicit native recovery. The bounded read-only server check independently
+observed COP reconciliation200 at19:44:11.899UTC, session preparation200 at
+19:44:12.504UTC and session issuance200 at19:44:13.883UTC on2026-11-06. All four
+capabilities requests in the same ten-minute window returned200. This confirms
+the recovery flow and reported physical UI outcome; no diagnostic replay or
+owner operation was performed. See `owner-recovery-acceptance.sanitized.json`.
+
+No DeviceRegistry DELETE appeared in this same window, so the earlier DELETE200
+is retained as separate evidence. Message delivery, notification delivery and
+decryption of historical messages were not tested by this acceptance. Default
+completion logs do not expose response machine codes or correlation headers;
+those absent fields have not been reconstructed or invented.
