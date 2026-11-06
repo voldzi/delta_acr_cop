@@ -65,6 +65,8 @@ actual source hashes and the test-log digest. The completed/prepared/resumable
 journal semantics remain preserved. Debug, Release and signed iPhone application builds also passed (their log
 digests are in the handoff). Owner-phone acceptance remains separate: build 83
 was installed over the existing app and its version independently read back by
-Jízda. The iPhone locked before launch; no build-83 read-only probe or owner
-recovery was performed. Unlocking the owner phone is the remaining input. The first phone step is read-only route/lookup/original-pair diagnostics;
+Jízda. After the owner unlocked the iPhone, Jízda confirmed successful launch and
+independent process readback of build 83. The next owner input is the fixed
+route/lookup/original-pair read-only diagnostic result in the Jízda chat. No
+owner restoration or cleanup request has been performed. The first phone step is read-only route/lookup/original-pair diagnostics;
 no cleanup retry is allowed without the exact prerequisites.

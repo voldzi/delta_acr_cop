@@ -38,8 +38,9 @@
     "build": "83",
     "overinstallReportedByJizda": true,
     "independentVersionReadbackReportedByJizda": true,
-    "applicationLaunchVerified": false,
+    "applicationLaunchVerified": true,
     "readOnlyProbeExecuted": false,
-    "blockingCondition": "Owner iPhone locked before application launch; owner must unlock it. No cleanup or reset performed."
+    "blockingCondition": "Waiting for the owner read-only route/lookup/original-pair diagnostic result in the J\u00edzda chat; no restoration or cleanup request performed.",
+    "launchEvidence": "J\u00edzda reported successful owner-confirmed unlocked launch and independent process readback of build 83."
   }
 }
