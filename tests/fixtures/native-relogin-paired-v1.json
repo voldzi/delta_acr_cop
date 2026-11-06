@@ -1,0 +1,84 @@
+{
+  "owner": "synthetic-paired",
+  "session": {
+    "accessToken": "synthetic-current-access",
+    "actorSubjectId": "synthetic-paired",
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "contractVersion": "cop-host-current-chat-session-v1",
+    "deviceId": "CSMIOS.S.00000000000040008000000000000003",
+    "e2eeRequired": true,
+    "expiresInMs": 60000,
+    "historyReset": false,
+    "homeserverBaseUrl": "https://matrix.example.test",
+    "newIsolatedDevice": true,
+    "operationId": "00000000-0000-4000-8000-000000000003",
+    "refreshToken": "synthetic-current-refresh",
+    "userId": "@cop_synthetic-paired_68c880083c33:matrix.test"
+  },
+  "issuer": "https://issuer.test/cop",
+  "capabilities": {
+    "contractVersion": "csm-host-pusher-recovery-capabilities-v1",
+    "exactTargetReconciliationEnabled": true,
+    "isolatedCurrentSessionEnabled": true
+  },
+  "observedAt": "2026-11-06T09:57:02Z",
+  "cleanupRequest": {
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "confirmation": "remove_stale_pusher",
+    "contractVersion": "cop-host-pusher-reconcile-v1",
+    "operationId": "00000000-0000-4000-8000-000000000001",
+    "pushKey": "synthetic-push"
+  },
+  "cleanupReceipt": {
+    "actorSubjectId": "synthetic-paired",
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "chatSessionRestored": false,
+    "contractVersion": "cop-host-pusher-reconcile-v1",
+    "matrixDeviceCreated": false,
+    "operationId": "00000000-0000-4000-8000-000000000001",
+    "outcome": "complete",
+    "registryRevision": 1,
+    "targetFingerprint": "7388f63b6960f4f80aaaaadace569860e796c1f8b96854ecc78b5010b1ce5373"
+  },
+  "prepareRequest": {
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "cleanupOperationId": "00000000-0000-4000-8000-000000000001",
+    "cleanupTargetFingerprint": "7388f63b6960f4f80aaaaadace569860e796c1f8b96854ecc78b5010b1ce5373",
+    "confirmation": "prepare_isolated_chat_session",
+    "contractVersion": "cop-host-current-chat-session-v1",
+    "deviceId": "CSMIOS.S.00000000000040008000000000000003",
+    "operationId": "00000000-0000-4000-8000-000000000003"
+  },
+  "preparation": {
+    "actorSubjectId": "synthetic-paired",
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "cleanupOperationId": "00000000-0000-4000-8000-000000000001",
+    "cleanupTargetFingerprint": "7388f63b6960f4f80aaaaadace569860e796c1f8b96854ecc78b5010b1ce5373",
+    "contractVersion": "cop-host-current-chat-session-prepare-v1",
+    "deviceId": "CSMIOS.S.00000000000040008000000000000003",
+    "historyReset": false,
+    "homeserverBaseUrl": "https://matrix.example.test",
+    "operationId": "00000000-0000-4000-8000-000000000003",
+    "userId": "@cop_synthetic-paired_68c880083c33:matrix.test",
+    "validUntil": "2026-11-06T10:02:02Z"
+  },
+  "sessionRequest": {
+    "appInstanceId": "00000000-0000-4000-8000-000000000002",
+    "bundleId": "cz.voldzi.jizda",
+    "cleanupOperationId": "00000000-0000-4000-8000-000000000001",
+    "cleanupTargetFingerprint": "7388f63b6960f4f80aaaaadace569860e796c1f8b96854ecc78b5010b1ce5373",
+    "confirmation": "new_isolated_chat_session",
+    "contractVersion": "cop-host-current-chat-session-v1",
+    "deviceId": "CSMIOS.S.00000000000040008000000000000003",
+    "operationId": "00000000-0000-4000-8000-000000000003"
+  },
+  "originalDevicePreserved": true,
+  "unexpectedMatrixMutation": false,
+  "syntheticOnly": true,
+  "productionChanged": false
+}

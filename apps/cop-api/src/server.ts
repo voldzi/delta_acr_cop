@@ -1,3 +1,4 @@
+import { HostPusherReconciliation, registerHostPusherReconciliationRoutes } from "./host-pusher-reconciliation.js";
 import { VehicleConversationCoordinator } from "./vehicle-conversation-coordinator.js";
 import { type VehicleConversationProvider, HttpVehicleConversationProvider } from "./vehicle-conversation-provider.js";
 import { UserArrivalRequestError, UserArrivalVerificationError } from "./routing-user-arrival.js";
@@ -7326,6 +7327,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       preferences: profile.preferences,
       updatedAt: profile.updatedAt
     };
+  });
+
+  registerHostPusherReconciliationRoutes(app, {
+    service: new HostPusherReconciliation({config: messagingProvider.config,
+      issuer: process.env.COP_OIDC_ISSUER ?? "", jizdaClientId,
+      assertActorActive: assertMobileActorAllowed,
+      assertSessionActorActive: async actor => { await assertMobileActorAllowed(actor); await jizdaAppLink?.assertAllowed(actor); }, now}),
+    actor: actorFromRequest,
+    enabled: () => messagingProvider.config.enabled,
+    sessionEnabled: () => messagingProvider.config.enabled
   });
 
   registerMobileRoutes(app, {

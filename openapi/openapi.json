@@ -14959,6 +14959,217 @@
         },
         "description": "Admission defaults off. Only the authenticated source actor may request; operationId and expectedMembershipRevision are the entire input. The source commits one durable pending intent before native work.200 confirms current source roster and actual requester joined;202 is a typed invitation preparation, never permission to select or send.503 means pending/unavailable. No room, actor, recipient or model choices are accepted from the client."
       }
+    },
+    "/api/v1/mobile/host-pushers/reconcile": {
+      "post": {
+        "operationId": "reconcileHostPusher",
+        "summary": "Reconcile only one existing owned app notification target after fresh SSO.",
+        "description": "Feature disabled until paired acceptance. No user provisioning, Matrix device/crypto deletion, history reset or automatic chat activation. Idempotency is scoped to owner, installation, exact target and registry revision. Upstream timeout remains pending. Never log request pushKey.",
+        "tags": [
+          "Mobile",
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostPusherReconciliationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact target absence and closed temporary delegation verified. Does not authorize a chat session or a global pending clear.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostPusherReconciliationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/host-pushers/capabilities": {
+      "get": {
+        "operationId": "getCopHostPusherRecoveryCapabilities",
+        "summary": "Read authenticated paired recovery capability without issuing any token.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current feature/capability state, not producer permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostPusherRecoveryCapabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required."
+          },
+          "503": {
+            "description": "Readiness unproven or unavailable."
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/host-chat-sessions/prepare": {
+      "post": {
+        "operationId": "prepareCopCurrentChatSession",
+        "summary": "Prepare isolated current chat session.",
+        "description": "Existing-user lookup and durable metadata reservation only; no login, credentials, provisioning, crypto key or Matrix device creation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HostCurrentSessionRequest"
+                  },
+                  {
+                    "properties": {
+                      "confirmation": {
+                        "const": "prepare_isolated_chat_session"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact bound metadata prepared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostCurrentSessionPreparation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid strict request."
+          },
+          "401": {
+            "description": "Recent verified native SSO required."
+          },
+          "403": {
+            "description": "Owner or target not proven."
+          },
+          "409": {
+            "description": "Preparation/cleanup/registry/session binding conflicts or expired."
+          },
+          "429": {
+            "description": "Per-owner limit reached."
+          },
+          "503": {
+            "description": "Feature disabled or dependency/outcome unproven; no fallback."
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/host-chat-sessions": {
+      "post": {
+        "operationId": "openCopCurrentChatSession",
+        "summary": "Authorize isolated current chat session.",
+        "description": "Execute exact prepared/reserved operation after native unused-new-store proof. Existing mapped user only; no get_or_create/user PUT or crypto/history reset. Unknown login outcome may be explicitly reissued only on the same durably reserved operation/device after fresh same-owner authentication.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HostCurrentSessionRequest"
+                  },
+                  {
+                    "properties": {
+                      "confirmation": {
+                        "const": "new_isolated_chat_session"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact new current session verified; credentials remain private to native secure storage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostCurrentSessionReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid strict request."
+          },
+          "401": {
+            "description": "Recent verified native SSO required."
+          },
+          "403": {
+            "description": "Owner or target not proven."
+          },
+          "409": {
+            "description": "Preparation/cleanup/registry/session binding conflicts or expired."
+          },
+          "429": {
+            "description": "Per-owner limit reached."
+          },
+          "503": {
+            "description": "Feature disabled or dependency/outcome unproven; no fallback."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -37101,6 +37312,408 @@
           }
         },
         "description": "Source change committed; native communication cutover is pending. Never present this as completed revocation. Retry the identical original operation for its final receipt."
+      },
+      "HostPusherReconciliationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "appInstanceId",
+          "bundleId",
+          "pushKey",
+          "confirmation"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-pusher-reconcile-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "bundleId": {
+            "type": "string",
+            "enum": [
+              "cz.voldzi.jizda",
+              "cz.voldzi.copmobile"
+            ]
+          },
+          "pushKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "writeOnly": true,
+            "description": "Exact existing pending app push key. Sensitive; never log or include in receipt."
+          },
+          "confirmation": {
+            "type": "string",
+            "const": "remove_stale_pusher"
+          }
+        }
+      },
+      "HostPusherReconciliationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "appInstanceId",
+          "bundleId",
+          "actorSubjectId",
+          "targetFingerprint",
+          "outcome",
+          "registryRevision",
+          "matrixDeviceCreated",
+          "chatSessionRestored"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-pusher-reconcile-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "bundleId": {
+            "type": "string",
+            "enum": [
+              "cz.voldzi.jizda",
+              "cz.voldzi.copmobile"
+            ]
+          },
+          "actorSubjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Authenticated owner derived by COP; never caller-selected."
+          },
+          "targetFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA256(bundleId + NUL + raw pushKey). Exact target binding, not an anonymous identifier."
+          },
+          "outcome": {
+            "type": "string",
+            "const": "complete"
+          },
+          "registryRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matrixDeviceCreated": {
+            "type": "boolean",
+            "const": false
+          },
+          "chatSessionRestored": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "HostCurrentSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "appInstanceId",
+          "bundleId",
+          "cleanupOperationId",
+          "cleanupTargetFingerprint",
+          "deviceId",
+          "confirmation"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-current-chat-session-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "bundleId": {
+            "type": "string",
+            "enum": [
+              "cz.voldzi.jizda",
+              "cz.voldzi.copmobile"
+            ]
+          },
+          "cleanupOperationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "cleanupTargetFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "deviceId": {
+            "type": "string",
+            "pattern": "^CSMIOS\\.S\\.[0-9a-f]{32}$",
+            "description": "Exactly CSMIOS.S. plus session operationId without hyphens; separate from original crypto device."
+          },
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "prepare_isolated_chat_session",
+              "new_isolated_chat_session"
+            ]
+          }
+        }
+      },
+      "HostCurrentSessionPreparation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "appInstanceId",
+          "bundleId",
+          "actorSubjectId",
+          "deviceId",
+          "userId",
+          "homeserverBaseUrl",
+          "cleanupOperationId",
+          "cleanupTargetFingerprint",
+          "validUntil",
+          "historyReset"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-current-chat-session-prepare-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "bundleId": {
+            "type": "string",
+            "enum": [
+              "cz.voldzi.jizda",
+              "cz.voldzi.copmobile"
+            ]
+          },
+          "actorSubjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "deviceId": {
+            "type": "string",
+            "pattern": "^CSMIOS\\.S\\.[0-9a-f]{32}$",
+            "description": "Exactly CSMIOS.S. plus session operationId without hyphens; separate from original crypto device."
+          },
+          "userId": {
+            "type": "string",
+            "pattern": "^@[^\\s:]+:[^\\s]+$",
+            "maxLength": 1024
+          },
+          "homeserverBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Existing mapped account homeserver, pinned to configured public HTTPS endpoint by COP."
+          },
+          "cleanupOperationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "cleanupTargetFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "At most five minutes. Reservation must still match and be current at execute."
+          },
+          "historyReset": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "HostCurrentSessionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "appInstanceId",
+          "bundleId",
+          "actorSubjectId",
+          "deviceId",
+          "userId",
+          "homeserverBaseUrl",
+          "historyReset",
+          "accessToken",
+          "refreshToken",
+          "expiresInMs",
+          "e2eeRequired",
+          "newIsolatedDevice"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-current-chat-session-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "bundleId": {
+            "type": "string",
+            "enum": [
+              "cz.voldzi.jizda",
+              "cz.voldzi.copmobile"
+            ]
+          },
+          "actorSubjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "deviceId": {
+            "type": "string",
+            "pattern": "^CSMIOS\\.S\\.[0-9a-f]{32}$",
+            "description": "Exactly CSMIOS.S. plus session operationId without hyphens; separate from original crypto device."
+          },
+          "userId": {
+            "type": "string",
+            "pattern": "^@[^\\s:]+:[^\\s]+$",
+            "maxLength": 1024
+          },
+          "homeserverBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Existing mapped account homeserver, pinned to configured public HTTPS endpoint by COP."
+          },
+          "historyReset": {
+            "type": "boolean",
+            "const": false
+          },
+          "accessToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "Private newly authorized session credential. Never log, persist in COP, expose in analytics or put in URLs."
+          },
+          "refreshToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 65536,
+            "description": "Private new session credential; only native secure storage."
+          },
+          "expiresInMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 31536000000,
+            "description": "Store absolute conservative expiry from issuance request time; never extend on cold resume."
+          },
+          "e2eeRequired": {
+            "type": "boolean",
+            "const": true
+          },
+          "newIsolatedDevice": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "HostPusherRecoveryCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "exactTargetReconciliation",
+          "isolatedCurrentSession",
+          "validUntil"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-host-pusher-recovery-capabilities-v1"
+          },
+          "exactTargetReconciliation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "enabled",
+              "requiresRecentAuthentication",
+              "maxAuthenticationAgeSeconds"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "requiresRecentAuthentication": {
+                "type": "boolean",
+                "const": true
+              },
+              "maxAuthenticationAgeSeconds": {
+                "type": "integer",
+                "const": 300
+              }
+            }
+          },
+          "isolatedCurrentSession": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "enabled"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            }
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "At most 30 seconds. Expired readiness never authorizes a request."
+          }
+        }
       }
     }
   },

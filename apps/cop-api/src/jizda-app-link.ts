@@ -142,6 +142,11 @@ export function registerJizdaAppLinkRoutes(app:FastifyInstance, service?:JizdaAp
   app.addHook("onRequest",async(r,reply)=>{
     if (r.url.startsWith("/health") || r.url.split("?")[0]==="/metrics") return;
     if (!service || r.method==="OPTIONS" || [path,path+"/capabilities",path+"/disconnect"].includes(r.url.split("?")[0]!)) return;
+    // Exact notification withdrawal remains reachable after app disconnect;
+    // session preparation/issuance never receives this exception.
+    const operationPath=r.url.split("?")[0]!;
+    if ((r.method==="POST" && operationPath==="/api/v1/mobile/host-pushers/reconcile") ||
+        (r.method==="GET" && operationPath==="/api/v1/mobile/host-pushers/capabilities")) return;
     const a=verifiedActor(r); if (!a) return;
     try { await service.assertAllowed(a); } catch(e) { return error(r,reply,e); }
   });

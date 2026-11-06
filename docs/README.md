@@ -215,3 +215,5 @@ Reviewed historical provenance and bounded schema preparation: [runbook 31](runb
 User-selected road arrival: [candidate contract and verification](integration/32_USER_SELECTED_ARRIVAL_V1.md), [ADR 0057](adr/0057_USER_SELECTED_ARRIVAL.md). Production activation remains separate.
 
 Exact routing image-pair release/reversion: [operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md), including accepted/pending state evidence and the remaining Root/native acceptance gates.
+
+Native fresh-SSO recovery: [contract, limits, activation and return](integration/messaging-recovery/20261106_CURRENT_SESSION_RECOVERY.md).

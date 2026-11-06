@@ -1,8 +1,8 @@
 # Existing app-pusher reconciliation after routeAbsent
 
-Status: source-bound implementation proposal, not an implemented endpoint or a
-production operation. No owner request, token issuance, cleanup or pending-state
-change was performed. Scope: COP and Messaging with Jízda; no infrastructure
+Status: implemented additive contract; deployment and owner acceptance are recorded
+separately in [the current recovery runbook](20261106_CURRENT_SESSION_RECOVERY.md).
+The original observations below remain evidence, not proof of a successful repair. Scope: COP and Messaging with Jízda; no infrastructure
 administrator handoff required.
 
 ## Observed owner result
