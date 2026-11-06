@@ -1,0 +1,19 @@
+{
+  "observedAfterOwnerTerminalCompletion": true,
+  "readOnly": true,
+  "clientConfigurationComplete": false,
+  "creationOutcome": "created_confirmed",
+  "code": "CLIENT_READBACK_AUTHORIZATIONSERVICESENABLED",
+  "rollbackOutcome": "not_verified",
+  "exactNewClientRolledBack": false,
+  "temporaryAdminSessionClosed": true,
+  "temporaryPrivateKeyAbsent": true,
+  "temporaryCipherAbsent": true,
+  "operationId": "e41bf8ef-8717-44ed-aabb-d6633f7372ab",
+  "attemptedAt": "2026-11-06T12:18:04.911790+00:00",
+  "clientAbsentImmediatelyBeforePost": true,
+  "secretRotated": false,
+  "automaticRetry": false,
+  "ownerTokenUsed": false,
+  "otherClientsChanged": false
+}

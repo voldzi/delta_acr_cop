@@ -1,0 +1,78 @@
+{
+  "observedAt": "2026-11-06T12:24:45.501845+00:00",
+  "subsequentReadOnlyAcceptanceComplete": true,
+  "originalTerminalResultPreserved": true,
+  "originalTerminalClientConfigurationComplete": false,
+  "originalTerminalFailure": "CLIENT_READBACK_AUTHORIZATIONSERVICESENABLED",
+  "noAdditionalMutationOrAdminLogin": true,
+  "acceptedClient": {
+    "realm": "cop",
+    "clientId": "csm-messaging",
+    "clientUuid": "77a10b93-1260-4def-b29b-166ad02168d4",
+    "enabled": true,
+    "clientAuthentication": true,
+    "authorization": false,
+    "standardFlow": false,
+    "directAccessGrants": false,
+    "implicitFlow": false,
+    "serviceAccounts": false,
+    "standardTokenExchange": false,
+    "jwtAuthorizationGrant": false,
+    "deviceGrant": false,
+    "cibaGrant": false,
+    "clientRolesEmpty": true,
+    "defaultAndOptionalAssignedScopesEmpty": true,
+    "dedicatedScopeInherentOnly": true,
+    "dedicatedMappersEmpty": true,
+    "fullScopeAllowed": false,
+    "dedicatedRoleMappingsEmpty": true
+  },
+  "configurationEvidence": {
+    "kind": "independent read-only Keycloak UI observation",
+    "sourceThreadId": "01a0c94c-bb48-77b3-b86f-5f226f43ccc2",
+    "secretsOrSessionExported": false,
+    "uiWritesPerformed": false
+  },
+  "providerRepresentationEvidence": {
+    "version": "26.8.0",
+    "url": "https://raw.githubusercontent.com/keycloak/keycloak/26.8.0/server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java",
+    "lines": "869-876",
+    "semantics": "authorizationServicesEnabled is set true only for a present resource server; the other branch does not assign false. GET ClientResource uses this converter."
+  },
+  "authTransport": {
+    "observedAt": "2026-11-06T12:23:49.695129+00:00",
+    "readOnly": true,
+    "ownerTokenUsed": false,
+    "ownerRecoveryPerformed": false,
+    "keycloakNegativeProbe": {
+      "syntheticTokenOnly": true,
+      "providerHttpStatus": 200,
+      "active": false
+    },
+    "actualMessagingGuardProbe": {
+      "method": "POST",
+      "path": "/api/v1/devices",
+      "bodyEmpty": true,
+      "syntheticTokenOnly": true,
+      "httpStatus": 401,
+      "machineCode": "UNAUTHORIZED"
+    },
+    "runtime": {
+      "containerId": "d717666c080e77450af3921cb2223f16872108d13133f9c77e8d862cf2d4dbf8",
+      "imageId": "sha256:c498b7d8a9b410e2de7d6d9760ba0d8a6e419d0ced3a79cfc828520a2947969a",
+      "sourceRevision": "401161224db1179374a07224c77bf2c6a9f35baf",
+      "healthy": true,
+      "restartCount": 0,
+      "sameAcceptedContainer": true,
+      "runtimeOwnSecretMatchesEnv": true,
+      "envLastChangeBeforeOperation": true,
+      "clientId": "csm-messaging"
+    },
+    "authTransportVerified": true,
+    "allClientSecuritySettingsVerified": false,
+    "originalTerminalFailurePreserved": true,
+    "remaining": "Independent read-only authoritative UI/resource-server and client scope/role verification; then one explicit fresh owner login."
+  },
+  "ownerRecoveryPerformed": false,
+  "ownerRecoveryAcceptancePending": true
+}
