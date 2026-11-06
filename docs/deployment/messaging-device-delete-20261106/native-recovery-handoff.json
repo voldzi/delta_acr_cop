@@ -39,8 +39,20 @@
     "overinstallReportedByJizda": true,
     "independentVersionReadbackReportedByJizda": true,
     "applicationLaunchVerified": true,
-    "readOnlyProbeExecuted": false,
-    "blockingCondition": "Waiting for the owner read-only route/lookup/original-pair diagnostic result in the J\u00edzda chat; no restoration or cleanup request performed.",
+    "readOnlyProbeExecuted": true,
+    "blockingCondition": "Local existing-record fallback unavailable: routeAbsent. Server exact-pusher reconciliation is a proposal, not a deployed recovery endpoint.",
     "launchEvidence": "J\u00edzda reported successful owner-confirmed unlocked launch and independent process readback of build 83."
+  },
+  "ownerPhoneReadOnlyProbe": {
+    "build": "83",
+    "fixedResults": [
+      "routeAbsent",
+      "lookupDerived",
+      "originalPairMissing",
+      "cacheMissing"
+    ],
+    "meaning": "No scoped recorded-original reference; no cache enumeration or proof that all stores/devices are absent.",
+    "restorationAttempted": false,
+    "cleanupAttempted": false
   }
 }

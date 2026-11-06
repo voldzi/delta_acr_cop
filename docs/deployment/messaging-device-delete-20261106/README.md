@@ -66,7 +66,9 @@ journal semantics remain preserved. Debug, Release and signed iPhone application
 digests are in the handoff). Owner-phone acceptance remains separate: build 83
 was installed over the existing app and its version independently read back by
 Jízda. After the owner unlocked the iPhone, Jízda confirmed successful launch and
-independent process readback of build 83. The next owner input is the fixed
-route/lookup/original-pair read-only diagnostic result in the Jízda chat. No
-owner restoration or cleanup request has been performed. The first phone step is read-only route/lookup/original-pair diagnostics;
+independent process readback of build 83. The read-only owner probe returned `routeAbsent`, `lookupDerived`,
+`originalPairMissing`, `cacheMissing`: the local recorded-original fallback is
+unavailable. This does not establish absence of all stores or history. No owner
+restoration or cleanup request has been performed. The next source-bound path is
+the [separate server pusher-reconciliation proposal](../../integration/messaging-recovery/20261106_EXISTING_PUSHER_RECONCILIATION.md), not an already deployed endpoint. The first phone step is read-only route/lookup/original-pair diagnostics;
 no cleanup retry is allowed without the exact prerequisites.
