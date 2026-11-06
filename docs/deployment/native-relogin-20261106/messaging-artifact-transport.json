@@ -1,0 +1,31 @@
+{
+  "builtArchive": {
+    "image": "sha256:f744daa4ed75290919abe1ec1bf31b109f5fae7240e5dbc62e9bddaf2f315f4c",
+    "configSha": "9ae33b04682ee3e45e06f1b6448761284d2655c94662d63c48e6a28b234f17e2",
+    "layers": [
+      "sha256:75f1d9657d880da5f75298e8f40e9928bb6e260c50d26f97af196845307e3064",
+      "sha256:d5f6cbc122636d48ad03498de2e740b36783241d26190859522f6d217948231e",
+      "sha256:ea2509f6573ed21184688cd869e95f3488217301e3facdf14c539c4db9472bb6",
+      "sha256:f78f9ac382ff844cc1056b18a50388d1b8448e586e67c226ff69a5d1f101fc60"
+    ],
+    "revision": "401161224db1179374a07224c77bf2c6a9f35baf",
+    "architecture": "amd64"
+  },
+  "loadedImage": {
+    "image": "sha256:c498b7d8a9b410e2de7d6d9760ba0d8a6e419d0ced3a79cfc828520a2947969a",
+    "configSha": "9ae33b04682ee3e45e06f1b6448761284d2655c94662d63c48e6a28b234f17e2",
+    "layers": [
+      "sha256:75f1d9657d880da5f75298e8f40e9928bb6e260c50d26f97af196845307e3064",
+      "sha256:d5f6cbc122636d48ad03498de2e740b36783241d26190859522f6d217948231e",
+      "sha256:ea2509f6573ed21184688cd869e95f3488217301e3facdf14c539c4db9472bb6",
+      "sha256:f78f9ac382ff844cc1056b18a50388d1b8448e586e67c226ff69a5d1f101fc60"
+    ],
+    "revision": "401161224db1179374a07224c77bf2c6a9f35baf",
+    "architecture": "amd64"
+  },
+  "runtimeConfigExact": true,
+  "rootFsDiffIdsExact": true,
+  "sourceRevisionExact": true,
+  "blobIdentityEqual": false,
+  "transport": "Docker archive load over existing authenticated SSH; archive/config blob ID changed during Docker import; effective image Config and rootfs layers independently verified exact. No claim of byte-identical config envelope."
+}

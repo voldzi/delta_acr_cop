@@ -1122,6 +1122,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let streamBusDetail = streamBus.diagnostics();
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
+  let flightDataRefreshInFlight: Promise<void> | undefined;
+  let flightDataClosing = false;
   let aiContextIndexRefreshTimer: ReturnType<typeof setInterval> | undefined;
   let aiContextIndexWarmupRetryTimer: ReturnType<typeof setTimeout> | undefined;
   let aiContextIndexClosing = false;
@@ -1812,6 +1814,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (erasureWorkerRunning) {
       let deadline: ReturnType<typeof setTimeout> | undefined;
       try { await Promise.race([erasureWorkerRunning, new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
+      finally { if (deadline) clearTimeout(deadline); }
+    }
+    flightDataClosing = true;
+    if (flightDataPollTimer) clearInterval(flightDataPollTimer);
+    if (flightDataRefreshInFlight) {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([flightDataRefreshInFlight.catch(() => undefined), new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
       finally { if (deadline) clearTimeout(deadline); }
     }
     if (accountSafetyStore && accountSafetyStore !== mobilityRuntimeStore) await accountSafetyStore.close();
@@ -2605,25 +2614,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!flightDataSource) {
       return;
     }
-    await refreshFlightDataSource("startup");
+    // Optional feed polling cannot hold API startup or turn a refused projection
+    // admission into a process restart. The existing admission still rejects all
+    // writes until its real continuity observation is current.
+    void refreshFlightDataSource("startup").catch(reportFlightDataRefreshFailure);
     if (flightDataSource.config.pollMs > 0) {
       flightDataPollTimer = setInterval(() => {
-        void refreshFlightDataSource("interval").catch(() => {
-          app.log.warn({ component: "flight-data", reasonCode: "PROJECTION_ADMISSION_UNAVAILABLE" }, "Flight data update remains blocked until its admission is available.");
-        });
+        void refreshFlightDataSource("interval").catch(reportFlightDataRefreshFailure);
       }, flightDataSource.config.pollMs);
       flightDataPollTimer.unref?.();
     }
   }
 
+  function reportFlightDataRefreshFailure(): void {
+    app.log.warn({ component: "flight-data", reasonCode: "PROJECTION_ADMISSION_UNAVAILABLE" }, "Flight data update remains blocked until its admission is available.");
+  }
   async function refreshFlightDataSource(trigger: "interval" | "startup"): Promise<void> {
+    if (flightDataClosing) return;
+    if (flightDataRefreshInFlight) return flightDataRefreshInFlight;
+    const pending = performFlightDataRefresh(trigger);
+    flightDataRefreshInFlight = pending;
+    try { await pending; } finally { if (flightDataRefreshInFlight === pending) flightDataRefreshInFlight = undefined; }
+  }
+  async function performFlightDataRefresh(trigger: "interval" | "startup"): Promise<void> {
     if (!flightDataSource) {
       return;
     }
     const requestNow = now();
     try {
       const result = await flightDataSource.poll(requestNow);
+      if (flightDataClosing) return;
       await accountErasure?.refreshCachedGuard();
+      if (flightDataClosing) return;
       state.sources.set(
         flightDataSource.sourceSystem.sourceSystemId,
         withFlightDataHealth(activeFlightDataSourceSystem(), result.health)
@@ -2631,6 +2653,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const acceptedObjects: ObservedObject[] = [];
       for (let offset = 0; offset < result.events.length; offset += 1) {
         if (offset % 128 === 0) await accountErasure?.refreshCachedGuard();
+        if (flightDataClosing) return;
         const event = result.events[offset]!;
         if (state.events.has(event.eventId)) {
           continue;
@@ -2643,6 +2666,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         await publishCurrentTracks(acceptedObjects);
       }
       await accountErasure?.refreshCachedGuard();
+      if (flightDataClosing) return;
       appendAudit(state, "FLIGHT_DATA_POLL_OK", {
         acceptedEvents: acceptedObjects.length,
         sourceSystemId: flightDataSource.sourceSystem.sourceSystemId,
@@ -2651,8 +2675,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
     } catch (error) {
       if (error instanceof AccountErasureError || error instanceof ContentErasureStoreError) throw error;
+      if (flightDataClosing) return;
       const health = unavailableFlightDataHealth(error, requestNow);
       await accountErasure?.refreshCachedGuard();
+      if (flightDataClosing) return;
       state.sources.set(
         flightDataSource.sourceSystem.sourceSystemId,
         withFlightDataHealth(activeFlightDataSourceSystem(), health)
