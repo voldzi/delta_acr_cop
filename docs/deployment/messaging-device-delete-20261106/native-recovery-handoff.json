@@ -1,0 +1,35 @@
+{
+  "contractVersion": "cop-jizda-exact-record-handoff-v1",
+  "firewallCOPRevision": "fbf4dd1",
+  "candidatePatchSHA256": "5c0797e7442d1a972fc8d638dd01b6e58ec1224f5f50c2326e2636dca56624d0",
+  "actualSDKTestsPassed": 75,
+  "actualSDKTestLogSHA256": "196f22b2aaac09d22247de72280cc9671af1703174c2a7cc100b17606cb59668",
+  "jizdaSourceFilesSHA256": {
+    "Sources/CSMCore/HostPusherExactCacheLookup.swift": "02bc983526c33a676ceeb895540d15ba8a3229ad5aeb81733f400aef8fc236b8",
+    "Sources/CSMCore/CommunicationModel.swift": "34475740bdc7ca9fa7d4695e9b538b001accc8683ccb4f96f40d4726297c2078",
+    "Sources/CSMCore/HostPusherRecoveryProbe.swift": "bd4929bd7c6b65fd4f8d5cc3ffaf47110a194f7dddfd8dde31508f1f65165a62",
+    "Tests/CSMCommunicationKitTests/HostPusherExactCacheLookupTests.swift": "c1bc2574e8aa1c4902e0fd8b377aa8b7a539f6420f28af29adf38f1cd46a5508",
+    "Tests/CSMCommunicationKitTests/HostCommunicationConsentTests.swift": "625a59c9fb2a8a2925dc7436194bd61688109b038747f1791999e7380fdf1455"
+  },
+  "fullApplicationBuildVerified": true,
+  "ownerPhoneVerified": false,
+  "ownerCleanupRetried": false,
+  "productionMessagingAPIChanged": false,
+  "originalBootstrapOrDeviceProvisioningAllowed": false,
+  "historyAndPendingPreserved": true,
+  "boundary": "SDK tests prove exact scoped record lookup and original-key CAS, not presence of the record on the owner phone. Missing/ambiguous credentials remain blocked.",
+  "applicationBuilds": {
+    "debug83.log": {
+      "passed": true,
+      "logSHA256": "4d66c95c42a999cf45cb195576f512753944554bc6367b1b4ca417a8a4f68944"
+    },
+    "device83.log": {
+      "passed": true,
+      "logSHA256": "72933756948f3735cd70f115d454c27656af97ae5f2c57eb07615e95b8fc1b3b"
+    },
+    "release83.log": {
+      "passed": true,
+      "logSHA256": "2240d7981ce3b50617a0604a903f30d38d4b6a962674440c31a42a82ed89d8b8"
+    }
+  }
+}

@@ -54,3 +54,16 @@ specific selected/derived cache lookup was absent, not that all encrypted stores
 or original credentials are gone. Matrix `401 M_UNKNOWN_TOKEN` and restoration
 are not declared fixed. No ordinary bootstrap/relogin, device recreation,
 pending reset, local history removal or owner cleanup retry was performed.
+
+## Implemented native repair handoff
+
+The shared lookup has now been integrated by Jízda and passed 75 actual SDK
+tests, including the model path from missing selected key to exact recorded
+original cache, refresh/whoami and exact-pusher removal, without new bootstrap
+or configuration. [Source/test handoff](native-recovery-handoff.json) records
+actual source hashes and the test-log digest. The completed/prepared/resumable
+journal semantics remain preserved. Debug, Release and signed iPhone application builds also passed (their log
+digests are in the handoff). Owner-phone acceptance remains separate: build 83
+was prepared, but the owner recovery outcome is not asserted by these tests or
+builds. The first phone step is read-only route/lookup/original-pair diagnostics;
+no cleanup retry is allowed without the exact prerequisites.
