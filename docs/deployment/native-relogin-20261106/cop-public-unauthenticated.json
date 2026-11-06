@@ -1,0 +1,22 @@
+{
+  "/api/v1/mobile/host-pushers/capabilities": {
+    "status": 401,
+    "code": "UNAUTHORIZED",
+    "unauthenticatedDenied": true
+  },
+  "/api/v1/mobile/host-pushers/reconcile": {
+    "status": 401,
+    "code": "UNAUTHORIZED",
+    "unauthenticatedDenied": true
+  },
+  "/api/v1/mobile/host-chat-sessions/prepare": {
+    "status": 401,
+    "code": "UNAUTHORIZED",
+    "unauthenticatedDenied": true
+  },
+  "/api/v1/mobile/host-chat-sessions": {
+    "status": 401,
+    "code": "UNAUTHORIZED",
+    "unauthenticatedDenied": true
+  }
+}

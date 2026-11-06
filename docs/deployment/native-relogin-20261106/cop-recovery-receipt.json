@@ -1,0 +1,15 @@
+{
+  "standardGuardRecoverCompleted": true,
+  "guardCommand": "recover --expect-active 9a824ada242c4c92aacbbf7ddb156958",
+  "sourceRevision": "e4f4aa246e2218be70462b4047d9a5ae0c93a69f",
+  "imageId": "sha256:a1158594639fe698fa07a3483ada98766527c5acc061347228f0b16e77d211cd",
+  "releaseId": "release-25caec3d0195422a8ad6c0f0e3abbcb5",
+  "containerId": "e29063c8dd9c097ae3391fb815de4ca8cec2b2fb836123ffadbb791f9a2bf8b7",
+  "generation": "221fd695dacb46cd83f3d0fa54147639",
+  "healthy": true,
+  "historicalRestartCount": 14,
+  "automaticRollback": false,
+  "rootExceptionUsed": false,
+  "oneShotReplacementExecuted": false,
+  "originalFailedActivationPreserved": true
+}

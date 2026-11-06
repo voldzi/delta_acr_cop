@@ -1,0 +1,17 @@
+{
+  "deployed": true,
+  "releaseId": "release-5173ef88c637434ba8c975029061ed90",
+  "imageId": "sha256:733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327",
+  "sourceRevision": "487815534b40d0e3257ec6c4e94d39850b9b82cd",
+  "generation": "c12d27d6c16d444e84265bc0da204921",
+  "containerId": "7c7243835870449e91544b324936d4a66d77e3a36df1e19e1c81a247412eee33",
+  "restartCount": 0,
+  "healthy": true,
+  "mechanism": "existing code-only broker prepare/activate; no Root exception",
+  "serverToServerCapabilityHttpStatus": 200,
+  "recoveryCapabilities": {
+    "exactTargetReconciliationEnabled": true,
+    "isolatedCurrentSessionEnabled": true
+  },
+  "userRecoveryPerformed": false
+}

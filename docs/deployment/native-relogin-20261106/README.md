@@ -67,3 +67,40 @@ refused writes are not published and flight readiness remains degraded. Core
 owner mutations remain guarded. Two new startup tests and the existing projection,
 owner-readiness and recovery suites pass (49 tests); TypeScript check passes.
 Production availability is not established until guarded repair and fresh readback.
+
+## Standard guarded completion and follow-up
+
+The exact initial target later became healthy with historical restartCount14.
+The existing unmodified runtime CLI `recover` completed that same pending target,
+with fresh health/parity/parent/CAS checks, without rollback or recreation. See
+`cop-recovery-receipt.json`. No Root exception, policy edit or one-shot replacement
+was used. The proposed one-shot readonly check correctly rejected a healthy target.
+
+COP→Messaging actual server-only capability request then returned200/both true.
+Public COP routes return application401 without authentication, including all
+three full typed synthetic POST bodies (WAF permits their contract structure).
+See the sanitized negative-path receipts. This is server connectivity evidence,
+not authenticated owner recovery or historical decryption evidence.
+
+The normal broker prepared the startup correction4878155 as
+`release-5173ef88c637434ba8c975029061ed90`, exact sealed image
+`sha256:733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327`.
+A separate preliminary unprivileged build was not deployed; only the broker's
+immutable-source build is eligible. Its fresh activation/readback is recorded
+separately below when completed.
+
+## Final production activation
+
+The normal code-only broker activation completed successfully. COP runs source
+`487815534b40d0e3257ec6c4e94d39850b9b82cd`, sealed image
+`733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327`, release
+`release-5173ef88c637434ba8c975029061ed90`, generation
+`c12d27d6c16d444e84265bc0da204921`. The new actual container is healthy with zero
+restarts. See `cop-final-status.json` and `cop-final-activation.json`.
+Authenticated server-only capability from this final COP instance to Messaging
+returned200 and both recovery flags true. No user, session or crypto was reset.
+
+Jízda owns the signed build84 and its native integration. The phone was unavailable
+at final handoff: installation, fresh same-owner login, actual chat/pusher repair,
+vehicle access and historical decryption are not claimed as physical acceptance.
+No owner recovery request was made by these production probes. No TestFlight upload.

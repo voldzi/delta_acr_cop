@@ -90,3 +90,5 @@ published paths are preserved for integration references.
 - [0061: Application-owned code releases](0061_APPLICATION_OWNED_CODE_RELEASE.md) — limited Root broker, unchanged historical proofs, code-only cases and separate live acceptance.
 
 - [0062: Global vehicle chat admission](0062_GLOBAL_VEHICLE_CHAT_ADMISSION.md) — separate one-time enable authority and persistent membership-based admission.
+
+- [0063 Fresh native session without crypto reset](0063_FRESH_NATIVE_SESSION_WITHOUT_CRYPTO_RESET.md)

@@ -217,3 +217,5 @@ User-selected road arrival: [candidate contract and verification](integration/32
 Exact routing image-pair release/reversion: [operator runbook](runbooks/29_ROUTING_ARRIVAL_IMAGE_PAIR.md), including accepted/pending state evidence and the remaining Root/native acceptance gates.
 
 Native fresh-SSO recovery: [contract, limits, activation and return](integration/messaging-recovery/20261106_CURRENT_SESSION_RECOVERY.md).
+
+Native recovery decision: [ADR0063](adr/0063_FRESH_NATIVE_SESSION_WITHOUT_CRYPTO_RESET.md).

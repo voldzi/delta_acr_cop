@@ -1,0 +1,20 @@
+[
+  {
+    "path": "/api/v1/mobile/host-pushers/reconcile",
+    "httpStatus": 401,
+    "syntheticOnly": true,
+    "applicationAuthenticationReached": true
+  },
+  {
+    "path": "/api/v1/mobile/host-chat-sessions/prepare",
+    "httpStatus": 401,
+    "syntheticOnly": true,
+    "applicationAuthenticationReached": true
+  },
+  {
+    "path": "/api/v1/mobile/host-chat-sessions",
+    "httpStatus": 401,
+    "syntheticOnly": true,
+    "applicationAuthenticationReached": true
+  }
+]
