@@ -1,0 +1,12 @@
+{
+  "contractVersion": "cop-msg-device-delete-authorized-release-v1",
+  "reviewManifestSha256": "1fd9302c44bd78dacaa0925018deb89eecc1eeec162b046e83d6e76ea9308b98",
+  "files": {
+    "install-reviewed-policy.py": "3ced01b6401cf476424c6ca9beb20b9c08cf2baacbc6bd60e9cfe75ff1c442ea",
+    "candidate.conf": "017abc33a384a4448d8b180f5b154720c3d178241a6552d77f58bf68e72f62ad",
+    "deployment-plan.authorized.json": "9f778ac926b543553963365848ff94cff3986874fbce2f57b5d8431d1ce45678"
+  },
+  "createdAtUTC": "2026-11-06T07:26:03.372971+00:00",
+  "targetHost": "dmz",
+  "originalFrozenBundleChanged": false
+}

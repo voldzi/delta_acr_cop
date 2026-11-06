@@ -1,0 +1,50 @@
+{
+  "mode": "apply",
+  "releaseManifestSha256": "e479a5af32927765502fa3b5ca1390a5911ccb5a1ea1a4d0c753e2634c555973",
+  "reviewManifestSha256": "1fd9302c44bd78dacaa0925018deb89eecc1eeec162b046e83d6e76ea9308b98",
+  "remoteHostVerified": "dmz",
+  "commandInvocations": 1,
+  "inputCleanupVerified": true,
+  "baselineBefore": {
+    "/etc/nginx/modsecurity-home-detection.conf": "5e58cfbd7a028f2ac10ac527c078cf1a90249a37e361d04220dc6d416f1d5af7",
+    "/etc/modsecurity/crs/REQUEST-900-HOME-APP-METHODS.conf": "628248017da112b6082193b5f6043a1ddfc704586524c4b79b52ec5a4f852821",
+    "/opt/owasp-crs/coreruleset-4.29.0/crs-setup.conf": "1be495293f7e9e6e5f44da7469dff982397c56c7bf6c333b0f971e6a3bfcd3c2",
+    "/opt/owasp-crs/coreruleset-4.29.0/rules/REQUEST-901-INITIALIZATION.conf": "d91b389e6db96886a9264730199b48484a51c1bf90baecbf9a02ed1381190e46",
+    "/opt/owasp-crs/coreruleset-4.29.0/rules/REQUEST-911-METHOD-ENFORCEMENT.conf": "d14dbe993ef493ae678853cba1ed70091fea15694fde09bdc20240d68cff0d7d",
+    "/etc/nginx/sites-enabled/msg.zeleznalady.cz": "108412be603c63d8856f0ebbf0ca91c8b92015027c6c59d2a1a9109fec69f450"
+  },
+  "exitCode": 0,
+  "operation": {
+    "nativeStagedSyntax": true,
+    "productionConfigWritten": false,
+    "reload": false,
+    "httpRequests": 0,
+    "TLSRoutingCertified": false,
+    "stageCleanupVerified": true,
+    "clonedConfCount": 43,
+    "clonedAssetCount": 22,
+    "clonedBytes": 1050528,
+    "reloadVerified": true,
+    "fileReadbackVerified": true,
+    "healthGET": 200,
+    "DELETERequests": 0,
+    "phase": "complete",
+    "configWritten": true,
+    "writeAttempted": true,
+    "reloadAttempted": true,
+    "configState": "planned_after_on_disk",
+    "runtimeState": "active_and_health_get_passed",
+    "applied": true,
+    "rolledBack": false,
+    "userCleanupClaimed": false
+  },
+  "baselineAfter": {
+    "/etc/nginx/modsecurity-home-detection.conf": "5e58cfbd7a028f2ac10ac527c078cf1a90249a37e361d04220dc6d416f1d5af7",
+    "/etc/modsecurity/crs/REQUEST-900-HOME-APP-METHODS.conf": "1e901910fbacf237ab45fb5347985d48dfee49e3bb6dbe3591e1ca647d085d93",
+    "/opt/owasp-crs/coreruleset-4.29.0/crs-setup.conf": "1be495293f7e9e6e5f44da7469dff982397c56c7bf6c333b0f971e6a3bfcd3c2",
+    "/opt/owasp-crs/coreruleset-4.29.0/rules/REQUEST-901-INITIALIZATION.conf": "d91b389e6db96886a9264730199b48484a51c1bf90baecbf9a02ed1381190e46",
+    "/opt/owasp-crs/coreruleset-4.29.0/rules/REQUEST-911-METHOD-ENFORCEMENT.conf": "d14dbe993ef493ae678853cba1ed70091fea15694fde09bdc20240d68cff0d7d",
+    "/etc/nginx/sites-enabled/msg.zeleznalady.cz": "108412be603c63d8856f0ebbf0ca91c8b92015027c6c59d2a1a9109fec69f450"
+  },
+  "newStageDirectoriesRemaining": 0
+}

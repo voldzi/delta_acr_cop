@@ -1,0 +1,10 @@
+{
+  "test": "one unauthenticated DELETE to a newly generated nonexistent synthetic item ID; no credential or user/device ID used",
+  "curlExitCode": 0,
+  "status": 401,
+  "safeErrorCode": "UNAUTHORIZED",
+  "correlation": "606917ec-ad27-4e1c-9657-120b03f90785",
+  "userRegistrationDeleted": false,
+  "ownerCleanupClaimed": false,
+  "passed": true
+}

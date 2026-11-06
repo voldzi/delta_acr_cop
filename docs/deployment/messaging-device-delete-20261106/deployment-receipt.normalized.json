@@ -1,0 +1,43 @@
+{
+  "contractVersion": "cop-msg-device-delete-deployment-v1",
+  "verifiedAtUTC": "2026-11-06T07:29:30.407516+00:00",
+  "performedBy": "COP agent via existing guest-agent transport; no infrastructure-thread delegation",
+  "userAuthorization": "direct deploy instruction in COP chat 2026-11-06",
+  "rawReceiptSha256": "e2cd667aba431f6c5f073606c996eda279d61bb8f4cc3e0deb1b514038df632e",
+  "releaseManifestSha256": "e479a5af32927765502fa3b5ca1390a5911ccb5a1ea1a4d0c753e2634c555973",
+  "reviewManifestSha256": "1fd9302c44bd78dacaa0925018deb89eecc1eeec162b046e83d6e76ea9308b98",
+  "candidateSha256": "017abc33a384a4448d8b180f5b154720c3d178241a6552d77f58bf68e72f62ad",
+  "changedFiles": [
+    "/etc/modsecurity/crs/REQUEST-900-HOME-APP-METHODS.conf"
+  ],
+  "beforeSha256": "628248017da112b6082193b5f6043a1ddfc704586524c4b79b52ec5a4f852821",
+  "afterSha256": "1e901910fbacf237ab45fb5347985d48dfee49e3bb6dbe3591e1ca647d085d93",
+  "otherFivePinnedConfigsUnchanged": true,
+  "nativeStage": {
+    "passed": true,
+    "confCount": 43,
+    "assetCount": 22,
+    "liveConfigWrittenByStage": false,
+    "reloadByStage": false,
+    "HTTPByStage": 0
+  },
+  "deployment": {
+    "applied": true,
+    "configWritten": true,
+    "reloadAttempted": true,
+    "reloadVerified": true,
+    "fileReadbackVerified": true,
+    "healthGETStatus": 200,
+    "DELETERequests": 0
+  },
+  "cleanup": {
+    "inputs": true,
+    "stage": true,
+    "newStagesRemaining": 0
+  },
+  "backupDirectory": "/var/backups/cop-msg-device-delete-method-v2",
+  "rollbackBeforeSha256": "628248017da112b6082193b5f6043a1ddfc704586524c4b79b52ec5a4f852821",
+  "userRegistrationCleanupClaimed": false,
+  "matrix401FixedClaimed": false,
+  "rawReceiptInterpretation": "Raw apply response also carries stage-only productionConfigWritten=false/reload=false/httpRequests=0 from the nested stage. These do not describe apply: final configWritten/applied/reloadVerified and exact before/after readback prove deployment; normalized receipt separates the two phases."
+}

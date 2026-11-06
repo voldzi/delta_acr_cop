@@ -33,6 +33,9 @@ Pokus o produkční přechod z 12. října, provedený návrat API a neuzavřen�
 akceptační body jsou v [archivovaném provozním dokladu](archive/2026-10-12_COP_SERVICE_AUTH_ROLLOUT.md).
 Odstranění lab přístupu zatím není produkčně dokončené.
 
+Messaging device-removal firewall deployment and native recovery boundary:
+[6 November production evidence](deployment/messaging-device-delete-20261106/README.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
