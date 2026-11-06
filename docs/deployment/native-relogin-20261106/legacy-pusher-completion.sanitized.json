@@ -1,0 +1,43 @@
+{
+  "contractVersion": "messaging-legacy-pusher-readonly-completion-v1",
+  "readOnly": true,
+  "productionChangedByThisVerification": false,
+  "imageId": "sha256:16de758aeb4e1e467dfe1bd8eda8f3462769a3df07f5c419ae044025f06ca810",
+  "sourceRevision": "b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e",
+  "containerId": "5e3a8d51ec820fc929f733ab63f551ceb42f9ffe01c41783d9f6b2c08b6ae497",
+  "healthy": true,
+  "restartCount": 0,
+  "renderDelta": "services.api.image only",
+  "environmentMatchesApprovedRender": true,
+  "originalPinSha256": "4e1bbc93839af435b3cb4f6666c1dea7148313985110a48ed1caa333cf2c9ccd",
+  "currentPinSha256": "fe8745194c6d158b656cb006a2f53bd0c777d91c5cc761e5e62d3eaf71015529",
+  "historicalHostBaselineSha256": "3cbb7542e97dde2ad9945c6f2561a04c4a4ee9ac7846c37bc1f36ec05c18bd2d",
+  "historicalBaselineImage": "sha256:9a69b3f3b318732cfc175207df344c2bb724bbcd488db3383ac14d790e045c05",
+  "historicalPriorSuccessfulReceiptSha256": "7c981d8d4fbba305d4ab393b45995e5d1c263b2dfd509119c0212157cfea7902",
+  "immediateBeforeInspectRetained": false,
+  "hostDifferenceKeysAgainstHistoricalBaseline": [
+    "Binds"
+  ],
+  "exactBindValuesUnchanged": true,
+  "bindOrderOnly": true,
+  "otherHostConfigRawEqualAgainstHistoricalBaseline": true,
+  "mountsRawEqualAfterSortingByDestination": true,
+  "networkIdsEqualToHistoricalBaseline": true,
+  "peerCount": 4,
+  "activePeerCount": 2,
+  "historicalStoppedPeerCount": 2,
+  "peersPredateCandidate": true,
+  "health": {
+    "/health/live": {
+      "httpStatus": 200,
+      "status": "ok"
+    },
+    "/health/ready": {
+      "httpStatus": 200,
+      "status": "ok"
+    }
+  },
+  "originalFailurePreserved": true,
+  "ownerOperationPerformed": false,
+  "limitation": "Immediate pre-switch HostConfig existed only in installer memory. Historical root-held baseline plus prior successful image-only raw-parity receipt and current exact declared render were checked independently; not claimed as fresh before/after raw equality."
+}

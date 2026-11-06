@@ -128,3 +128,42 @@ still pending and must not be inferred from the configuration readback. No
 vehicle, local history, crypto, pending records or registration was reset.
 Rollback is limited to removing this exact new mapper after verifying its
 unchanged name, provider and configuration; preserve all other settings.
+
+## Exact legacy pusher correction and production readback
+
+The subsequent owner attempt passed DeviceRegistry DELETE200, then failed
+reconciliation503. The exact server sequence reached Synapse delegation login,
+whoami, pushers GET and logout (all200), without a pusher mutation. Read-only
+inspection found exactly one owner/application/pushkey target with matching
+operation fingerprint. Its URL was the documented historical own endpoint,
+not the configured canonical endpoint. See `legacy-pusher-investigation.sanitized.json`.
+
+Messaging `b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e` permits that exact historical
+URL pair only for existing-target cleanup. No host-only matching, normalization,
+query, fragment, redirect or arbitrary gateway is accepted. New registrations
+remain canonical. All27 focused transport/owner/registry/session/paired tests
+pass, including wrong gateway/configuration, duplicate targets, mandatory absence
+readback and delegation logout. No owner cleanup was performed by diagnostics.
+
+The actual production image is
+`16de758aeb4e1e467dfe1bd8eda8f3462769a3df07f5c419ae044025f06ca810`.
+The compiled helper/literals were checked in the actual running image; both
+capabilities and live/ready checks return200, with zero restarts. Only the
+application image changed; existing environment, flags, mounts and networks
+remain as declared. The previous image and exact original pin remain available.
+
+The installer originally returned `MESSAGING_HOST_CONFIG_CHANGED` after switching
+the image because raw `HostConfig.Binds` order changed. This failure is preserved,
+not rewritten as a successful installer result. A separate read-only completion
+check compared the protected historical baseline and prior successful raw-parity
+receipt, the exact original pin render, and current runtime. It found only ordering
+of the same three unique, non-overlapping bind strings; all other HostConfig keys,
+sorted actual mounts and network IDs matched that baseline. Two active and two
+historical stopped peer containers predate this candidate. The immediate
+pre-switch inspect existed only in installer memory, so this evidence is explicitly
+not described as fresh before/after raw equality. See
+`legacy-pusher-completion.sanitized.json` and `legacy-pusher-readonly-verification.py`.
+
+Owner recovery on the phone still requires the explicit pending-operation retry
+coordinated by Jízda. Healthy deployment and read-only capabilities alone do not
+prove chat restoration, historical decryption or notification delivery.

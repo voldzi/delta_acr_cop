@@ -1,0 +1,51 @@
+{
+  "contractVersion": "cop-messaging-legacy-pusher-investigation-v1",
+  "windowStart": "2026-11-06T16:32:45Z",
+  "windowEnd": "2026-11-06T16:34:15Z",
+  "deviceDelete": {
+    "httpStatus": 200,
+    "requestId": "837a50b3-b2e7-4a1a-a3df-7fae0554821e",
+    "time": "2026-11-06T16:32:58.434711631Z"
+  },
+  "copReconcile": {
+    "httpStatus": 503,
+    "requestId": "req-5l8",
+    "time": "2026-11-06T16:33:36.833Z"
+  },
+  "messagingReconcile": {
+    "httpStatus": 503,
+    "requestId": "GOWB3XuqVhFqoaEAAMZB",
+    "durationMs": 1987
+  },
+  "synapseObservedSequence": [
+    "device_less_delegation_login_200",
+    "whoami_200",
+    "pushers_get_200",
+    "logout_200"
+  ],
+  "pusherSetObserved": false,
+  "readOnlyTargetMetadata": {
+    "pendingRegistrationCount": 1,
+    "identityMatchCount": 1,
+    "pushersListValid": true,
+    "totalPusherCount": 1,
+    "exactTargetMatchCount": 1,
+    "kindHttp": true,
+    "dataMap": true,
+    "targetFingerprintMatches": true,
+    "configuredGatewayClass": "documented_public_gateway",
+    "observedGatewayClass": "legacy_public_gateway",
+    "gatewayMatches": false
+  },
+  "cause": "Exact existing target retained a documented historical own-service gateway URL; canonical-only cleanup guard rejected it.",
+  "isolatedTestsPassed": 27,
+  "sourceRevision": "b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e",
+  "patchSha256": "bc694fa13272df5449d68813d811323dc7ed7190586711681105e062e9f594f5",
+  "ownerRecoveryAcceptance": "pending_explicit_native_retry",
+  "ownerOperationPerformedByDiagnostic": false,
+  "originalInstallerResult": {
+    "deployed": false,
+    "code": "MESSAGING_HOST_CONFIG_CHANGED",
+    "automaticRollback": false
+  }
+}
