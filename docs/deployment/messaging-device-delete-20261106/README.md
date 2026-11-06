@@ -64,6 +64,7 @@ or configuration. [Source/test handoff](native-recovery-handoff.json) records
 actual source hashes and the test-log digest. The completed/prepared/resumable
 journal semantics remain preserved. Debug, Release and signed iPhone application builds also passed (their log
 digests are in the handoff). Owner-phone acceptance remains separate: build 83
-was prepared, but the owner recovery outcome is not asserted by these tests or
-builds. The first phone step is read-only route/lookup/original-pair diagnostics;
+was installed over the existing app and its version independently read back by
+Jízda. The iPhone locked before launch; no build-83 read-only probe or owner
+recovery was performed. Unlocking the owner phone is the remaining input. The first phone step is read-only route/lookup/original-pair diagnostics;
 no cleanup retry is allowed without the exact prerequisites.

@@ -31,5 +31,15 @@
       "passed": true,
       "logSHA256": "2240d7981ce3b50617a0604a903f30d38d4b6a962674440c31a42a82ed89d8b8"
     }
+  },
+  "finalJizdaSourceManifestSHA256": "76351e0c7d310e68a6c01f35c958b84c001c226996c0faa2061ad44a2b966c0f",
+  "phoneInstallation": {
+    "version": "1.2",
+    "build": "83",
+    "overinstallReportedByJizda": true,
+    "independentVersionReadbackReportedByJizda": true,
+    "applicationLaunchVerified": false,
+    "readOnlyProbeExecuted": false,
+    "blockingCondition": "Owner iPhone locked before application launch; owner must unlock it. No cleanup or reset performed."
   }
 }
