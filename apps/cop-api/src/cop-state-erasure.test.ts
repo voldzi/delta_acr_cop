@@ -270,14 +270,20 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     expect(f.state.trackHistory.get(id)![1]!.lat).toBe(51);
   });
 
-  it("checks detached serialized content before giving it an immutable admission", async () => {
-    const f = fixture(); f.options.cachedGuard.version = () => 1; await f.port.init();
-    f.port.fence(actor);
-    let serializations = 0;
+  it.each([undefined, 1])("checks actual serialized content with guard version %s", async version => {
+    const f = fixture(); if (version !== undefined) f.options.cachedGuard.version = () => version;
+    await f.port.init(); f.port.fence(actor);
     const original = object(other.subjectId);
+    let serializations = 0;
     const changing = { ...original, toJSON() { return { ...original, note: ++serializations === 1 ? "safe" : actor.subjectId }; } };
-    expect(() => f.state.objects.set(original.objectId, changing)).toThrow("FENCED");
-    expect(f.state.objects.has(original.objectId)).toBe(false);
+    f.state.objects.set(original.objectId, changing);
+    expect(serializations).toBe(1);
+    expect(f.state.objects.get(original.objectId)).toMatchObject({ note: "safe" });
+    const forbidden = { ...original, toJSON() { return { ...original, note: actor.subjectId }; } };
+    expect(() => f.state.objects.set(original.objectId, forbidden)).toThrow("FENCED");
+    expect(f.state.objects.get(original.objectId)).toMatchObject({ note: "safe" });
+    expect(await f.port.erase({ reportIds: [], groupIds: [] }, context())).toBe(true);
+    expect(f.state.objects.get(original.objectId)).toMatchObject({ note: "safe" });
   });
 
   it("does not publish a reused prefix if the epoch changes during suffix admission", async () => {
@@ -355,4 +361,19 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     expect(f.state.trackHistory.has(id)).toBe(false);
     expect(f.state.trackHistory.get(keepId)).toHaveLength(1);
   });
+  it.each([undefined, 1])("resolves replacement ownership from the actual serialized ID with version %s", async version => {
+    const f = fixture(); if (version !== undefined) f.options.cachedGuard.version = () => version;
+    await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => f.state.trackHistory.set(id, [point]));
+    const replacement = { ...point, eventId: randomUUID(), lat: 51 };
+    const input = { ...point, toJSON() { return replacement; } };
+    runWithVerifiedProjectionOwner(actor, () => f.state.trackHistory.set(id, [input]));
+    expect(f.state.trackHistory.get(id)![0]!.eventId).toBe(replacement.eventId);
+    expect(await f.port.erase({ reportIds: [], groupIds: [] }, context())).toBe(true);
+    expect(f.state.trackHistory.has(id)).toBe(false);
+  });
+
 });

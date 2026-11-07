@@ -22,7 +22,10 @@ own detached, frozen history array with a matching durable epoch and local fence
 generation. The real lease and explicit owner are still checked. A suffix is
 validated normally, including stable-ID ownership inheritance; a changed epoch,
 fence or expired lease forces complete current validation before publication.
-Detached serialized content is itself validated before receiving an admission.
+Each new point is detached once; ownership lookup uses that actual normalized
+point ID and the real guard validates its published contents in both versioned
+and unversioned modes. Stable epochs avoid a redundant whole-array scan after
+all individual points passed. Without an epoch, no reusable admission is created.
 Mutable, shallow-frozen or equal-looking replacement inputs do not borrow it.
 
 Flight ingestion yields to the real event loop after8ms or32 records. After each

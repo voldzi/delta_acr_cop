@@ -143,8 +143,7 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     if (context.explicit || field === "idempotency" || field === "auditEvents" || actorMention(value, context.owner)) return context.owner;
     return undefined;
   };
-  const snapshot = (value: unknown, field: Field, prior?: unknown): unknown => {
-    const owner = initialBinding ? undefined : chooseOwner(value, field, prior);
+  const snapshot = (value: unknown, field: Field, prior?: unknown, resolvePrior?: (actual: unknown) => unknown): unknown => {
     const generation = options.cachedGuard.version?.(), fences = localFenceGeneration;
     const rememberAdmission = (result: object): void => {
       if (!initialBinding && generation !== undefined && generation === options.cachedGuard.version?.() &&
@@ -152,11 +151,13 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
         immutableAdmissions.set(result, { generation, fences });
     };
     if (field === "trackHistory" && Array.isArray(value)) {
+      const owner = initialBinding ? undefined : chooseOwner([], field, prior);
       const length = value.length;
       if (length > 100000) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
       // Only the exact detached/frozen prior array may lend its admission to an
       // unchanged contiguous prefix. Mutable/equal-looking inputs take the full
       // path. Lease, owner, epoch and local erasure fences remain live checks.
+      const priorArray = Array.isArray(prior) ? prior : undefined;
       const admission = prior && typeof prior === "object" ? immutableAdmissions.get(prior) : undefined;
       const offset = Array.isArray(prior) && length > 0 ? prior.indexOf(value[0]) : -1;
       const shared = offset >= 0 && Array.isArray(prior) ? Math.min(prior.length - offset, length) : 0;
@@ -164,17 +165,18 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
       for (let i = 0; i < shared; i++) prefix.push(value[i]);
       if (!initialBinding && shared > 0 && Array.isArray(prior) && owners.has(prior) && Object.isFrozen(prior) &&
           generation !== undefined && admission?.generation === generation && admission.fences === fences &&
-          options.cachedGuard.ready() && prefix.every((point, i) => point === prior[offset + i])) {
+          options.cachedGuard.ready() && prefix.every((point, i) => point === priorArray![offset + i])) {
         assertWrite(prior, owner);
         const result = [...prefix];
         for (let j = shared; j < length; j++) {
           const point = value[j];
           // Preserve the old last-by-stable-ID ownership rule for replacements
           // in the suffix as well; an equal ID never adopts the current actor.
-          const id = stableId(point);
-          let previous: unknown;
-          for (let i = prior.length - 1; i >= 0; i--) if (stableId(prior[i]) === id) { previous = prior[i]; break; }
-          result.push(snapshot(point, field, previous));
+          result.push(snapshot(point, field, undefined, actual => {
+            const id = stableId(actual);
+            for (let i = priorArray!.length - 1; i >= 0; i--) if (stableId(priorArray![i]) === id) return priorArray![i];
+            return undefined;
+          }));
         }
         // A changed epoch/lease while validating the suffix cannot publish an
         // admission borrowed from the old prefix.
@@ -189,22 +191,26 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
       const result: unknown[] = [];
       for (let i = 0; i < length; i++) {
         const point = value[i];
-        result.push(snapshot(point, field, previous.get(stableId(point))));
+        result.push(snapshot(point, field, undefined, actual => previous.get(stableId(actual))));
       }
-      if (generation !== undefined) assertWrite(result, owner);
-      Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
+      const actualOwner = initialBinding ? undefined : chooseOwner(result, field, prior);
+      if (generation !== options.cachedGuard.version?.() || fences !== localFenceGeneration || !options.cachedGuard.ready())
+        assertWrite(result, actualOwner);
+      else assertWrite([], actualOwner);
+      Object.freeze(result); owners.set(result, actualOwner ? { ...actualOwner } : undefined);
       // Every point above passed the actual admission under this same epoch.
       rememberAdmission(result);
       return result;
     }
-    assertWrite(value, owner);
-    if (value && typeof value === "object" && owners.has(value) && Object.isFrozen(value)) return value;
-    const result = deepFreeze(clonePlain(value));
-    // A reusable epoch witness must validate the detached representation too:
-    // serialization hooks cannot lend authority to different published content.
-    // Without an epoch, keep the original full-check-on-every-use path; no
-    // immutable witness is created and no redundant aggregate scan is needed.
-    if (generation !== undefined) assertWrite(result, owner);
+    // Normalize once, then bind ownership and check exactly the content that
+    // will be published. Hooks/getters cannot change the ID between lookup and
+    // admission; this applies equally to guards without an epoch API.
+    const known = value && typeof value === "object" && owners.has(value) && Object.isFrozen(value);
+    const result = known ? value : deepFreeze(clonePlain(value));
+    if (resolvePrior) prior = resolvePrior(result);
+    const owner = initialBinding ? undefined : chooseOwner(result, field, prior);
+    assertWrite(result, owner);
+    if (known) return result;
     if (result && typeof result === "object") {
       owners.set(result, owner ? { ...owner } : undefined);
       rememberAdmission(result);
@@ -212,11 +218,11 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     if (field === "domainDeadLetters" && result && typeof result === "object") {
       const existing = prior && typeof prior === "object" ? prior : value && typeof value === "object" ? value : undefined;
       const previousResolver = existing ? resolverOwners.get(existing) : undefined;
-      if (previousResolver && rec(existing).resolvedBy === rec(value).resolvedBy) resolverOwners.set(result, previousResolver);
+      if (previousResolver && rec(existing).resolvedBy === rec(result).resolvedBy) resolverOwners.set(result, previousResolver);
       else {
         const current = actorContext.getStore()?.owner;
         // Existing unknown history never acquires a resolver witness on renewal.
-        if (!initialBinding && current && current.issuer === options.issuer && rec(value).resolvedBy === current.subjectId && rec(existing).resolvedBy === undefined) resolverOwners.set(result, { ...current });
+        if (!initialBinding && current && current.issuer === options.issuer && rec(result).resolvedBy === current.subjectId && rec(existing).resolvedBy === undefined) resolverOwners.set(result, { ...current });
       }
     }
     return result;
