@@ -1,0 +1,32 @@
+{
+  "contractVersion": "cop-api-pressure-cold-profile-v1",
+  "sourceRevision": "487815534b40d0e3257ec6c4e94d39850b9b82cd",
+  "imageId": "sha256:733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327",
+  "sampleDurationMs": 12408,
+  "samples": 5743,
+  "functionInclusiveMs": {
+    "idle": 9799,
+    "performFlightDataRefresh": 909,
+    "acceptEvent": 794,
+    "appendTrackHistory": 598,
+    "copStateSnapshot": 596,
+    "rawAssertWrite": 577,
+    "runtimeOwnerHash": 232,
+    "garbageCollector": 378
+  },
+  "samplerExitCode": 0,
+  "cleanupFallbackExitCode": 0,
+  "sameTargetPidAlive": true,
+  "kernelInspectorListenerAbsent": true,
+  "publicInspectorPort": false,
+  "applicationEnvUnchanged": true,
+  "postSampleHealth": {
+    "live": 200,
+    "ready": 200,
+    "dockerHealth": "healthy",
+    "restarts": 0
+  },
+  "rawProfileRetained": false,
+  "heapScopesPayloadOrSourceRead": false,
+  "limitations": "One cold baseline after restart, including one public read-only source-health request. Inclusive sample times overlap; do not sum them or claim attribution of the prior26-hour hot process."
+}

@@ -7,6 +7,7 @@ import type { AccountErasureContinuity } from "./account-erasure-continuity.js";
 import { MemoryMobilityStore } from "./mobility-store.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
 import { withEventProvenance } from "./provenance.js";
+import { AiContextIndex } from "./ai-context-index.js";
 
 const instant = Date.parse("2026-10-29T12:00:00Z");
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
@@ -49,8 +50,10 @@ async function fixture(failAfterSlowRead: false | "outage" | "advanced" = false,
     append: vi.fn(async () => { throw new Error("Unexpected DB write in hydration test"); }),
     upsertCurrent: vi.fn(async () => { throw new Error("Unexpected DB write in hydration test"); }),
     loadProjectionFences: async () => ({ resources: [], ownerHashes: [], subjectHashes: [], version: "synthetic-empty-frontier" }), projectionErasureReady: async () => true };
+  const published = vi.spyOn(AiContextIndex.prototype, "replaceDocuments");
   const app = buildServer({ accountErasure: service, trackHistoryStore: history, now });
-  return { app, service, history, objects, observations, advance: () => { clock += 5001; } };
+  const warmupWarning = vi.spyOn(app.log, "warn");
+  return { app, service, history, objects, observations, published, warmupWarning, advance: () => { clock += 5001; } };
 }
 
 describe("cold startup with durable erasure observation and slow track hydration", () => {
@@ -79,15 +82,26 @@ describe("cold startup with durable erasure observation and slow track hydration
   it("does not adopt an advanced durable frontier after the slow read", async () => {
     const f = await fixture("advanced");
     try {
-      await expect(f.app.ready()).rejects.toMatchObject({ status: 503 });
-      expect(f.service.cachedGuardReady()).toBe(false);
+      // Optional index warmup is asynchronous in the deployed startup contract;
+      // API readiness must not be confused with a positive durable admission.
+      await f.app.ready();
+      await vi.waitFor(() => expect(f.history.query).toHaveBeenCalled());
+      await vi.waitFor(() => expect(f.warmupWarning).toHaveBeenCalledWith(expect.objectContaining({ component: "ai-context-index" }), expect.any(String)));
+      await vi.waitFor(() => expect(f.service.cachedGuardReady()).toBe(false));
+      expect(f.published).not.toHaveBeenCalled();
+      await expect(f.service.refreshCachedGuard()).rejects.toMatchObject({ status: 503 });
       expect(f.history.upsertCurrent).not.toHaveBeenCalled(); expect(f.history.append).not.toHaveBeenCalled();
     } finally { await f.app.close(); }
   });
-  it("keeps startup closed if durable admission is unavailable after the slow read", async () => {
+  it("keeps durable admission closed if optional warmup loses its observation after the slow read", async () => {
     const f = await fixture("outage");
     try {
-      await expect(f.app.ready()).rejects.toMatchObject({ status: 503 });
+      await f.app.ready();
+      await vi.waitFor(() => expect(f.history.query).toHaveBeenCalled());
+      await vi.waitFor(() => expect(f.warmupWarning).toHaveBeenCalledWith(expect.objectContaining({ component: "ai-context-index" }), expect.any(String)));
+      await vi.waitFor(() => expect(f.service.cachedGuardReady()).toBe(false));
+      expect(f.published).not.toHaveBeenCalled();
+      await expect(f.service.refreshCachedGuard()).rejects.toMatchObject({ status: 503 });
       expect(f.history.upsertCurrent).not.toHaveBeenCalled(); expect(f.history.append).not.toHaveBeenCalled();
     } finally { await f.app.close(); }
   });

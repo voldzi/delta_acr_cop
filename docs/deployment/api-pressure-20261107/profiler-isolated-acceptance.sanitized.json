@@ -1,0 +1,144 @@
+{
+  "contractVersion": "cop-bounded-profiler-isolated-acceptance-v1",
+  "recordedAt": "2026-11-07T14:20:04.867028+00:00",
+  "files": {
+    "sampler": {
+      "path": "/private/tmp/cop-cpu-function-sample-safe-v4.mjs",
+      "sha256": "1add11d98fdcdc038e0abab7bc45bacfc37a5fdb3f02cdfae14b96d410c53b51"
+    },
+    "productionWrapper": {
+      "path": "/private/tmp/cop-cpu-profile-production-v5.py",
+      "sha256": "f36cf1f87288b4a52f31c18817797842dd8fe3450250defc68dd668975411b91"
+    },
+    "isolatedFixtures": {
+      "path": "/private/tmp/cop-cpu-profile-fixtures-v5.py",
+      "sha256": "a554016d3faf3bbcda246f7b7c14ce7d9bc294a3e87cc41870f1e8f8dbeb2805"
+    }
+  },
+  "productionChangedByTheseTests": false,
+  "caseCount": 8,
+  "allAssertionsPassed": true,
+  "cases": [
+    {
+      "case": "none",
+      "firstExitCode": 0,
+      "samplePassed": true,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "connect",
+      "firstExitCode": 2,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "start",
+      "firstExitCode": 2,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "stop",
+      "firstExitCode": 2,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "cleanup",
+      "firstExitCode": 0,
+      "samplePassed": true,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "watchdog",
+      "firstExitCode": 3,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "outer_timeout",
+      "firstExitCode": null,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": true,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": true,
+      "exactHelperTerminationReadback": true,
+      "unknownReadPreservedAsFailure": null
+    },
+    {
+      "case": "proc_unknown",
+      "firstExitCode": 0,
+      "samplePassed": false,
+      "sameTargetPidAlive": true,
+      "applicationEnvUnchanged": true,
+      "wrapperProvedListenerAbsent": false,
+      "actualKernelListenerAbsentOutsideInjectedFault": true,
+      "signalAttempted": false,
+      "isolatedTarget": true,
+      "outerTimeout": false,
+      "exactHelperTerminationReadback": null,
+      "unknownReadPreservedAsFailure": true
+    }
+  ],
+  "unitTests": {
+    "realSubprocessTimeoutExpiredListenersReturnsUnknown": true,
+    "realSubprocessTimeoutExpiredHelperProbeReturnsUnknown": true,
+    "helperReadExitOneReturnsUnknown": true
+  },
+  "productionSignalBranchExecutionTested": false,
+  "productionSignalBranchSourceReviewed": true,
+  "scope": "Isolated same-runtime fixtures only: network none, no volumes/secrets/public ports. Every created fixture removed. No heap, scope, payload or source export. Positive case12 seconds; negative cases fail sampling; proc_unknown remains unproven even when independent kernel read after fault injection is clear.",
+  "limitation": "This is an assertion summary of observed stdout, not a raw transcript or production CPU profile."
+}

@@ -1,0 +1,11 @@
+{
+  "contractVersion": "cop-pressure-baseline-test-comparison-v1",
+  "baselineSource": "e5b18fe (runtime code4878155)",
+  "originalFailures": [
+    "projection-startup-continuity: does not adopt an advanced durable frontier after the slow read",
+    "projection-startup-continuity: keeps startup closed if durable admission is unavailable after the slow read"
+  ],
+  "sameFailureOnUnmodifiedBaseline": true,
+  "rootCauseOfTestMismatch": "Previously deployed optional AI warmup runs asynchronously; app.ready resolves instead of rejecting. Vitest formatting of the resolved Fastify value throws family TypeError.",
+  "updatedAssertions": "Await actual slow history.query and rejected warmup warning, require cache unready, assert direct refreshCachedGuard503, no index publication and no history writes. No production guard changed by this test correction."
+}

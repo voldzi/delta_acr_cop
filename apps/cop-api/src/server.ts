@@ -54,6 +54,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
 import underPressure from "@fastify/under-pressure";
+import { forEachCooperatively } from "./cooperative-batch.js";
 import websocket from "@fastify/websocket";
 import { AiGateway, type AiCopQuery, type AiCopResponse, type AiModelPreference } from "@cop/ai-gateway";
 import {
@@ -2651,17 +2652,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         withFlightDataHealth(activeFlightDataSourceSystem(), result.health)
       );
       const acceptedObjects: ObservedObject[] = [];
-      for (let offset = 0; offset < result.events.length; offset += 1) {
-        if (offset % 128 === 0) await accountErasure?.refreshCachedGuard();
-        if (flightDataClosing) return;
-        const event = result.events[offset]!;
+      const completed = await forEachCooperatively(result.events, event => {
         if (state.events.has(event.eventId)) {
-          continue;
+          return;
         }
         const accepted = acceptEvent(state, event);
         queueTrackPersistence(accepted.object, accepted.accepted, accepted.historyPoint);
         acceptedObjects.push(accepted.object);
-      }
+      }, { checkpoint: async () => { await accountErasure?.refreshCachedGuard(); }, cancelled: () => flightDataClosing });
+      if (!completed) return;
       if (acceptedObjects.length > 0) {
         await publishCurrentTracks(acceptedObjects);
       }

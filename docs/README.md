@@ -39,6 +39,9 @@ Existing app-pusher recovery after confirmed `routeAbsent`:
 Messaging device-removal firewall deployment and native recovery boundary:
 [6 November production evidence](deployment/messaging-device-delete-20261106/README.md).
 
+COP event-loop pressure, guarded history reuse and release acceptance:
+[7 November performance evidence](deployment/api-pressure-20261107/README.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

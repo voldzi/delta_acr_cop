@@ -145,15 +145,65 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
   };
   const snapshot = (value: unknown, field: Field, prior?: unknown): unknown => {
     const owner = initialBinding ? undefined : chooseOwner(value, field, prior);
+    const generation = options.cachedGuard.version?.(), fences = localFenceGeneration;
+    const rememberAdmission = (result: object): void => {
+      if (!initialBinding && generation !== undefined && generation === options.cachedGuard.version?.() &&
+          fences === localFenceGeneration && options.cachedGuard.ready())
+        immutableAdmissions.set(result, { generation, fences });
+    };
     if (field === "trackHistory" && Array.isArray(value)) {
-      const previous = new Map((Array.isArray(prior) ? prior : []).map(point => [stableId(point), point]));
-      const result = value.map(point => snapshot(point, field, previous.get(stableId(point))));
-      Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined); return result;
+      const length = value.length;
+      if (length > 100000) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+      // Only the exact detached/frozen prior array may lend its admission to an
+      // unchanged contiguous prefix. Mutable/equal-looking inputs take the full
+      // path. Lease, owner, epoch and local erasure fences remain live checks.
+      const admission = prior && typeof prior === "object" ? immutableAdmissions.get(prior) : undefined;
+      const offset = Array.isArray(prior) && length > 0 ? prior.indexOf(value[0]) : -1;
+      const shared = offset >= 0 && Array.isArray(prior) ? Math.min(prior.length - offset, length) : 0;
+      const prefix: unknown[] = [];
+      for (let i = 0; i < shared; i++) prefix.push(value[i]);
+      if (!initialBinding && shared > 0 && Array.isArray(prior) && owners.has(prior) && Object.isFrozen(prior) &&
+          generation !== undefined && admission?.generation === generation && admission.fences === fences &&
+          options.cachedGuard.ready() && prefix.every((point, i) => point === prior[offset + i])) {
+        assertWrite(prior, owner);
+        const result = [...prefix];
+        for (let j = shared; j < length; j++) {
+          const point = value[j];
+          // Preserve the old last-by-stable-ID ownership rule for replacements
+          // in the suffix as well; an equal ID never adopts the current actor.
+          const id = stableId(point);
+          let previous: unknown;
+          for (let i = prior.length - 1; i >= 0; i--) if (stableId(prior[i]) === id) { previous = prior[i]; break; }
+          result.push(snapshot(point, field, previous));
+        }
+        // A changed epoch/lease while validating the suffix cannot publish an
+        // admission borrowed from the old prefix.
+        if (generation !== options.cachedGuard.version?.() || fences !== localFenceGeneration || !options.cachedGuard.ready())
+          assertWrite(result, owner);
+        Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
+        rememberAdmission(result);
+        return result;
+      }
+      const previous = new Map<string | undefined, unknown>();
+      if (Array.isArray(prior)) for (const point of prior) previous.set(stableId(point), point);
+      const result: unknown[] = [];
+      for (let i = 0; i < length; i++) result.push(snapshot(value[i], field, previous.get(stableId(value[i]))));
+      assertWrite(result, owner);
+      Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
+      // Every point above passed the actual admission under this same epoch.
+      rememberAdmission(result);
+      return result;
     }
     assertWrite(value, owner);
     if (value && typeof value === "object" && owners.has(value) && Object.isFrozen(value)) return value;
     const result = deepFreeze(clonePlain(value));
-    if (result && typeof result === "object") owners.set(result, owner ? { ...owner } : undefined);
+    // Validate the detached representation too: serialization hooks must not
+    // turn an input admission into authority for different published content.
+    assertWrite(result, owner);
+    if (result && typeof result === "object") {
+      owners.set(result, owner ? { ...owner } : undefined);
+      rememberAdmission(result);
+    }
     if (field === "domainDeadLetters" && result && typeof result === "object") {
       const existing = prior && typeof prior === "object" ? prior : value && typeof value === "object" ? value : undefined;
       const previousResolver = existing ? resolverOwners.get(existing) : undefined;

@@ -173,3 +173,10 @@ from authenticated client and physical two-device acceptance.
 Invitation alert diagnostics use aggregate delivery/queue state only. Do not log
 notification payloads, account identity, emails, APNs tokens or provider errors.
 Record separate intake acceptance, APNs result and physical phone acceptance.
+
+For API overload, distinguish actual `FST_UNDER_PRESSURE` request failures from
+liveness/readiness. Record exact source/image, event-loop workload and aggregate
+CPU/RSS; never export heap/scopes or request content for profiling. Guarded flight
+ingestion yields after8ms/32 records and revalidates the actual frontier after
+each yield. Local scale tests and a cold profile do not establish sustained hot
+capacity; see [7 November evidence](deployment/api-pressure-20261107/README.md).

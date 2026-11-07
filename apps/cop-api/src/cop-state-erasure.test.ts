@@ -6,6 +6,7 @@ import { runtimeOwnerHash, runtimeSubjectHash } from "./runtime-owner-erasure.js
 import type { ProjectionFenceSnapshot, ProjectionStateOwner } from "./resource-projection-erasure.js";
 import type { ObservedObject } from "@cop/canonical-model";
 import { ContentErasureStoreError } from "./content-erasure.js";
+import { forEachCooperatively } from "./cooperative-batch.js";
 
 const actor = { issuer: "https://identity.synthetic.test/realms/cop", subjectId: "synthetic-state-owner" };
 const other = { ...actor, subjectId: "synthetic-state-other" };
@@ -234,5 +235,102 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     f.state.trackHistory.set(id, [...existing.slice(1), { ...point, eventId: randomUUID() }]);
     expect(f.state.trackHistory.get(id)).toHaveLength(5000);
     expect(f.state.trackHistory.get(id)![0]).toBe(existing[1]);
+  });
+
+  it("reuses only exact immutable history under a live lease and invalidates at epoch/fence changes", async () => {
+    const f = fixture(); let generation = 1, lease = true;
+    f.options.cachedGuard.version = () => generation; f.options.cachedGuard.ready = () => lease;
+    await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => f.state.trackHistory.set(id, [point]));
+    const prior = f.state.trackHistory.get(id)!;
+    f.state.trackHistory.set(id, [...prior, { ...point, eventId: randomUUID() }]);
+    expect(f.state.trackHistory.get(id)![0]).toBe(prior[0]);
+    lease = false;
+    expect(() => f.state.trackHistory.set(id, [...f.state.trackHistory.get(id)!])).toThrow("UNAVAILABLE");
+    lease = true; generation++; f.revoked.add(runtimeOwnerHash(other));
+    expect(() => f.state.trackHistory.set(id, [...f.state.trackHistory.get(id)!])).toThrow("CACHED_ACCOUNT_FENCE");
+    f.revoked.clear(); generation++;
+    f.port.fence(actor, { reportIds: [id], groupIds: [] });
+    expect(() => f.state.trackHistory.set(id, [...prior])).toThrow("FENCED");
+  });
+
+  it("preserves prior point ownership for a stable-ID replacement in an appended suffix", async () => {
+    const f = fixture(); f.options.cachedGuard.version = () => 1; await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => f.state.trackHistory.set(id, [point]));
+    const prior = f.state.trackHistory.get(id)!;
+    runWithVerifiedProjectionOwner(actor, () => f.state.trackHistory.set(id, [...prior, { ...point, lat: 51 }]));
+    expect(await f.port.erase({ reportIds: [], groupIds: [] }, context())).toBe(true);
+    expect(f.state.trackHistory.get(id)).toHaveLength(2);
+    expect(f.state.trackHistory.get(id)![1]!.lat).toBe(51);
+  });
+
+  it("checks detached serialized content before giving it an immutable admission", async () => {
+    const f = fixture(); f.options.cachedGuard.version = () => 1; await f.port.init();
+    f.port.fence(actor);
+    let serializations = 0;
+    const original = object(other.subjectId);
+    const changing = { ...original, toJSON() { return { ...original, note: ++serializations === 1 ? "safe" : actor.subjectId }; } };
+    expect(() => f.state.objects.set(original.objectId, changing)).toThrow("FENCED");
+    expect(f.state.objects.has(original.objectId)).toBe(false);
+  });
+
+  it("does not publish a reused prefix if the epoch changes during suffix admission", async () => {
+    const f = fixture(); let generation = 1, switchEpoch = false;
+    f.options.cachedGuard.version = () => generation;
+    const check = f.options.cachedGuard.assertActorAllowed;
+    f.options.cachedGuard.assertActorAllowed = owner => {
+      if (switchEpoch && owner.subjectId === "synthetic-epoch-switch") {
+        switchEpoch = false; generation++; f.revoked.add(runtimeOwnerHash(other));
+      }
+      check(owner);
+    };
+    await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => f.state.trackHistory.set(id, [point]));
+    const prior = f.state.trackHistory.get(id)!;
+    switchEpoch = true;
+    expect(() => f.state.trackHistory.set(id, [...prior, { ...point, eventId: randomUUID(), sourceSystemId: "synthetic-epoch-switch" }])).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(f.state.trackHistory.get(id)).toBe(prior);
+  });
+
+  it("does not lend an old history witness to a shallow-frozen replacement", async () => {
+    const f = fixture(); f.options.cachedGuard.version = () => 1; await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    f.state.trackHistory.set(id, [point]);
+    const prior = f.state.trackHistory.get(id)!;
+    f.port.fence(actor);
+    const nested = { note: actor.subjectId };
+    const replacement = Object.freeze({ ...point, eventId: randomUUID(), nested });
+    expect(() => { f.state.trackHistory = new Map([[id, [replacement]]]); }).toThrow("FENCED");
+    expect(f.state.trackHistory.get(id)).toBe(prior);
+  });
+
+  it("reads a concurrently replaced history after a producer yields instead of resurrecting its old prefix", async () => {
+    const f = fixture(); let generation = 1;
+    f.options.cachedGuard.version = () => generation; await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    const replacement = { ...point, eventId: randomUUID(), lat: 51 };
+    const events = Array.from({ length: 64 }, () => ({ ...point, eventId: randomUUID() }));
+    let yielded = false;
+    expect(await forEachCooperatively(events, event => {
+      f.state.trackHistory.set(id, [...(f.state.trackHistory.get(id) ?? []), event]);
+    }, { checkpoint: async () => {}, cancelled: () => false, clock: () => 0,
+      yieldToLoop: async () => {
+        if (!yielded) { yielded = true; generation++; f.state.trackHistory.set(id, [replacement]); }
+      }
+    })).toBe(true);
+    expect(f.state.trackHistory.get(id)!.map(p => p.eventId)).toEqual([replacement.eventId, ...events.slice(32).map(p => p.eventId)]);
   });
 });

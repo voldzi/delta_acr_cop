@@ -1,0 +1,21 @@
+{
+  "contractVersion": "cop-pressure-synthetic-history-scale-v1",
+  "fixture": "Same source guard, fixed generation, true lease, synthetic points only;100 append/rolling updates",
+  "beforeMs": {
+    "100": 13,
+    "1000": 57,
+    "5000": 258
+  },
+  "afterMs": {
+    "100": 8,
+    "1000": 9,
+    "5000": 32
+  },
+  "guardCallCountsBeforeAndAfter": {
+    "100": 216,
+    "1000": 1116,
+    "5000": 5116
+  },
+  "host": "Mac Node24.22.0",
+  "limitation": "Timing evidence, not a hard latency assertion or proof of sustained production capacity."
+}
