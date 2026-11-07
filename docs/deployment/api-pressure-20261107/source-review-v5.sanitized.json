@@ -1,0 +1,24 @@
+{
+  "sourceRevision": "0ee4363fb936c9f3144f489cfe1c45f6c0ff7538",
+  "base": "e5b18fe3eb8c12585df2c2eca5c7e126785eff9a",
+  "patchSha256": "9e59516110f174c4bc5d0f81dd687fba1859988e4a4b901926ddd3f0303443c2",
+  "reviewer": "existing Jizda thread",
+  "recommendation": "merge",
+  "workflowLabel": "human_review_required",
+  "impact": "high",
+  "regressionLikelihood": "moderate",
+  "confidence": "moderate",
+  "localTests": {
+    "passed": 147,
+    "files": 12,
+    "typeCheck": true,
+    "lint": true
+  },
+  "activationRequires": [
+    "exact image tests including unchanged 5000-point capacity",
+    "standard broker provenance and runtime readback"
+  ],
+  "physicalAcceptance": "pending",
+  "full26HourCauseProven": false,
+  "productionActivated": false
+}

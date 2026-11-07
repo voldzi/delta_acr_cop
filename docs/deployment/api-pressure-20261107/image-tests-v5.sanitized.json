@@ -1,0 +1,20 @@
+{
+  "sourceRevision": "0ee4363fb936c9f3144f489cfe1c45f6c0ff7538",
+  "imageId": "sha256:d7708a5e59b92f43ebdb4d5cd5a196a2a51d2abf9c87c4b241c8cf5ec34064d8",
+  "releaseId": "release-ac1913f90ce149b693df80bd04852114",
+  "success": true,
+  "numPassedTests": 147,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "capacity5000PointTest": "passed unchanged 5000ms limit",
+  "isolation": {
+    "network": "none",
+    "readOnly": true,
+    "cpus": 2,
+    "memoryMiB": 1536,
+    "productionSecrets": false,
+    "fixtures": "read-only same sealed source"
+  },
+  "mandatoryBrokerTestsAndCompatibility": "passed",
+  "productionActivatedAtTest": false
+}

@@ -1,0 +1,22 @@
+{
+  "sourceRevision": "0ee4363fb936c9f3144f489cfe1c45f6c0ff7538",
+  "releaseId": "release-ac1913f90ce149b693df80bd04852114",
+  "imageId": "sha256:d7708a5e59b92f43ebdb4d5cd5a196a2a51d2abf9c87c4b241c8cf5ec34064d8",
+  "generation": "ad8d9b4facb84eac9a0585b5108141fe",
+  "deployed": true,
+  "healthyRuntimeVerified": true,
+  "restartCount": 0,
+  "startedAt": "2026-11-07T15:12:06.465109486Z",
+  "checks": {
+    "live": 200,
+    "ready": 200,
+    "sourcesHealth": 200,
+    "unauthenticatedMobileBootstrap": 401,
+    "unauthenticatedRecoveryCapabilities": 401
+  },
+  "configurationChanged": false,
+  "userOperationsReplayed": false,
+  "physicalColdStartAcceptance": "pending Jizda owner acceptance",
+  "full26HourOverloadResolutionProven": false,
+  "previousImageRetained": "sha256:733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327"
+}
