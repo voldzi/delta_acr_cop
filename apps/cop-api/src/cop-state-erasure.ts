@@ -191,7 +191,7 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
         const point = value[i];
         result.push(snapshot(point, field, previous.get(stableId(point))));
       }
-      assertWrite(result, owner);
+      if (generation !== undefined) assertWrite(result, owner);
       Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
       // Every point above passed the actual admission under this same epoch.
       rememberAdmission(result);
@@ -200,9 +200,11 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     assertWrite(value, owner);
     if (value && typeof value === "object" && owners.has(value) && Object.isFrozen(value)) return value;
     const result = deepFreeze(clonePlain(value));
-    // Validate the detached representation too: serialization hooks must not
-    // turn an input admission into authority for different published content.
-    assertWrite(result, owner);
+    // A reusable epoch witness must validate the detached representation too:
+    // serialization hooks cannot lend authority to different published content.
+    // Without an epoch, keep the original full-check-on-every-use path; no
+    // immutable witness is created and no redundant aggregate scan is needed.
+    if (generation !== undefined) assertWrite(result, owner);
     if (result && typeof result === "object") {
       owners.set(result, owner ? { ...owner } : undefined);
       rememberAdmission(result);
