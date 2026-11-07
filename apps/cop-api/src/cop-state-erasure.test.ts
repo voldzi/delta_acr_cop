@@ -333,4 +333,26 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     })).toBe(true);
     expect(f.state.trackHistory.get(id)!.map(p => p.eventId)).toEqual([replacement.eventId, ...events.slice(32).map(p => p.eventId)]);
   });
+
+  it("binds fallback point ownership to the same single index read even with a changing getter", async () => {
+    const f = fixture(); f.options.cachedGuard.version = () => 1; await f.port.init();
+    const id = randomUUID(), keepId = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => {
+      f.state.trackHistory.set(id, [point]);
+      f.state.trackHistory.set(keepId, [{ ...point, objectId: keepId, eventId: randomUUID() }]);
+    });
+    const priorB = f.state.trackHistory.get(id)![0]!;
+    const newA = { ...point, eventId: randomUUID(), lat: 51 };
+    let reads = 0;
+    const input: typeof point[] = [];
+    Object.defineProperty(input, "0", { enumerable: true, get() { return ++reads < 3 ? newA : priorB; } });
+    runWithVerifiedProjectionOwner(actor, () => f.state.trackHistory.set(id, input));
+    expect(reads).toBe(2); // prefix probe and one captured fallback value
+    expect(f.state.trackHistory.get(id)![0]!.eventId).toBe(newA.eventId);
+    expect(await f.port.erase({ reportIds: [], groupIds: [] }, context())).toBe(true);
+    expect(f.state.trackHistory.has(id)).toBe(false);
+    expect(f.state.trackHistory.get(keepId)).toHaveLength(1);
+  });
 });

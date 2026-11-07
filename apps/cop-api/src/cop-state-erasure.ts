@@ -187,7 +187,10 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
       const previous = new Map<string | undefined, unknown>();
       if (Array.isArray(prior)) for (const point of prior) previous.set(stableId(point), point);
       const result: unknown[] = [];
-      for (let i = 0; i < length; i++) result.push(snapshot(value[i], field, previous.get(stableId(value[i]))));
+      for (let i = 0; i < length; i++) {
+        const point = value[i];
+        result.push(snapshot(point, field, previous.get(stableId(point))));
+      }
       assertWrite(result, owner);
       Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
       // Every point above passed the actual admission under this same epoch.
