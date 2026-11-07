@@ -143,7 +143,7 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     if (context.explicit || field === "idempotency" || field === "auditEvents" || actorMention(value, context.owner)) return context.owner;
     return undefined;
   };
-  const snapshot = (value: unknown, field: Field, prior?: unknown, resolvePrior?: (actual: unknown) => unknown): unknown => {
+  const snapshot = (value: unknown, field: Field, prior?: unknown, resolvePrior?: (actual: unknown) => unknown, deferAdmission = false): unknown => {
     const generation = options.cachedGuard.version?.(), fences = localFenceGeneration;
     const rememberAdmission = (result: object): void => {
       if (!initialBinding && generation !== undefined && generation === options.cachedGuard.version?.() &&
@@ -180,8 +180,10 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
         }
         // A changed epoch/lease while validating the suffix cannot publish an
         // admission borrowed from the old prefix.
-        if (generation !== options.cachedGuard.version?.() || fences !== localFenceGeneration || !options.cachedGuard.ready())
+        if (generation !== options.cachedGuard.version?.() || fences !== localFenceGeneration || !options.cachedGuard.ready()) {
           assertWrite(result, owner);
+          for (const point of result) assertWrite([], point && typeof point === "object" ? owners.get(point) : undefined);
+        }
         Object.freeze(result); owners.set(result, owner ? { ...owner } : undefined);
         rememberAdmission(result);
         return result;
@@ -191,12 +193,15 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
       const result: unknown[] = [];
       for (let i = 0; i < length; i++) {
         const point = value[i];
-        result.push(snapshot(point, field, undefined, actual => previous.get(stableId(actual))));
+        result.push(snapshot(point, field, undefined, actual => previous.get(stableId(actual)), true));
       }
       const actualOwner = initialBinding ? undefined : chooseOwner(result, field, prior);
-      if (generation !== options.cachedGuard.version?.() || fences !== localFenceGeneration || !options.cachedGuard.ready())
-        assertWrite(result, actualOwner);
-      else assertWrite([], actualOwner);
+      // Normalize the entire fallback before admitting it. A later hook may
+      // revoke an earlier owner even without a version API, so no admission is
+      // borrowed from checks made before the last input hook ran.
+      assertWrite([], actualOwner);
+      for (const point of result)
+        assertWrite(point, point && typeof point === "object" ? owners.get(point) : undefined);
       Object.freeze(result); owners.set(result, actualOwner ? { ...actualOwner } : undefined);
       // Every point above passed the actual admission under this same epoch.
       rememberAdmission(result);
@@ -209,11 +214,11 @@ export function installCopStateProjectionOwner(state: CopState, options: CopStat
     const result = known ? value : deepFreeze(clonePlain(value));
     if (resolvePrior) prior = resolvePrior(result);
     const owner = initialBinding ? undefined : chooseOwner(result, field, prior);
-    assertWrite(result, owner);
+    if (!deferAdmission) assertWrite(result, owner);
     if (known) return result;
     if (result && typeof result === "object") {
       owners.set(result, owner ? { ...owner } : undefined);
-      rememberAdmission(result);
+      if (!deferAdmission) rememberAdmission(result);
     }
     if (field === "domainDeadLetters" && result && typeof result === "object") {
       const existing = prior && typeof prior === "object" ? prior : value && typeof value === "object" ? value : undefined;

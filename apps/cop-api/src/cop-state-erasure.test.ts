@@ -376,4 +376,18 @@ describe("actual COP RAM projection ownership and producer boundary", () => {
     expect(f.state.trackHistory.has(id)).toBe(false);
   });
 
+  it("rechecks unversioned admission changed by a later normalization before publication", async () => {
+    const f = fixture(); await f.port.init();
+    const id = randomUUID(), point = { objectId: id, eventId: randomUUID(), objectType: "REPORT" as const,
+      affiliation: "NEUTRAL" as const, status: "ACTIVE" as const, lat: 50, lon: 14, synthetic: true,
+      sourceSystemId: "synthetic", producerTimestamp: "2026-11-07T00:00:00Z", timestamp: "2026-11-07T00:00:00Z" };
+    runWithVerifiedProjectionOwner(other, () => f.state.trackHistory.set(id, [point]));
+    const prior = f.state.trackHistory.get(id)!;
+    const second = { ...point, eventId: randomUUID(), toJSON() {
+      f.revoked.add(runtimeOwnerHash(other)); return { ...point, eventId: randomUUID() };
+    } };
+    expect(() => f.state.trackHistory.set(id, [...prior, second])).toThrow("CACHED_ACCOUNT_FENCE");
+    expect(f.state.trackHistory.get(id)).toBe(prior);
+  });
+
 });
