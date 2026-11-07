@@ -94,8 +94,21 @@ rollback must use the existing guarded release flow, never a blind old-container
 restart or disabling account-erasure fences.
 
 Jízda received the exact deployed revision and test results. Authenticated phone
-cold-start/bootstrap, chat and vehicle-metadata acceptance remains a separate
-owner-device check. The earlier Matrix/WAF/legacy-pusher deployment and reported
+acceptance was subsequently confirmed by the owner, separately from server tests
+(see below). The earlier Matrix/WAF/legacy-pusher deployment and reported
 native recovery are documented under `../native-relogin-20261106/` and
 `../messaging-device-delete-20261106/`. This release addresses the measured
 history-processing hotspot, not the unproven full26-hour accumulated-state cause.
+
+## Subsequent owner-device acceptance
+
+On 7 November 2026, the owner confirmed through the existing Jízda thread:
+“Funguje Komunikace i sdílení”. The requested procedure was to terminate and
+reopen Jízda1.2(88), use neither login nor manual recovery, and within60 seconds
+check Communication and the existing vehicle sharing screen without sending
+messages or creating records. This establishes owner-reported automatic
+cold-start restoration and access to both features after V5 deployment.
+The exact interaction timestamp is unknown. See
+`owner-acceptance-v5.sanitized.json`. Actual message/call delivery and26-hour
+stability were not tested by this check; no additional login, registration,
+replay or TestFlight release was performed.

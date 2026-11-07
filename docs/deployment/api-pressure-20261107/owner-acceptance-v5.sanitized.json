@@ -1,0 +1,21 @@
+{
+  "sourceRevision": "0ee4363fb936c9f3144f489cfe1c45f6c0ff7538",
+  "client": "Jizda 1.2 (88)",
+  "acceptanceDate": "2026-11-07",
+  "evidenceSource": "owner confirmation relayed through authorized Jizda thread",
+  "ownerStatement": "Funguje Komunikace i sdílení",
+  "procedure": {
+    "terminateAndReopen": true,
+    "manualLoginOrRecovery": false,
+    "checkWithinSeconds": 60,
+    "messageSendingOrNewVehicleCreation": false
+  },
+  "results": {
+    "automaticColdStartRestoration": "passed per owner",
+    "communicationAccess": "passed per owner",
+    "existingVehicleSharingAccess": "passed per owner"
+  },
+  "exactInteractionTimestamp": "unknown",
+  "messageOrCallDeliveryTested": false,
+  "longRunning26HourStabilityProven": false
+}

@@ -16,7 +16,7 @@
   },
   "configurationChanged": false,
   "userOperationsReplayed": false,
-  "physicalColdStartAcceptance": "pending Jizda owner acceptance",
+  "physicalColdStartAcceptance": "passed per owner through Jizda; see owner-acceptance-v5.sanitized.json",
   "full26HourOverloadResolutionProven": false,
   "previousImageRetained": "sha256:733cc973b04c3357ab2dd9d84f81cd90d0ad7198bb97d6a4f4941feae876b327"
 }
