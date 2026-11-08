@@ -1,0 +1,40 @@
+{
+  "checkedDate": "2026-11-08",
+  "operationIdSha256": "b85ddcccd06076cac62ab735bce37dbd19b135e65719da8f2833548f258034ce",
+  "queryMode": "BEGIN READ ONLY; bounded timeout; exact operation UUID suffix only",
+  "receiptCount": 0,
+  "evidenceLimitations": [
+    "No retained receipt does not prove request never reached server or establish historical refusal reason.",
+    "Client creation-stage not-observed is view-local state, not server evidence.",
+    "No user identities, vehicle content or GPS exported."
+  ],
+  "sourceRevision": "0ee4363fb936c9f3144f489cfe1c45f6c0ff7538",
+  "imageId": "sha256:d7708a5e59b92f43ebdb4d5cd5a196a2a51d2abf9c87c4b241c8cf5ec34064d8",
+  "runtime": {
+    "healthy": true,
+    "restartCount": 12,
+    "startedAt": "2026-11-08T10:28:42.158701918Z",
+    "observedRestartCountChangedDuringAudit": false,
+    "liveHttp": 200,
+    "readyHttp": 200,
+    "unauthenticatedBootstrapHttp": 401
+  },
+  "historicalLogAudit": {
+    "maxLines": 30000,
+    "windowHours": 24,
+    "underPressureCount": 26,
+    "underPressureLastAt": "2026-11-08T09:30:52.073Z",
+    "onReadyTimeoutCount": 3,
+    "onReadyTimeoutLastAt": "2026-11-08T10:28:40.805Z",
+    "nestedSqlStateCounts": {
+      "57P01": 11,
+      "08P01": 4
+    },
+    "theseErrorCodesAfterLatestStart": 0,
+    "retainedDieEvents": 0,
+    "allTwelveRestartCausesProven": false
+  },
+  "mutationsPerformed": false,
+  "replayedOperations": false,
+  "newEndpointIntroduced": false
+}

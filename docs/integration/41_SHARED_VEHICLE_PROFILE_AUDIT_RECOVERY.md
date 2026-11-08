@@ -33,3 +33,38 @@ CSMSharedVehicleAuditProfile.swift has independent typed mapped profile/dimensio
 ## Acceptance
 
 Targeted tests validate four mapped intents/dimensions, omission/owner/CAS, exact private owner binding and concurrent duplicates/transfer, original revision/author/payload after corrections/void/idempotence, corrected instrument reading, current reminders/completion/limit without cost leakage. Real isolated PostgreSQL validates unique binding under two concurrent connections and original audit/receipt/recovery through a fresh third connection. Actual new-phone/cloud restore and recipient notifications/navigation physical checks remain separate. Caller/title/member-count was only inspected separately; not changed by this vehicle contract.
+
+## Retained create recovery: existing server contract
+
+A denied client journal entry is not a durable server refusal receipt. The client
+must preserve its original operation UUID, immutable normalized body and account
+scope. Recovery is an explicitly reviewed client action; authenticated bootstrap
+alone must not automatically replay denied creation or other denied mutations.
+
+`MobilityService.operation` scopes receipts to the current authenticated
+`accountId` and lowercase operation UUID. The stored hash is SHA-256 of canonical
+`{scope, body}`; creation uses scope `vehicle:create`. Identical scope/body under
+the same account replays the saved result without executing creation. Changed
+body/scope returns409 `OPERATION_CONFLICT`. Hourly retention expires receipts
+after30days, retaining hash and expired tombstone; replay returns410
+`OPERATION_EXPIRED` and never recreates the entity. A different account is a
+different idempotency scope even with the same operation UUID, so account
+migration cannot be inferred from login success or a missing receipt.
+
+A creation replay may return a historical vehicle snapshot, including after
+membership change or vehicle deletion. Consequently create200 is insufficient
+for local binding or acknowledgment: require a fresh authenticated vehicle GET,
+current owner/account, expected immutable local UUID owner binding and the
+existing revision/lease checks. GET rejects unavailable/deleted vehicles or
+missing read capability with404. Never resurrect membership or use a new UUID to
+work around409/410. Existing owner-binding conflict checks still apply.
+
+The8November metadata-only audit found no retained receipt for the exact
+reported operation; this neither proves it never reached the server nor recovers
+the lost historical HTTP/code/correlation. No operation-status endpoint was
+introduced, and no owner request, create, membership, registration or GPS action
+was executed. See [dated read-only evidence](../deployment/retained-vehicle-creation-20261108/readonly-evidence.sanitized.json).
+Current response availability and historical restart evidence are separate;
+three onReady timeouts and database technical errors preceded the latest healthy
+start, but the causes of all12 recorded restarts remain unproven. Prior
+cold-start chat acceptance does not establish retained-create recovery.
