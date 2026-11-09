@@ -1,0 +1,105 @@
+{
+  "contractVersion": "cop-synapse-remaining-helper-review-v1",
+  "reviewOnly": true,
+  "liveApplyReady": false,
+  "productionChanged": false,
+  "stages": [
+    {
+      "name": "receipt",
+      "disposition": "candidate",
+      "insert": {
+        "table": "event_push_summary_last_receipt_stream_id",
+        "lock": "X",
+        "stream_id": 0
+      },
+      "needs": [
+        "fresh empty-receipt CAS",
+        "preserve existing summary and push actions",
+        "normal native receipt/rotation processing only"
+      ]
+    },
+    {
+      "name": "stats",
+      "disposition": "native-rebuild-review",
+      "insert": {
+        "table": "stats_incremental_position",
+        "lock": "X",
+        "stream_id": 100
+      },
+      "jobs": [
+        {
+          "name": "populate_stats_process_rooms",
+          "depends_on": null,
+          "progress": {}
+        },
+        {
+          "name": "populate_stats_process_users",
+          "depends_on": "populate_stats_process_rooms",
+          "progress": {}
+        }
+      ],
+      "coverageBoundary": 95,
+      "needs": [
+        "atomic boundary and job enqueue under stopped writers",
+        "native absolute recalculation for every existing room and user",
+        "verify per-entity completion covers state delta boundary",
+        "review native processor/job concurrency in actual-image fixture before apply"
+      ],
+      "forbidden": "standalone MAX seed without baseline rebuild"
+    },
+    {
+      "name": "directory",
+      "disposition": "native-rebuild-review",
+      "insert": {
+        "table": "user_directory_stream_pos",
+        "lock": "X",
+        "stream_id": null
+      },
+      "jobs": [
+        {
+          "name": "populate_user_directory_createtables",
+          "depends_on": null,
+          "progress": {}
+        },
+        {
+          "name": "populate_user_directory_process_rooms",
+          "depends_on": "populate_user_directory_createtables",
+          "progress": {}
+        },
+        {
+          "name": "populate_user_directory_process_users",
+          "depends_on": "populate_user_directory_process_rooms",
+          "progress": {}
+        },
+        {
+          "name": "populate_user_directory_cleanup",
+          "depends_on": "populate_user_directory_process_users",
+          "progress": {}
+        }
+      ],
+      "needs": [
+        "explicit review of derived-directory rebuild",
+        "native delete_all_from_user_dir clears derived search/visibility entries",
+        "native staging captures state delta boundary; cleanup publishes it",
+        "preserve search_all_users and local-profile rules",
+        "verify deltas arriving during staging are caught up after cleanup"
+      ],
+      "forbidden": "NULL seed without complete native job chain"
+    },
+    {
+      "name": "forgetter",
+      "disposition": "hold",
+      "reason": "RETROACTIVE_FORGETTING_SCOPE_UNPROVEN",
+      "forbidden": "guess zero or MAX with unknown flag/leave candidates"
+    }
+  ],
+  "sharedGuards": [
+    "exact image/container/config/network/writer inventory CAS",
+    "zero other database writers after coordinated stop",
+    "native table shape/constraint/trigger proof",
+    "no helper UPDATE/overwrite or global table reset",
+    "preserve accounts/devices/E2EE keys/rooms/events; no token handling",
+    "separate per-stage receipt and rollback/resume decision"
+  ],
+  "syntheticExampleOnly": true
+}

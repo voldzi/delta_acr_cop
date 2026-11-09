@@ -1,0 +1,56 @@
+{
+  "checkedAtUTC": "2026-11-09T13:21:20.468166+00:00",
+  "windowUTC": [
+    "2026-11-09T13:17:00Z",
+    "2026-11-09T13:21:00Z"
+  ],
+  "ownerProbeUTC": "2026-11-09T13:18:57Z",
+  "operationId": "34324140-2cf7-40cf-8ce5-1e93f5bb7cd1",
+  "productionChanged": false,
+  "generatedRequests": 0,
+  "observations": {
+    "sync": {
+      "observedContexts": 20,
+      "httpCounts": {
+        "200": 20
+      },
+      "errorReasons": {}
+    },
+    "refresh": {
+      "observedContexts": 1,
+      "httpCounts": {
+        "200": 1
+      },
+      "errorReasons": {}
+    },
+    "whoami": {
+      "observedContexts": 6,
+      "httpCounts": {
+        "200": 6
+      },
+      "errorReasons": {}
+    },
+    "send": {
+      "observedContexts": 0,
+      "httpCounts": {},
+      "errorReasons": {}
+    },
+    "join": {
+      "observedContexts": 0,
+      "httpCounts": {},
+      "errorReasons": {}
+    }
+  },
+  "lineCount": 7658,
+  "lineCapReached": false,
+  "deviceAttribution": "not established from aggregate",
+  "rawContentTokensAndIdentitiesExcluded": true,
+  "reportedNativeProbe": {
+    "build": 97,
+    "http": 202,
+    "receiptMatches": true,
+    "credentialRenewalState": "VALID",
+    "nativeCode": "transportNotReady",
+    "nativeJoinInvoked": false
+  }
+}

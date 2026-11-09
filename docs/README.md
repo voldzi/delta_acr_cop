@@ -48,6 +48,9 @@ Messaging upstream sequence repair and automatic vehicle-chat release:
 Missing Synapse push-summary position, exact one-row repair and native sync acceptance:
 [9 November helper-state evidence](deployment/messaging-push-summary-20261109/README.md).
 
+Remaining Synapse helper-state source review (no live changes):
+[four-stage follow-up plan](deployment/messaging-helper-followup-20261109/README.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

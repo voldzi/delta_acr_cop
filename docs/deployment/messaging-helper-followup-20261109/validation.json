@@ -1,0 +1,15 @@
+{
+  "plannerSha256": "ce4e766db4f61d951de7829992718aa30a55c39580efc19116c55c2354224552",
+  "plannerUnitTests": {
+    "passed": 13,
+    "failed": 0
+  },
+  "nativeProcessorIntegrationTestsPerformed": false,
+  "liveApplyPerformed": false,
+  "productionChanged": false,
+  "limitations": [
+    "The pure planner tests fail-closed choices and job dependencies; they do not execute Synapse workers.",
+    "Historical aggregate observations are not a current executable CAS plan.",
+    "Stats and directory rebuilds need actual-image concurrency/interruption fixtures before any live application."
+  ]
+}

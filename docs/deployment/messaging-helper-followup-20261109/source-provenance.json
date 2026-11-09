@@ -1,0 +1,92 @@
+{
+  "pinnedImage": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+  "sourceOnly": true,
+  "files": {
+    "handlers/stats.py:StatsHandler._unsafe_process": {
+      "sha256": "4f8af19030ab68ef30ee65295ac9c0b580c4c010d829c79b166d0d50def20a00",
+      "bytes": 2538
+    },
+    "handlers/user_directory.py:UserDirectoryHandler._unsafe_process": {
+      "sha256": "b386337fc21ecdda96f0893c2bc25c16c8caccea209042d5e96c76d63ccc0c8a",
+      "bytes": 2210
+    },
+    "handlers/room_member.py:RoomForgetterHandler._unsafe_process": {
+      "sha256": "f2b905549f530fd06d062e9c09a3493d25827d496bd4b025d5757497517b6391",
+      "bytes": 2722
+    },
+    "storage/databases/main/stats.py:StatsStore._calculate_and_set_initial_state_for_room": {
+      "sha256": "16dc6b9cc9c3d0741c3194a5874fcb4c1a15a388c2fee42f7ca3893fc7ceb63d",
+      "bytes": 5728
+    },
+    "storage/databases/main/stats.py:StatsStore._calculate_and_set_initial_state_for_user": {
+      "sha256": "e2fd91ec37129752d48823cd57de09dcb779ec0ae4e1ed631786fce58bb7d127",
+      "bytes": 1136
+    },
+    "storage/databases/main/user_directory.py:UserDirectoryBackgroundUpdateStore._populate_user_directory_createtables": {
+      "sha256": "aa6991875f3b407b4a3c2fce88fc5c747fe8359791a84126be21e97fe548c4fe",
+      "bytes": 1734
+    },
+    "storage/databases/main/user_directory.py:UserDirectoryBackgroundUpdateStore._populate_user_directory_cleanup": {
+      "sha256": "baf76727a3fcca906605c7ea54cf221f04f365c7b4b78b77befb0a585892f0bd",
+      "bytes": 963
+    },
+    "storage/databases/main/event_push_actions.py:EventPushActionsWorkerStore._handle_new_receipts_for_notifs_txn": {
+      "sha256": "2aa5bf064c74021d1419c3120a40f40b476704982d07cd729e39b62c2c223d5d",
+      "bytes": 7940
+    },
+    "delta/56/stats_separated.sql": {
+      "sha256": "5bbecb33772c93c927ed195a6b8a1091b32eb9645bd0954c5d693ed5ef377c81",
+      "bytes": 5860
+    },
+    "delta/53/user_share.sql": {
+      "sha256": "a60e2981a355e9fcadb5580f0fb2051b9ef61b6b5d2e9a619280034e51d2c5d3",
+      "bytes": 2729
+    },
+    "delta/76/04_add_room_forgetter.sql": {
+      "sha256": "843c033a6b67eac734a117813dca24962a3943489f8477da050db2039c467691",
+      "bytes": 1602
+    },
+    "delta/72/01event_push_summary_receipt.sql": {
+      "sha256": "db65e5019b0604c1ffddcbd0f8c32f432bb3f7af76f52caf0c4439259ec27b3b",
+      "bytes": 2167
+    },
+    "handlers/stats.py:StatsHandler._handle_deltas": {
+      "sha256": "dba7c513fec682bedbd490d052abf605a90b015e4c358d9920aa4ca4980eb035",
+      "bytes": 7774
+    },
+    "handlers/room_member.py:RoomForgetterHandler._handle_deltas": {
+      "sha256": "21a8d4a96f1bb4d41f527b32cfcf6e22d80342ac126fc3f2a55a7fe7d08624e7",
+      "bytes": 1008
+    },
+    "storage/databases/main/stats.py:StatsStore.bulk_update_stats_delta": {
+      "sha256": "86493f97936e4220ca78442e8a5aaded6e3574341727d44c8aeda97f319ad0ea",
+      "bytes": 1472
+    },
+    "storage/databases/main/stats.py:StatsStore._update_stats_delta_txn": {
+      "sha256": "247560818cea90b905a4e9f6ce3f23b539d1fc6c64067f32ce72ec6c6e124b3f",
+      "bytes": 1960
+    },
+    "storage/databases/main/user_directory.py:UserDirectoryBackgroundUpdateStore._populate_user_directory_process_rooms": {
+      "sha256": "f3795211a90e2b6b345e0ef526a7ff41e24955a3e9565e7d005af6e73a67f1c7",
+      "bytes": 6726
+    },
+    "storage/databases/main/user_directory.py:UserDirectoryBackgroundUpdateStore._populate_user_directory_process_users": {
+      "sha256": "16eb75ad0b0d3a8ebd995d20f304ae73380ae1fca7c439757ba998a9fe6ef910",
+      "bytes": 3815
+    },
+    "storage/databases/main/user_directory.py:UserDirectoryBackgroundUpdateStore.update_user_directory_stream_pos": {
+      "sha256": "f8eef978f11548e24bf45322875619501ea74654eeadbcdcfdd375657dfbfafd",
+      "bytes": 313
+    },
+    "schema/delta/53/user_dir_populate.sql": {
+      "sha256": "4a668c14603cf7b6e8784a51cdb22974551c6fed5a3d4d08b93cd2e09b58b321",
+      "bytes": 862
+    },
+    "schema/delta/73/22_rebuild_user_dir_stats.sql": {
+      "sha256": "f13ba931d7200d9c2d5fb9779f1b9f3910229bd7a8f2bb67d3a2cdae3f12a36c",
+      "bytes": 846
+    }
+  },
+  "productionDatabaseQueriesDuringThisSourceReview": 0,
+  "publicSourceReadFromPinnedServerImage": true
+}
