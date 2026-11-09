@@ -1,0 +1,37 @@
+{
+  "checkedAtUTC": "2026-11-09T12:44:11.992782+00:00",
+  "repairScriptSha256": "f19dc03689a71ac379dc764cb166b7d2a148896ad91580739a78d36cb334f8eb",
+  "guardTests": {
+    "passed": 6,
+    "failed": 0
+  },
+  "lifecycleFixtureTests": {
+    "passed": 5,
+    "failed": 0,
+    "cases": [
+      "same-container successful restart",
+      "uncertain committed outcome readback without second insert",
+      "uncertain rollback outcome readback without second insert",
+      "unproven readback leaves service stopped",
+      "optimized Python rejects before connection"
+    ]
+  },
+  "actualIsolatedPostgres": {
+    "version": 17,
+    "missingHelperBefore": true,
+    "exactInsertReadback": [
+      "X",
+      0
+    ],
+    "duplicateInsertRejected": true,
+    "syntheticEventIdentityKeyDigestUnchanged": true,
+    "publicPorts": false,
+    "ramDataOnly": true,
+    "containerRemoved": true
+  },
+  "liveApplyPerformed": false,
+  "limits": [
+    "PostgreSQL fixture exercises exact INSERT/constraint/data preservation; lifecycle fixtures mock the runtime transport.",
+    "Live read-only maintenance preflight succeeded; no production INSERT has been executed."
+  ]
+}

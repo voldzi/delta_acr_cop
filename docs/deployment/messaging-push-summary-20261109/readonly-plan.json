@@ -1,0 +1,109 @@
+{
+  "plan": {
+    "contractVersion": "cop-synapse-missing-push-summary-position-v1",
+    "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+    "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+    "runtimeSpecSha256": "d5eb6b1ea99847eadfd18a6e3201b15ba97dedc0696f7fde2d8fc7833c9fc0ef",
+    "writerInventory": [
+      {
+        "id": "1b21c94079bfe80a4f00ecc0c0ae3daf1216741e13b8cb0518a7b24398687f30",
+        "name": "/csm-matrix-synapse-rollback-06976bb832c3402db460f20ff4507af6",
+        "image": "sha256:b7f786ac65ec10dfe35739c5df299200a49761563811c6e6b1629dd67c8ddc73",
+        "running": false,
+        "restartPolicy": "no"
+      },
+      {
+        "id": "200492f6be4facb8f10b17efe8afd683ca3b709377384d212ca167557e2c935a",
+        "name": "/csm-matrix-synapse-failed-b42cf080c81241f3ae28a941204f61d0",
+        "image": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+        "running": false,
+        "restartPolicy": "no"
+      },
+      {
+        "id": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+        "name": "/csm-matrix-synapse",
+        "image": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+        "running": true,
+        "restartPolicy": "unless-stopped"
+      }
+    ],
+    "databaseSnapshot": {
+      "helperRows": [],
+      "source": {
+        "event_push_summary": {
+          "count": 0,
+          "max": null
+        },
+        "receipts_linearized": {
+          "count": 0,
+          "max": null
+        },
+        "event_push_actions": {
+          "count": 5,
+          "max": 32379
+        },
+        "events": {
+          "count": 27,
+          "max": 32390
+        }
+      },
+      "preservedCounts": {
+        "users": 7,
+        "devices": 14,
+        "room_memberships": 5,
+        "current_state_events": 21,
+        "e2e_device_keys_json": 4,
+        "e2e_room_keys": 1,
+        "account_data": 11,
+        "room_account_data": 0
+      },
+      "shape": [
+        [
+          "lock",
+          "character(1)",
+          true
+        ],
+        [
+          "stream_ordering",
+          "bigint",
+          true
+        ]
+      ],
+      "constraints": [
+        [
+          "c",
+          "CHECK ((lock = 'X'::bpchar))"
+        ],
+        [
+          "n",
+          "NOT NULL lock"
+        ],
+        [
+          "n",
+          "NOT NULL stream_ordering"
+        ],
+        [
+          "u",
+          "UNIQUE (lock)"
+        ]
+      ],
+      "userTriggers": 0,
+      "database": "csm_synapse",
+      "role": "csm_synapse",
+      "databaseOid": 1237116,
+      "otherSessions": 5
+    },
+    "target": [
+      [
+        "X",
+        0
+      ]
+    ],
+    "networkBindings": {
+      "csm-messaging_default": "7a0181a5ec6632c76960f7dc7d3c2e0d6568ebfd361decfafadb8f498c314313"
+    },
+    "sqlSha256": "d0e73e186bc1df2b167ca8aab065d91cb99ddf6e33f9625479a677199b17016b"
+  },
+  "planSha256": "38f98e98d513c096d5cb9b3d5c54e07f5669fb8ecc6e2d6cb526500e815306a6",
+  "productionChanged": false
+}

@@ -45,6 +45,9 @@ COP event-loop pressure, guarded history reuse and release acceptance:
 Messaging upstream sequence repair and automatic vehicle-chat release:
 [9 November evidence and native acceptance boundary](deployment/messaging-sequence-20261109/README.md).
 
+Missing Synapse push-summary position, exact one-row repair and native sync acceptance:
+[9 November helper-state evidence](deployment/messaging-push-summary-20261109/README.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

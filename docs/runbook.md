@@ -97,6 +97,13 @@ The [9 November incident](deployment/messaging-sequence-20261109/README.md)
 records one reviewed forward-only repair, not a reusable authorization to reset
 streams. Its helper defaults to read-only and pins the exact observed runtime.
 
+A healthy homeserver can still return404`No row found` from sync when native
+singleton helper rows are absent. Check their cardinality separately after restore
+or data reset. The [one-row push-summary repair](deployment/messaging-push-summary-20261109/README.md)
+distinguishes this from filters and background statistics. Do not blindly seed all
+helpers or rebuild derived aggregates, and do not treat an idle request window as
+successful sync acceptance.
+
 For a repair, stop all Synapse writers, save an audit snapshot of sequences and
 `stream_positions`, and advance each affected PostgreSQL sequence to the
 greatest of its current value, associated table maxima, and the matching live

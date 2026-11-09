@@ -1,0 +1,156 @@
+[
+  {
+    "helperRepair": {
+      "applied": true,
+      "before": {
+        "helperRows": [],
+        "source": {
+          "event_push_summary": {
+            "count": 0,
+            "max": null
+          },
+          "receipts_linearized": {
+            "count": 0,
+            "max": null
+          },
+          "event_push_actions": {
+            "count": 5,
+            "max": 32379
+          },
+          "events": {
+            "count": 27,
+            "max": 32390
+          }
+        },
+        "preservedCounts": {
+          "users": 7,
+          "devices": 14,
+          "room_memberships": 5,
+          "current_state_events": 21,
+          "e2e_device_keys_json": 4,
+          "e2e_room_keys": 1,
+          "account_data": 11,
+          "room_account_data": 0
+        },
+        "shape": [
+          [
+            "lock",
+            "character(1)",
+            true
+          ],
+          [
+            "stream_ordering",
+            "bigint",
+            true
+          ]
+        ],
+        "constraints": [
+          [
+            "c",
+            "CHECK ((lock = 'X'::bpchar))"
+          ],
+          [
+            "n",
+            "NOT NULL lock"
+          ],
+          [
+            "n",
+            "NOT NULL stream_ordering"
+          ],
+          [
+            "u",
+            "UNIQUE (lock)"
+          ]
+        ],
+        "userTriggers": 0,
+        "database": "csm_synapse",
+        "role": "csm_synapse",
+        "databaseOid": 1237116,
+        "otherSessions": 0
+      },
+      "after": {
+        "helperRows": [
+          [
+            "X",
+            0
+          ]
+        ],
+        "source": {
+          "event_push_summary": {
+            "count": 0,
+            "max": null
+          },
+          "receipts_linearized": {
+            "count": 0,
+            "max": null
+          },
+          "event_push_actions": {
+            "count": 5,
+            "max": 32379
+          },
+          "events": {
+            "count": 27,
+            "max": 32390
+          }
+        },
+        "preservedCounts": {
+          "users": 7,
+          "devices": 14,
+          "room_memberships": 5,
+          "current_state_events": 21,
+          "e2e_device_keys_json": 4,
+          "e2e_room_keys": 1,
+          "account_data": 11,
+          "room_account_data": 0
+        },
+        "shape": [
+          [
+            "lock",
+            "character(1)",
+            true
+          ],
+          [
+            "stream_ordering",
+            "bigint",
+            true
+          ]
+        ],
+        "constraints": [
+          [
+            "c",
+            "CHECK ((lock = 'X'::bpchar))"
+          ],
+          [
+            "n",
+            "NOT NULL lock"
+          ],
+          [
+            "n",
+            "NOT NULL stream_ordering"
+          ],
+          [
+            "u",
+            "UNIQUE (lock)"
+          ]
+        ],
+        "userTriggers": 0,
+        "database": "csm_synapse",
+        "role": "csm_synapse",
+        "databaseOid": 1237116,
+        "otherSessions": 0
+      },
+      "onlyOneHelperRowInserted": true,
+      "messagesIdentitiesKeysAndSequencesChanged": false
+    },
+    "sameImage": true,
+    "newAccountOrDataset": false,
+    "replayCalled": false,
+    "pinPublished": false,
+    "noRollbackDeletionOfHelper": true
+  },
+  {
+    "sameSynapseContainerStarted": true,
+    "imageChanged": false,
+    "configurationChanged": false
+  }
+]

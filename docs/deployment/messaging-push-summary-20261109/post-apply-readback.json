@@ -1,0 +1,110 @@
+{
+  "checkedAtUTC": "2026-11-09T12:48:26.200757+00:00",
+  "freshReadback": {
+    "helperRows": [
+      [
+        "X",
+        0
+      ]
+    ],
+    "source": {
+      "event_push_summary": {
+        "count": 0,
+        "max": null
+      },
+      "receipts_linearized": {
+        "count": 0,
+        "max": null
+      },
+      "event_push_actions": {
+        "count": 5,
+        "max": 32379
+      },
+      "events": {
+        "count": 27,
+        "max": 32390
+      }
+    },
+    "preservedCounts": {
+      "users": 7,
+      "devices": 14,
+      "room_memberships": 5,
+      "current_state_events": 21,
+      "e2e_device_keys_json": 4,
+      "e2e_room_keys": 1,
+      "account_data": 11,
+      "room_account_data": 0
+    },
+    "shape": [
+      [
+        "lock",
+        "character(1)",
+        true
+      ],
+      [
+        "stream_ordering",
+        "bigint",
+        true
+      ]
+    ],
+    "constraints": [
+      [
+        "c",
+        "CHECK ((lock = 'X'::bpchar))"
+      ],
+      [
+        "n",
+        "NOT NULL lock"
+      ],
+      [
+        "n",
+        "NOT NULL stream_ordering"
+      ],
+      [
+        "u",
+        "UNIQUE (lock)"
+      ]
+    ],
+    "userTriggers": 0,
+    "database": "csm_synapse",
+    "role": "csm_synapse",
+    "databaseOid": 1237116,
+    "otherSessions": 5
+  },
+  "runtimeSpecSha256": "d5eb6b1ea99847eadfd18a6e3201b15ba97dedc0696f7fde2d8fc7833c9fc0ef",
+  "runtimes": [
+    {
+      "name": "csm-matrix-synapse",
+      "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+      "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+      "health": "healthy",
+      "restartCount": 0,
+      "startedAt": "2026-11-09T12:46:28.198474677Z"
+    },
+    {
+      "name": "csm-messaging-api",
+      "containerId": "5e3a8d51ec820fc929f733ab63f551ceb42f9ffe01c41783d9f6b2c08b6ae497",
+      "imageId": "sha256:16de758aeb4e1e467dfe1bd8eda8f3462769a3df07f5c419ae044025f06ca810",
+      "health": "healthy",
+      "restartCount": 6465,
+      "startedAt": "2026-11-09T10:56:02.135026209Z"
+    }
+  ],
+  "http": [
+    {
+      "url": "https://msg.zeleznalady.cz/health/ready",
+      "status": 200
+    },
+    {
+      "url": "https://cop.zeleznalady.cz/health/ready",
+      "status": 200
+    }
+  ],
+  "passiveSyncSinceRestart": {
+    "observedSyncContexts": 0,
+    "httpCounts": {},
+    "synapseErrorContexts": 0,
+    "lineCapReached": false,
+    "agentGeneratedSyncRequests": 0
+  }
+}
