@@ -66,13 +66,21 @@ and explicit entry into a managed vehicle conversation. Its SDK/domain/UI/build
 checks are separate from installation on the owner's iPhone.
 
 A ready projection does not mean the viewer joined Matrix or received a message.
-Native acceptance still requires the available phone and updated client: ordinary
-Communication list with the vehicle title, explicit join using the existing typed
-vehicle facade, correct current account, and stable recovery/UI. No forced join,
-new identity, key reset, agent-generated message, call or GPS sample was used.
-Jízda confirms the older 401/recovery report had already been overcome; no new 401
-is claimed reproduced or newly fixed by the sequence repair. Physical acceptance
-of build 94 remains unverified while the phone is unavailable.
+The initial final-health check preceded phone availability. Subsequently Jízda
+verified build94 installed and started on the owner phone. The vehicle conversation
+appeared in the ordinary list, but opening it showed a generic unavailable alert.
+[The follow-up read-only observation](native-open-observation.json) proves two
+committed open intents, current identity/roster/revision binding and matching
+room policies. The owner remains invited, the controller joined. It does not prove
+the historical final HTTP status: the mobility route is deliberately silent and
+its intent receipt does not persist the response. The correct unjoined state is
+an explicit join offer, never a forced join or fabricated joined receipt.
+
+Jízda is investigating the native refresh/response/fence path. End-to-end opening,
+explicit join and stable recovery/UI remain unaccepted. No forced join, new
+identity, key reset, agent-generated message, call or GPS sample was used.
+Jízda confirms the older401/recovery report had already been overcome; no new401
+is claimed reproduced or newly fixed by the sequence repair.
 
 The earlier [exact Messaging firewall release](../messaging-device-delete-20261106/README.md)
 is preserved separately. The sequence incident is not evidence of a firewall

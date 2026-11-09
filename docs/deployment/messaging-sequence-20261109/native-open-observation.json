@@ -1,0 +1,34 @@
+{
+  "checkedAtUTC": "2026-11-09T11:50:45.829371+00:00",
+  "reportedClient": "Jizda 1.2 (94), installed and opened on owner phone; opening vehicle chat showed generic unavailable alert",
+  "conversationIntentReceiptTimesUTC": [
+    "2026-11-09T11:42:18.970Z",
+    "2026-11-09T11:43:28.151Z"
+  ],
+  "historicalFinalHttpStatus": "unproven; mobility routes deliberately silent; intent receipt does not persist final response",
+  "membershipRevision": 1,
+  "recipientEpoch": 1,
+  "roomGeneration": 1,
+  "sourceProjection": "ready",
+  "memberCount": 1,
+  "principalAndIdentityMappingsMatch": true,
+  "nativeOwnerState": "invite",
+  "nativeControllerState": "join",
+  "policyChecks": {
+    "history": true,
+    "joinRule": true,
+    "guestAccess": true,
+    "encryption": true,
+    "exactPowerLevels": true,
+    "vehicleBinding": true,
+    "creator": true,
+    "federationDisabled": true,
+    "canonicalAlias": true
+  },
+  "queriesReadOnly": true,
+  "tokenIssued": false,
+  "requestRepeated": false,
+  "identityOrMembershipChanged": false,
+  "nativeOpenAccepted": false,
+  "privateContentAndIdentifiersExported": false
+}
