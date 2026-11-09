@@ -32,3 +32,13 @@ export function validateIdentityLookup(value: unknown, actorUserId: string, conv
   if (!members.length || members.length > 100 || new Set(members).size !== members.length || !members.includes(actorUserId) || new Set(identities.map(v => v.matrixUserId)).size !== identities.length) return undefined;
   return {contractVersion: "cop-messaging-identity-lookup-v1", providerId: "csm.messaging", actorUserId, conversationId, ...(typeof value.matrixRoomId === "string" ? {matrixRoomId: value.matrixRoomId} : {}), identities, unresolvedUserIds, validUntil: new Date(now.getTime() + 30_000).toISOString(), status: "online", warnings: []};
 }
+
+/** A framework/WAF404 is not evidence that this conversation or identity is absent. */
+export function identityLookupFailureStatus(value: unknown, actorUserId: string, conversationId: string, status: number): 403 | 404 | 503 {
+  if ((status !== 403 && status !== 404) || !object(value) ||
+      Object.keys(value).length !== 5 || !["contractVersion", "providerId", "actorUserId", "conversationId", "error"].every(k => Object.hasOwn(value, k)) ||
+      value.contractVersion !== "csm-messaging-identity-lookup-v1" || value.providerId !== "csm.messaging" ||
+      value.actorUserId !== actorUserId || value.conversationId !== conversationId || !object(value.error) || Object.keys(value.error).length !== 1 ||
+      value.error.code !== (status === 403 ? "CONVERSATION_FORBIDDEN" : "CONVERSATION_NOT_FOUND")) return 503;
+  return status;
+}

@@ -233,3 +233,5 @@ Native fresh-SSO recovery: [contract, limits, activation and return](integration
 Native recovery decision: [ADR0063](adr/0063_FRESH_NATIVE_SESSION_WITHOUT_CRYPTO_RESET.md).
 
 - [ADR0064: Automatic vehicle chat preparation](adr/0064_AUTOMATIC_VEHICLE_CONVERSATION_PREPARATION.md) — source enrollment and bounded backfill candidate; prepared is distinct from joined.
+
+- [Read-only identity lookup repair and verification](deployment/identity-lookup-20261109/README.md)

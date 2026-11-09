@@ -1,0 +1,29 @@
+{
+  "status": "reviewed candidate; not yet deployed",
+  "messagingBase": "b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e",
+  "messagingCandidate": "d75124733fab8d3c2e575ee24d955104f9c1b07b",
+  "copLiveBase": "c7efa00417e51d57b26ad4c6087abe0aae778f54",
+  "copEvidenceParent": "16da4e0e4894bfe850e479fc8bd4c47c2381e678",
+  "runtimeFileSha256": {
+    "apps/cop-api/src/messaging-identity-lookup.ts": "5bc3f4496bb876eb44b7975672eed83793eb204bb3407cbb6c12949951f643f2",
+    "apps/cop-api/src/messaging-provider.ts": "b4e19346613d159fddd4dbf24080272a11e15e036e597bba681932d8b6a32354"
+  },
+  "checks": {
+    "actualPhoenixRouterBridgeAndProviderPassed": 46,
+    "messagingRouterAdjacentPassed": 33,
+    "messagingFullPassed": 317,
+    "messagingFullSkipped": 49,
+    "realPostgres18_3OriginalIdentityGatePassed": 2,
+    "apiTypecheck": true,
+    "changedFileLint": true,
+    "bothOpenApiValidated": true,
+    "prodCompile": true,
+    "prodTestAuthorityOverrideCompiledOut": true
+  },
+  "limits": [
+    "Local Elixir1.20.2 OTP28; target image OTP29.0.3 not built at this receipt.",
+    "No account-scoped production lookup, join, send, key reset or phone acceptance.",
+    "Normal full Messaging run excludes native opt-in suites; two new native cases passed separately."
+  ],
+  "productionChanged": false
+}

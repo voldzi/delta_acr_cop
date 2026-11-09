@@ -1,4 +1,4 @@
-import { validateIdentityLookup, type MessagingMatrixIdentityLookupResult } from "./messaging-identity-lookup.js";
+import { identityLookupFailureStatus, validateIdentityLookup, type MessagingMatrixIdentityLookupResult } from "./messaging-identity-lookup.js";
 import type { AuthenticatedActor } from "./security.js";
 import type { MessagingPeerBindings } from "./messaging-peer-bindings.js";
 
@@ -941,7 +941,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         method: "POST", body: JSON.stringify({conversationId}),
         headers: {...actorHeaders(actor), "Content-Type": "application/json"}
       });
-      if (!result.ok) return {statusCode: result.status === 403 || result.status === 404 ? result.status : 503};
+      if (!result.ok) return {statusCode: identityLookupFailureStatus(result.body, actor.subjectId, conversationId, result.status)};
       const body = validateIdentityLookup(result.body, actor.subjectId, conversationId, requestNow);
       return body ? {statusCode: 200, body} : {statusCode: 503};
     } catch { return {statusCode: 503}; }

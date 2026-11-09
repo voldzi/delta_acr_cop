@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
 import { CsmMessagingProvider } from "./messaging-provider.js";
-import { validateIdentityLookup } from "./messaging-identity-lookup.js";
+import { identityLookupFailureStatus, validateIdentityLookup } from "./messaging-identity-lookup.js";
 const now = new Date("2026-10-05T20:00:00Z");
 const valid = () => ({contractVersion: "csm-messaging-identity-lookup-v1", providerId: "csm.messaging", status: "ready", warnings: [], actorUserId: "lab", conversationId: "room-1", matrixRoomId: "!room:matrix.test", identities: [{userId: "lab", matrixUserId: "@cop_actor_hash:matrix.test"}, {userId: "peer", matrixUserId: "@cop_peer_hash:matrix.test"}], unresolvedUserIds: [] as string[]});
 const provider = () => new CsmMessagingProvider({baseUrl: "http://messaging.local:4050", enabled: true, cacheTtlMs: 1000, timeoutMs: 20, token: "synthetic-service-token"});
@@ -32,9 +32,18 @@ describe("conversation-scoped read-only identity lookup", () => {
       expect(target.pathname).toBe("/api/v1/matrix/identities/lookup"); expect(options.method).toBe("POST"); expect(JSON.parse(options.body as string)).toEqual({conversationId:"room-1"}); expect((options.headers as Record<string,string>)["x-csm-user-id"]).toBe("lab");
     } finally {await app.close();}
   });
+  it("accepts only typed actor/conversation-bound negative receipts, never framework404", () => {
+    for (const status of [403, 404]) {
+      const body = {contractVersion:"csm-messaging-identity-lookup-v1",providerId:"csm.messaging",actorUserId:"lab",conversationId:"room-1",error:{code:status===403?"CONVERSATION_FORBIDDEN":"CONVERSATION_NOT_FOUND"}};
+      expect(identityLookupFailureStatus(body,"lab","room-1",status)).toBe(status);
+      for (const value of [{}, {errors:{detail:"Not Found"}}, {...body,actorUserId:"foreign"}, {...body,conversationId:"foreign"}, {...body,accessToken:"must-not-forward"}]) {
+        expect(identityLookupFailureStatus(value,"lab","room-1",status)).toBe(503);
+      }
+    }
+  });
   it("keeps nonmembership/notfound distinct from service failure without a provisioning fallback", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-    for (const status of [403,404,500,503]) {fetch.mockResolvedValueOnce(new Response("{}",{status})); expect((await provider().lookupMatrixIdentities({subjectId:"lab",displayName:"A",username:"a",authMode:"lab",roles:[]},now,"room-1")).statusCode).toBe(status===403||status===404?status:503);}
+    for (const status of [403,404,500,503]) {fetch.mockResolvedValueOnce(new Response("{}",{status})); expect((await provider().lookupMatrixIdentities({subjectId:"lab",displayName:"A",username:"a",authMode:"lab",roles:[]},now,"room-1")).statusCode).toBe(503);}
     fetch.mockResolvedValueOnce(new Response(JSON.stringify({...valid(), actorUserId:"wrong"}),{status:200})); expect((await provider().lookupMatrixIdentities({subjectId:"lab",displayName:"A",username:"a",authMode:"lab",roles:[]},now,"room-1")).statusCode).toBe(503);
     fetch.mockRejectedValueOnce(new Error("network failure")); expect((await provider().lookupMatrixIdentities({subjectId:"lab",displayName:"A",username:"a",authMode:"lab",roles:[]},now,"room-1")).statusCode).toBe(503);
     expect(fetch.mock.calls.every(([url]) => (url as URL).pathname.endsWith("/lookup"))).toBe(true);

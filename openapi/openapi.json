@@ -252,67 +252,184 @@
     },
     "/api/v1/driver-measurements/v1/consent": {
       "get": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "getDriverMeasurementConsent",
         "summary": "Read consent and deletion state for the authenticated native user.",
         "description": "Available with intake or cleanup enabled, including outside a restricted pilot. canGrant also requires enabled intake and membership in a configured pilot cohort; false does not revoke an existing consent. Measurement request logs contain only method, fixed operation path and generated request correlation, never IP, ports, headers or raw JSON parser content. Own read/revoke accepts only explicitly configured cleanup clients from verified signed azp and pinned issuer. Default and currently authorized cleanup client is csm-mobile; dedicated Jizda OAuth provisioning is not authorized by this source integration. This does not authorize grant/batch or expand the pilot subject cohort. Missing/invalid explicit cleanup configuration returns503.",
         "responses": {
-          "200": {"description": "Current consent state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentState"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "413": {"$ref": "#/components/responses/ErrorResponse"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Current consent state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       },
       "post": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "grantDriverMeasurementConsent",
         "summary": "Grant explicit traffic quality contribution consent.",
         "description": "An optional server-owned pilot allowlist is checked against the verified OIDC subject. Non-members receive 403 DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE; empty or malformed enabled pilot configuration receives 503 DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED. Client input cannot select cohort membership. Consent requests are bounded to 1024 bytes; parser failures return a generic COP error without logging or forwarding raw input.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrant"}}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverMeasurementConsentGrant"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "Granted consent and timestamp.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrantReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "413": {"$ref": "#/components/responses/ErrorResponse"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Granted consent and timestamp.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementConsentGrantReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       },
       "delete": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "revokeDriverMeasurementConsent",
         "summary": "Stop uploads immediately and delete retained SIM contributions.",
         "description": "202 means local consent is revoked but SIM deletion is pending and retried. Same UTC day regrant is blocked; pending deletion blocks all regrants. Revocation remains available outside the pilot and with intake disabled when cleanup is enabled. Own read/revoke accepts only explicitly configured cleanup clients from verified signed azp and pinned issuer. Default and currently authorized cleanup client is csm-mobile; dedicated Jizda OAuth provisioning is not authorized by this source integration. This does not authorize grant/batch or expand the pilot subject cohort. Missing/invalid explicit cleanup configuration returns503.",
         "responses": {
-          "200": {"description": "Consent revoked and deletion completed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
-          "202": {"description": "Consent revoked locally; durable deletion pending.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "413": {"$ref": "#/components/responses/ErrorResponse"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Consent revoked and deletion completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Consent revoked locally; durable deletion pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       }
     },
     "/api/v1/driver-measurements/v1/batches": {
       "post": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "submitDriverMeasurementBatch",
         "summary": "Submit a short, explicitly consented GPS measurement draft through COP.",
         "description": "Disabled by default. Native authenticated OIDC user only; no browser Origin. An enabled restricted pilot additionally requires membership of the verified OIDC subject in a server-owned allowlist; non-members receive 403, empty or invalid pilot configuration receives 503. COP supplies day-scoped pseudonym, consent attestation and server-side SIM token. No direct mobile SIM or Valhalla access. The mobile batch version is cop-driver-measurements-v1; COP transforms it to SIM's sim-driver-measurements-v1. Raw GPS is not persisted by COP.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileBatch"}}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverMeasurementMobileBatch"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "SIM shadow receipt with the original mobile batchId.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "413": {"$ref": "#/components/responses/ErrorResponse"},
-          "429": {"$ref": "#/components/responses/TooManyRequests"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "SIM shadow receipt with the original mobile batchId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementMobileReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       }
     },
@@ -860,7 +977,7 @@
         ],
         "summary": "Proxy an allowlisted georeferenced raster overlay image.",
         "operationId": "getMapRasterOverlay",
-        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling SIM or external weather providers directly. ČHMÚ radar layers must use the SIM clean raster URL from providerProperties.raster.url; rawUrl and sourceUrl are diagnostic only. COP accepts allowlisted absolute URLs and SIM clean relative paths under /api/v1/weather-radar/clean/.\n",
+        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling SIM or external weather providers directly. \u010cHM\u00da radar layers must use the SIM clean raster URL from providerProperties.raster.url; rawUrl and sourceUrl are diagnostic only. COP accepts allowlisted absolute URLs and SIM clean relative paths under /api/v1/weather-radar/clean/.\n",
         "parameters": [
           {
             "name": "url",
@@ -934,7 +1051,7 @@
         ],
         "summary": "Return server-side SIM weather radar frame catalog.",
         "operationId": "getWeatherRadarFrames",
-        "description": "Returns a short-lived, client-safe frame catalog for radar playback. COP calls SIM server-to-server and clients use the cleanUrl values only through /api/v1/map/raster-overlay. Browser and native clients must not call SIM weather-radar or ČHMÚ URLs directly.\n",
+        "description": "Returns a short-lived, client-safe frame catalog for radar playback. COP calls SIM server-to-server and clients use the cleanUrl values only through /api/v1/map/raster-overlay. Browser and native clients must not call SIM weather-radar or \u010cHM\u00da URLs directly.\n",
         "parameters": [
           {
             "name": "product",
@@ -1012,7 +1129,7 @@
         ],
         "summary": "Proxy an allowlisted SIM weather webcam detail or snapshot resource.",
         "operationId": "getWeatherWebcamProxy",
-        "description": "Returns client-safe ČHMÚ webcam detail JSON or snapshot image using only URLs supplied in providerProperties.camera.detailUrl or snapshotUrl. COP allows configured SIM hosts and blocks direct chmi.cz upstream hosts.\n",
+        "description": "Returns client-safe \u010cHM\u00da webcam detail JSON or snapshot image using only URLs supplied in providerProperties.camera.detailUrl or snapshotUrl. COP allows configured SIM hosts and blocks direct chmi.cz upstream hosts.\n",
         "parameters": [
           {
             "name": "url",
@@ -1605,7 +1722,7 @@
         "tags": [
           "Safety Data"
         ],
-        "summary": "Read informational ČT24 headline context through COP.",
+        "summary": "Read informational \u010cT24 headline context through COP.",
         "operationId": "getSafetyMediaNewsContext",
         "description": "Server-only proxy to the fixed SIM /safety-data/api/v1/context/news endpoint. Returns only bounded headline metadata (titles, outgoing links, publication/fetch times and attribution), never article bodies or video. This informational stream is separate from official warnings and never eligible for automatic crisis notification. regionCode identifies an editorial RSS feed area, not an incident location; eventAt and location are null and locationStatus is unresolved. No distance, local incident or safety conclusion may be inferred from this metadata. COP forwards no user credential to SIM. Fixed limit 20, maximum 24-hour publication age, memory cache 300 seconds, retry backoff 60 seconds, bounded timeout/body and no redirects. Public reading is permitted only when the deployment enables COP public read; otherwise authentication is required. No caller-controlled upstream URL or feed selector is supported.",
         "security": [
@@ -1639,7 +1756,7 @@
                       "items": [
                         {
                           "id": "ct24-example-headline",
-                          "title": "Ukázkový zpravodajský titulek",
+                          "title": "Uk\u00e1zkov\u00fd zpravodajsk\u00fd titulek",
                           "link": "https://ct24.ceskatelevize.cz/clanek/ukazka",
                           "publishedAt": "2026-10-10T11:30:00Z",
                           "fetchedAt": "2026-10-10T12:00:00Z",
@@ -1653,20 +1770,20 @@
                           "stale": false,
                           "source": {
                             "id": "ct24",
-                            "name": "ČT24",
+                            "name": "\u010cT24",
                             "feedId": "ct24-main",
-                            "attribution": "Česká televize / ČT24"
+                            "attribution": "\u010cesk\u00e1 televize / \u010cT24"
                           }
                         }
                       ],
                       "sources": [
                         {
                           "id": "ct24-main",
-                          "label": "ČT24 – zpravodajství",
+                          "label": "\u010cT24 \u2013 zpravodajstv\u00ed",
                           "feedUrl": "https://ct24.ceskatelevize.cz/rss",
                           "regionCode": "CZ",
                           "regionScope": "feed",
-                          "attribution": "Česká televize / ČT24",
+                          "attribution": "\u010cesk\u00e1 televize / \u010cT24",
                           "status": "ok",
                           "fetchedAt": "2026-10-10T12:00:00Z",
                           "stale": false,
@@ -1698,7 +1815,7 @@
             "$ref": "#/components/responses/TooManyRequests"
           },
           "503": {
-            "description": "Zpravodajský kontext nyní není dostupný.",
+            "description": "Zpravodajsk\u00fd kontext nyn\u00ed nen\u00ed dostupn\u00fd.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1710,7 +1827,7 @@
                     "value": {
                       "error": {
                         "code": "MEDIA_NEWS_UNAVAILABLE",
-                        "message": "Zpravodajský kontext nyní není dostupný.",
+                        "message": "Zpravodajsk\u00fd kontext nyn\u00ed nen\u00ed dostupn\u00fd.",
                         "correlationId": "00000000-0000-4000-8000-000000000001"
                       }
                     }
@@ -4371,29 +4488,69 @@
     },
     "/api/v1/ai/mcp-assistant/usage": {
       "get": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Read bounded MCP assistant usage and budget status.",
         "operationId": "getOpenAiMcpAssistantUsage",
         "description": "Authenticated COP users can inspect aggregate daily and monthly committed usage. When the shared AI Router adapter is enabled, these totals are Router-wide and include SIM traffic; the legacy direct path remains separately accounted. No provider credential is returned.",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Current usage and limits.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "200": {
+            "description": "Current usage and limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/v1/ai/mcp-assistant/source-health": {
       "post": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Summarize aggregate COP source health with the configured bounded assistant.",
         "operationId": "summarizeMcpSourceHealthWithOpenAi",
         "description": "Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP tool; sends only aggregate health counts to the configured direct model or shared AI Router. Never sends report text, chat, partner data or provider credentials. Output requires operator review. Router mode is opt-in and does not change COP chat or situation-summary routes.",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "AI summary and usage.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "description": "AI usage budget or request limit reached." },
-          "503": { "description": "AI feature, provider or budget ledger unavailable." }
+          "200": {
+            "description": "AI summary and usage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "AI usage budget or request limit reached."
+          },
+          "503": {
+            "description": "AI feature, provider or budget ledger unavailable."
+          }
         }
       }
     },
@@ -4443,44 +4600,118 @@
     },
     "/api/v1/ai/chat-agent/credential": {
       "get": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Read status of the authenticated user's own AI credential without revealing it.",
         "operationId": "getMyAiChatCredentialStatus",
         "responses": {
-          "200": { "description": "Credential availability and configured status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential availability and configured status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       },
       "put": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Relay the authenticated user's OpenAI API key to SIM Router for encrypted storage.",
         "operationId": "putMyAiChatCredential",
         "description": "Disabled by default. COP relays the key with a short-lived signed actor derived from the authenticated session. SIM Router validates and encrypts it. Saving a key alone does not switch chat routing.",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["apiKey"], "properties": { "apiKey": { "type": "string", "minLength": 20, "maxLength": 512, "writeOnly": true } } } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "apiKey"
+                ],
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 512,
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Credential stored; secret omitted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
-          "429": { "$ref": "#/components/responses/TooManyRequests" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential stored; secret omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       },
       "delete": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Remove the authenticated user's own AI credential from SIM Router.",
         "operationId": "deleteMyAiChatCredential",
         "responses": {
-          "200": { "description": "Credential removed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       }
     },
     "/api/v1/ai/chat-agent/reviewed-general": {
       "post": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Ask a fixed, server-reviewed general question through the shared AI Router.",
         "operationId": "queryReviewedGeneralChat",
         "description": "Authenticated opt-in request. COP maps a topic enum to a fixed question and sends an empty internal_minimized context. No user question, chat history, private message, incident, or free context is forwarded. Disabled by the Router until external processing gates are accepted.",
@@ -4491,11 +4722,17 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["topic"],
+                "required": [
+                  "topic"
+                ],
                 "properties": {
                   "topic": {
                     "type": "string",
-                    "enum": ["flood_preparedness", "warning_levels", "information_sources"]
+                    "enum": [
+                      "flood_preparedness",
+                      "warning_levels",
+                      "information_sources"
+                    ]
                   }
                 }
               }
@@ -4503,11 +4740,21 @@
           }
         },
         "responses": {
-          "200": { "description": "Reviewed general answer and Router usage." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "description": "Router limit reached." },
-          "503": { "description": "Router external class disabled or unavailable." }
+          "200": {
+            "description": "Reviewed general answer and Router usage."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "Router limit reached."
+          },
+          "503": {
+            "description": "Router external class disabled or unavailable."
+          }
         }
       }
     },
@@ -4821,7 +5068,7 @@
           "Messaging"
         ],
         "summary": "Create client-safe Matrix bootstrap for the authenticated user.",
-        "description": "Authenticated COP users may request a short-lived Matrix user token for direct Matrix client-server communication with E2EE. This endpoint never returns provider, service or Synapse admin tokens and does not proxy plaintext messages.\n Optional installationId is an app installation UUID attested server-side from the verified issuer/azp; dedicated Jízda requires it together with deviceId. Forged or extra body fields return400. An unavailable attested installation bootstrap returns503 MESSAGING_INSTALLATION_UNAVAILABLE with no credentials or legacy retry. Requests without installationId preserve the existing degraded200 compatibility behavior.",
+        "description": "Authenticated COP users may request a short-lived Matrix user token for direct Matrix client-server communication with E2EE. This endpoint never returns provider, service or Synapse admin tokens and does not proxy plaintext messages.\n Optional installationId is an app installation UUID attested server-side from the verified issuer/azp; dedicated J\u00edzda requires it together with deviceId. Forged or extra body fields return400. An unavailable attested installation bootstrap returns503 MESSAGING_INSTALLATION_UNAVAILABLE with no credentials or legacy retry. Requests without installationId preserve the existing degraded200 compatibility behavior.",
         "operationId": "createMessagingBootstrap",
         "requestBody": {
           "required": false,
@@ -5238,7 +5485,7 @@
           "Messaging"
         ],
         "summary": "Read existing conversation-scoped Matrix identity mappings without provisioning",
-        "description": "Authenticated COP actor only. Messaging service verifies current conversation membership. No-store response; existing resolve endpoint retains its provisioning semantics. Unknown/unavailable mapping never implies a peer or member count. Rate limit 120 requests/minute.",
+        "description": "Authenticated COP actor only. Messaging service verifies current conversation membership. No-store response; existing resolve endpoint retains its provisioning semantics. Unknown/unavailable mapping never implies a peer or member count. Rate limit 120 requests/minute. Only typed provider errors bound to the same actor and conversation preserve403/404. Missing upstream route, framework/WAF404 or malformed/mismatched provider error becomes503; no fallback to provisioning resolve. Never-used identities may be explicitly unresolved; a used/lost original mapping is unavailable.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -5575,7 +5822,7 @@
           "Notifications"
         ],
         "summary": "Evaluate verified SIM notification candidates for the authenticated user.",
-        "description": "Self-service server endpoint. Recipient identity comes only from the authenticated actor; another user, a group or an area audience is forbidden (403 NOTIFICATION_AUDIENCE_FORBIDDEN). COP fetches typed candidates only from SIM /safety-data/api/v1/notifications/candidates, never arbitrary rendered map warnings. Candidates must have ready fresh source input and a complete collection; unavailable, incomplete or possibly truncated input returns 503 and is not evidence that the watched area is safe. Relevance uses the user’s saved enabled watched areas and severity settings; Polygon/MultiPolygon intersection is evaluated, while unresolved or administrative fallback points, stale/expired items, technical source errors and editorial bulletins cannot become local alerts. currentLocation is retained as an ignored compatibility field; it does not grant consent, create a watched area or establish an audience. Default dryRun=true does not dispatch. dryRun=false additionally requires explicit current-user consent and an enabled durable worker/store. Send identity includes recipient and canonical incident/validity, so one recipient does not suppress another and repeated rendering layers are deduplicated. Legacy dispatch is always an empty array; use the additive dispatchSummary for intake acceptance/skips/failures. acceptedCount/dispatchedCount means CSM Messaging intake acknowledgement, not physical APNs/web delivery. Messaging failures are represented by failedCount without a direct-push fallback. COP stores no APNs token and performs no direct push.",
+        "description": "Self-service server endpoint. Recipient identity comes only from the authenticated actor; another user, a group or an area audience is forbidden (403 NOTIFICATION_AUDIENCE_FORBIDDEN). COP fetches typed candidates only from SIM /safety-data/api/v1/notifications/candidates, never arbitrary rendered map warnings. Candidates must have ready fresh source input and a complete collection; unavailable, incomplete or possibly truncated input returns 503 and is not evidence that the watched area is safe. Relevance uses the user\u2019s saved enabled watched areas and severity settings; Polygon/MultiPolygon intersection is evaluated, while unresolved or administrative fallback points, stale/expired items, technical source errors and editorial bulletins cannot become local alerts. currentLocation is retained as an ignored compatibility field; it does not grant consent, create a watched area or establish an audience. Default dryRun=true does not dispatch. dryRun=false additionally requires explicit current-user consent and an enabled durable worker/store. Send identity includes recipient and canonical incident/validity, so one recipient does not suppress another and repeated rendering layers are deduplicated. Legacy dispatch is always an empty array; use the additive dispatchSummary for intake acceptance/skips/failures. acceptedCount/dispatchedCount means CSM Messaging intake acknowledgement, not physical APNs/web delivery. Messaging failures are represented by failedCount without a direct-push fallback. COP stores no APNs token and performs no direct push.",
         "operationId": "evaluateSafetyNotifications",
         "parameters": [
           {
@@ -5820,7 +6067,10 @@
             "description": "Dependency health status.",
             "headers": {
               "Cache-Control": {
-                "schema": { "type": "string", "const": "no-store" }
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
               }
             },
             "content": {
@@ -7826,7 +8076,9 @@
         "summary": "Calculate a SIM route through COP.",
         "operationId": "runEmergencyRoute",
         "parameters": [
-          { "$ref": "#/components/parameters/CorrelationIdHeader" }
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
         ],
         "description": "Calculates a primary route between two points through the server-side SIM routing provider. COP renders returned GeoJSON features as a temporary operational overlay and displays ETA, distance, quality, traffic and warnings. Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing.",
         "requestBody": {
@@ -7874,26 +8126,26 @@
             }
           },
           "422": {
-          "description": "Requested routing requirements cannot be met without weakening restrictions. ROUTING_RESTRICTIONS_RELAXATION_REQUIRED identifies known Valhalla warning 401; it does not identify a failing waypoint and never returns a relaxed route. User-selected arrival errors also use this status.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ErrorResponse"
-              },
-              "examples": {
-                "restrictionsRelaxation": {
-                  "value": {
-                    "error": {
-                      "code": "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED",
-                      "message": "The requested route requires relaxed restrictions; no route was returned.",
-                      "correlationId": "synthetic-routing-example"
+            "description": "Requested routing requirements cannot be met without weakening restrictions. ROUTING_RESTRICTIONS_RELAXATION_REQUIRED identifies known Valhalla warning 401; it does not identify a failing waypoint and never returns a relaxed route. User-selected arrival errors also use this status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "restrictionsRelaxation": {
+                    "value": {
+                      "error": {
+                        "code": "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED",
+                        "message": "The requested route requires relaxed restrictions; no route was returned.",
+                        "correlationId": "synthetic-routing-example"
+                      }
                     }
                   }
                 }
               }
             }
-          }
-        },
+          },
           "429": {
             "description": "SIM routing limit reached; no fallback.",
             "content": {
@@ -7921,7 +8173,9 @@
         "summary": "Calculate SIM emergency route alternatives through COP.",
         "operationId": "runEmergencyRouteAlternatives",
         "parameters": [
-          { "$ref": "#/components/parameters/CorrelationIdHeader" }
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -7968,26 +8222,26 @@
             }
           },
           "422": {
-          "description": "Requested routing requirements cannot be met without weakening restrictions. ROUTING_RESTRICTIONS_RELAXATION_REQUIRED identifies known Valhalla warning 401; it does not identify a failing waypoint and never returns a relaxed route. User-selected arrival errors also use this status.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ErrorResponse"
-              },
-              "examples": {
-                "restrictionsRelaxation": {
-                  "value": {
-                    "error": {
-                      "code": "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED",
-                      "message": "The requested route requires relaxed restrictions; no route was returned.",
-                      "correlationId": "synthetic-routing-example"
+            "description": "Requested routing requirements cannot be met without weakening restrictions. ROUTING_RESTRICTIONS_RELAXATION_REQUIRED identifies known Valhalla warning 401; it does not identify a failing waypoint and never returns a relaxed route. User-selected arrival errors also use this status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "restrictionsRelaxation": {
+                    "value": {
+                      "error": {
+                        "code": "ROUTING_RESTRICTIONS_RELAXATION_REQUIRED",
+                        "message": "The requested route requires relaxed restrictions; no route was returned.",
+                        "correlationId": "synthetic-routing-example"
+                      }
                     }
                   }
                 }
               }
             }
-          }
-        },
+          },
           "429": {
             "description": "SIM routing limit reached; no fallback.",
             "content": {
@@ -16450,102 +16704,340 @@
         }
       },
       "DriverMeasurementConsentState": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "grantedAt", "pendingDeletion", "canGrant"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "grantedAt",
+          "pendingDeletion",
+          "canGrant"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean"},
-          "grantedAt": {"type": ["string", "null"], "format": "date-time"},
-          "pendingDeletion": {"type": "boolean"},
-          "canGrant": {"type": "boolean"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "grantedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          },
+          "canGrant": {
+            "type": "boolean"
+          }
         }
       },
       "DriverMeasurementConsentGrant": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "version", "granted"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "version",
+          "granted"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "version": {"type": "string", "const": "traffic-quality-v1"},
-          "granted": {"type": "boolean", "const": true}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "version": {
+            "type": "string",
+            "const": "traffic-quality-v1"
+          },
+          "granted": {
+            "type": "boolean",
+            "const": true
+          }
         }
       },
       "DriverMeasurementConsentGrantReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "version", "grantedAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "version",
+          "grantedAt"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "version": {"type": "string", "const": "traffic-quality-v1"},
-          "grantedAt": {"type": "string", "format": "date-time"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "version": {
+            "type": "string",
+            "const": "traffic-quality-v1"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "DriverMeasurementRevokeReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "pendingDeletion"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "pendingDeletion"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean", "const": false},
-          "pendingDeletion": {"type": "boolean"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean",
+            "const": false
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          }
         }
       },
       "DriverMeasurementPoint": {
-        "type": "object", "additionalProperties": false,
-        "required": ["sampleId", "observedAt", "lat", "lon", "horizontalAccuracyM", "speedMps", "speedAccuracyMps", "headingDeg", "headingAccuracyDeg", "positionSource", "motion", "reducedAccuracy"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sampleId",
+          "observedAt",
+          "lat",
+          "lon",
+          "horizontalAccuracyM",
+          "speedMps",
+          "speedAccuracyMps",
+          "headingDeg",
+          "headingAccuracyDeg",
+          "positionSource",
+          "motion",
+          "reducedAccuracy"
+        ],
         "properties": {
-          "sampleId": {"type": "string", "format": "uuid"},
-          "observedAt": {"type": "string", "format": "date-time"},
-          "lat": {"type": "number", "minimum": -90, "maximum": 90},
-          "lon": {"type": "number", "minimum": -180, "maximum": 180},
-          "horizontalAccuracyM": {"type": "number", "minimum": 0, "maximum": 15},
-          "speedMps": {"type": "number", "minimum": 0, "maximum": 70},
-          "speedAccuracyMps": {"type": "number", "minimum": 0, "maximum": 2},
-          "headingDeg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
-          "headingAccuracyDeg": {"type": "number", "minimum": 0, "maximum": 20},
-          "positionSource": {"type": "string", "const": "gps"},
-          "motion": {"type": "string", "enum": ["driving", "traffic_stop"]},
-          "reducedAccuracy": {"type": "boolean", "const": false}
+          "sampleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "horizontalAccuracyM": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "speedMps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 70
+          },
+          "speedAccuracyMps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "headingDeg": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360
+          },
+          "headingAccuracyDeg": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "positionSource": {
+            "type": "string",
+            "const": "gps"
+          },
+          "motion": {
+            "type": "string",
+            "enum": [
+              "driving",
+              "traffic_stop"
+            ]
+          },
+          "reducedAccuracy": {
+            "type": "boolean",
+            "const": false
+          }
         }
       },
       "DriverMeasurementEta": {
-        "type": "object", "additionalProperties": false,
-        "required": ["observationId", "routingDataset", "predictedDurationSeconds", "actualDurationSeconds", "plannedDistanceM", "actualDistanceM", "personalStopSeconds", "estimatedSeconds", "offRoute", "completedAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observationId",
+          "routingDataset",
+          "predictedDurationSeconds",
+          "actualDurationSeconds",
+          "plannedDistanceM",
+          "actualDistanceM",
+          "personalStopSeconds",
+          "estimatedSeconds",
+          "offRoute",
+          "completedAt"
+        ],
         "properties": {
-          "observationId": {"type": "string", "format": "uuid"},
-          "routingDataset": {"type": "string", "pattern": "^sim-routing-\\d{4}-\\d{2}-\\d{2}-\\d+$"},
-          "predictedDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
-          "actualDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
-          "plannedDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
-          "actualDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
-          "personalStopSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
-          "estimatedSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
-          "offRoute": {"type": "boolean"},
-          "completedAt": {"type": "string", "format": "date-time"}
+          "observationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routingDataset": {
+            "type": "string",
+            "pattern": "^sim-routing-\\d{4}-\\d{2}-\\d{2}-\\d+$"
+          },
+          "predictedDurationSeconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "actualDurationSeconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "plannedDistanceM": {
+            "type": "number",
+            "minimum": 100,
+            "maximum": 2000000
+          },
+          "actualDistanceM": {
+            "type": "number",
+            "minimum": 100,
+            "maximum": 2000000
+          },
+          "personalStopSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "estimatedSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "offRoute": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "DriverMeasurementMobileBatch": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "batchId", "contributorDay", "vehicleClass", "points"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "batchId",
+          "contributorDay",
+          "vehicleClass",
+          "points"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "batchId": {"type": "string", "format": "uuid"},
-          "contributorDay": {"type": "string", "format": "date"},
-          "vehicleClass": {"type": "string", "const": "passenger_car"},
-          "points": {"type": "array", "minItems": 3, "maxItems": 120, "items": {"$ref": "#/components/schemas/DriverMeasurementPoint"}},
-          "eta": {"$ref": "#/components/schemas/DriverMeasurementEta"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contributorDay": {
+            "type": "string",
+            "format": "date"
+          },
+          "vehicleClass": {
+            "type": "string",
+            "const": "passenger_car"
+          },
+          "points": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 120,
+            "items": {
+              "$ref": "#/components/schemas/DriverMeasurementPoint"
+            }
+          },
+          "eta": {
+            "$ref": "#/components/schemas/DriverMeasurementEta"
+          }
         }
       },
       "DriverMeasurementMobileReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "batchId", "receivedAt", "acceptedIntervalCount", "deduplicatedIntervalCount", "rejectionCounts", "etaAccepted", "applicationMode", "rawPositionsStored"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "batchId",
+          "receivedAt",
+          "acceptedIntervalCount",
+          "deduplicatedIntervalCount",
+          "rejectionCounts",
+          "etaAccepted",
+          "applicationMode",
+          "rawPositionsStored"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "batchId": {"type": "string", "format": "uuid"},
-          "receivedAt": {"type": "string", "format": "date-time"},
-          "acceptedIntervalCount": {"type": "integer", "minimum": 0},
-          "deduplicatedIntervalCount": {"type": "integer", "minimum": 0},
-          "rejectionCounts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
-          "etaAccepted": {"type": "boolean"},
-          "applicationMode": {"type": "string", "const": "shadow_only"},
-          "rawPositionsStored": {"type": "boolean", "const": false}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deduplicatedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rejectionCounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "etaAccepted": {
+            "type": "boolean"
+          },
+          "applicationMode": {
+            "type": "string",
+            "const": "shadow_only"
+          },
+          "rawPositionsStored": {
+            "type": "boolean",
+            "const": false
+          }
         }
       },
       "AuthenticatedActor": {
@@ -17486,7 +17978,9 @@
           "confidenceSummary"
         ],
         "properties": {
-          "presence": { "$ref": "#/components/schemas/CommunityReportPresence" },
+          "presence": {
+            "$ref": "#/components/schemas/CommunityReportPresence"
+          },
           "reportId": {
             "type": "string",
             "format": "uuid"
@@ -18495,7 +18989,9 @@
               },
               "transport": {
                 "type": "string",
-                "enum": ["cop_api"],
+                "enum": [
+                  "cop_api"
+                ],
                 "description": "Server-selected upload through the existing authenticated COP API POST route. No external presigned PUT is returned. Clients use their normal COP authentication and known API attachment path."
               },
               "uploadUrl": {
@@ -18625,33 +19121,33 @@
         }
       },
       "CommunityReportPresence": {
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "policyVersion",
-    "active",
-    "reason"
-  ],
-  "properties": {
-    "policyVersion": {
-      "type": "string",
-      "const": "cop-report-presence-v1"
-    },
-    "active": {
-      "type": "boolean"
-    },
-    "reason": {
-      "type": "string",
-      "enum": [
-        "active",
-        "expired",
-        "lifecycle",
-        "independent_absence"
-      ]
-    }
-  },
-  "description": "Server-owned feed decision; transient reports are suppressed by at least three independent negative votes with a negative balance of at least two. Votes before the report revision are ignored. No routing instruction."
-},
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policyVersion",
+          "active",
+          "reason"
+        ],
+        "properties": {
+          "policyVersion": {
+            "type": "string",
+            "const": "cop-report-presence-v1"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "lifecycle",
+              "independent_absence"
+            ]
+          }
+        },
+        "description": "Server-owned feed decision; transient reports are suppressed by at least three independent negative votes with a negative balance of at least two. Votes before the report revision are ignored. No routing instruction."
+      },
       "CommunityReportCategory": {
         "type": "string",
         "enum": [
@@ -19807,7 +20303,10 @@
           },
           "bundleId": {
             "type": "string",
-            "enum": ["cz.voldzi.copmobile", "cz.voldzi.jizda"]
+            "enum": [
+              "cz.voldzi.copmobile",
+              "cz.voldzi.jizda"
+            ]
           }
         }
       },
@@ -22960,12 +23459,28 @@
       "AiChatCredentialStatus": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["available", "configured", "provider", "routingEnabled"],
+        "required": [
+          "available",
+          "configured",
+          "provider",
+          "routingEnabled"
+        ],
         "properties": {
-          "available": { "type": "boolean" },
-          "configured": { "type": "boolean" },
-          "provider": { "type": "string", "enum": ["openai"] },
-          "routingEnabled": { "type": "boolean" }
+          "available": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai"
+            ]
+          },
+          "routingEnabled": {
+            "type": "boolean"
+          }
         }
       },
       "AiCopResponse": {
@@ -23676,7 +24191,7 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9._:-]+$",
-            "description": "Opaque installation endpoint identifier used to coordinate answering across the same user’s devices and applications."
+            "description": "Opaque installation endpoint identifier used to coordinate answering across the same user\u2019s devices and applications."
           }
         }
       },
@@ -23698,7 +24213,9 @@
         ],
         "additionalProperties": false,
         "properties": {
-          "peer": {"$ref": "#/components/schemas/MessagingVoiceCallPeer"},
+          "peer": {
+            "$ref": "#/components/schemas/MessagingVoiceCallPeer"
+          },
           "callId": {
             "type": "string",
             "format": "uuid"
@@ -24418,7 +24935,7 @@
             "format": "uri",
             "maxLength": 2048,
             "pattern": "^https://ct24\\.ceskatelevize\\.cz/",
-            "description": "Validated HTTPS ČT24 outgoing link, without userinfo, explicit port or a lookalike host. COP never fetches article bodies from this link."
+            "description": "Validated HTTPS \u010cT24 outgoing link, without userinfo, explicit port or a lookalike host. COP never fetches article bodies from this link."
           },
           "publishedAt": {
             "type": "string",
@@ -24482,7 +24999,7 @@
               },
               "name": {
                 "type": "string",
-                "const": "ČT24"
+                "const": "\u010cT24"
               },
               "feedId": {
                 "type": "string",
@@ -24494,7 +25011,7 @@
               },
               "attribution": {
                 "type": "string",
-                "const": "Česká televize / ČT24"
+                "const": "\u010cesk\u00e1 televize / \u010cT24"
               }
             }
           }
@@ -24552,7 +25069,7 @@
           },
           "attribution": {
             "type": "string",
-            "const": "Česká televize / ČT24"
+            "const": "\u010cesk\u00e1 televize / \u010cT24"
           },
           "status": {
             "type": "string",
@@ -27324,7 +27841,7 @@
           },
           "label": {
             "type": "string",
-            "example": "Povodeň - Středočeský kraj"
+            "example": "Povode\u0148 - St\u0159edo\u010desk\u00fd kraj"
           },
           "status": {
             "type": "string",
@@ -30222,8 +30739,12 @@
           "capabilities": {
             "$ref": "#/components/schemas/RoadTripCapabilities"
           },
-          "mappedProfiles": { "$ref": "#/components/schemas/RoutingMappedCapabilities" },
-          "userSelectedArrival": { "$ref": "#/components/schemas/RoutingUserArrivalCapabilities" }
+          "mappedProfiles": {
+            "$ref": "#/components/schemas/RoutingMappedCapabilities"
+          },
+          "userSelectedArrival": {
+            "$ref": "#/components/schemas/RoutingUserArrivalCapabilities"
+          }
         }
       },
       "RoutingPoint": {
@@ -30258,7 +30779,9 @@
         ],
         "additionalProperties": false,
         "properties": {
-          "arrival": { "$ref": "#/components/schemas/RoutingUserArrivalRequest" },
+          "arrival": {
+            "$ref": "#/components/schemas/RoutingUserArrivalRequest"
+          },
           "profileId": {
             "type": "string",
             "default": "emergency_vehicle",
@@ -30458,19 +30981,50 @@
         "additionalProperties": false,
         "description": "Optional actual vehicle dimensions. When supplied for a road profile SIM uses Valhalla truck costing for mapped dimensional restrictions; an assessment is never a guarantee of passability.",
         "properties": {
-          "heightM": { "type": "number", "exclusiveMinimum": 0, "maximum": 8 },
-          "widthM": { "type": "number", "exclusiveMinimum": 0, "maximum": 5 },
-          "lengthM": { "type": "number", "exclusiveMinimum": 0, "maximum": 30 },
-          "weightTonnes": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 }
+          "heightM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 8
+          },
+          "widthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 5
+          },
+          "lengthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 30
+          },
+          "weightTonnes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          }
         }
       },
       "RoutingCoverage": {
         "type": "object",
-        "required": ["state"],
+        "required": [
+          "state"
+        ],
         "properties": {
-          "state": { "type": "string", "enum": ["covered", "partial", "outside_coverage", "unknown"] },
-          "reason": { "type": "string" },
-          "sourceAgeSeconds": { "type": "integer", "minimum": 0 },
+          "state": {
+            "type": "string",
+            "enum": [
+              "covered",
+              "partial",
+              "outside_coverage",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceAgeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
           "routingDataset": {
             "$ref": "#/components/schemas/RoutingDataset"
           }
@@ -30478,39 +31032,122 @@
       },
       "RoutingDataset": {
         "type": "object",
-        "required": ["version", "builtAt"],
+        "required": [
+          "version",
+          "builtAt"
+        ],
         "properties": {
-          "version": { "type": "string" },
-          "builtAt": { "type": "string", "format": "date-time" }
+          "version": {
+            "type": "string"
+          },
+          "builtAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "RoutingRoadAttributes": {
         "type": "object",
-        "required": ["state", "source", "observedAt", "matchedEdgeCount", "geometryMismatchCount", "knownSpeedLimitCoveragePercent", "vehicleRestrictionsState", "speedLimits", "restrictions"],
+        "required": [
+          "state",
+          "source",
+          "observedAt",
+          "matchedEdgeCount",
+          "geometryMismatchCount",
+          "knownSpeedLimitCoveragePercent",
+          "vehicleRestrictionsState",
+          "speedLimits",
+          "restrictions"
+        ],
         "description": "Optional attributes of the same directed graph route and alternative as route.geometry. No ETA or traffic speed is used as a legal limit.",
         "properties": {
-          "state": { "type": "string", "enum": ["ok", "partial", "unavailable", "unsupported"] },
-          "reason": { "type": "string" },
-          "source": { "type": "string", "const": "valhalla_trace_attributes" },
-          "routingDataset": { "$ref": "#/components/schemas/RoutingDataset" },
-          "sourceAgeSeconds": { "type": "integer", "minimum": 0 },
-          "observedAt": { "type": "string", "format": "date-time" },
-          "matchedEdgeCount": { "type": "integer", "minimum": 0 },
-          "geometryMismatchCount": { "type": "integer", "minimum": 0 },
-          "knownSpeedLimitCoveragePercent": { "type": "number", "minimum": 0, "maximum": 100 },
-          "vehicleRestrictionsState": { "type": "string", "const": "not_evaluated" },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "unavailable",
+              "unsupported"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "const": "valhalla_trace_attributes"
+          },
+          "routingDataset": {
+            "$ref": "#/components/schemas/RoutingDataset"
+          },
+          "sourceAgeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "matchedEdgeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "geometryMismatchCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "knownSpeedLimitCoveragePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "vehicleRestrictionsState": {
+            "type": "string",
+            "const": "not_evaluated"
+          },
           "speedLimits": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["beginShapeIndex", "endShapeIndex", "direction", "status", "source"],
+              "required": [
+                "beginShapeIndex",
+                "endShapeIndex",
+                "direction",
+                "status",
+                "source"
+              ],
               "properties": {
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "direction": { "type": "string", "const": "along_route" },
-                "valueKph": { "type": "number", "minimum": 10 },
-                "status": { "type": "string", "enum": ["explicit", "derived", "unknown"] },
-                "source": { "type": "string", "enum": ["valhalla_graph_osm_maxspeed", "unknown"] }
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "direction": {
+                  "type": "string",
+                  "const": "along_route"
+                },
+                "valueKph": {
+                  "type": "number",
+                  "minimum": 10
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "explicit",
+                    "derived",
+                    "unknown"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "valhalla_graph_osm_maxspeed",
+                    "unknown"
+                  ]
+                }
               }
             }
           },
@@ -30518,39 +31155,99 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["kind", "beginShapeIndex", "endShapeIndex", "assessment", "source"],
+              "required": [
+                "kind",
+                "beginShapeIndex",
+                "endShapeIndex",
+                "assessment",
+                "source"
+              ],
               "properties": {
-                "kind": { "type": "string", "const": "closure" },
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "assessment": { "type": "string", "const": "advisory" },
-                "source": { "type": "string", "const": "valhalla_trace_attributes" }
+                "kind": {
+                  "type": "string",
+                  "const": "closure"
+                },
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "assessment": {
+                  "type": "string",
+                  "const": "advisory"
+                },
+                "source": {
+                  "type": "string",
+                  "const": "valhalla_trace_attributes"
+                }
               }
             }
           },
-          "tunnels": { "$ref": "#/components/schemas/RoutingTunnelAttributes" }
+          "tunnels": {
+            "$ref": "#/components/schemas/RoutingTunnelAttributes"
+          }
         }
       },
       "RoutingTunnelAttributes": {
         "type": "object",
         "description": "Optional directed tunnel data for this route variant. Inclusive vertex indexes refer to this route's geometry.coordinates in travel order. A known empty intervals array means no graph-marked tunnel edges on a fully verified shape; unknown does not mean no tunnel.",
-        "required": ["state", "routeId", "source", "observedAt", "intervals"],
+        "required": [
+          "state",
+          "routeId",
+          "source",
+          "observedAt",
+          "intervals"
+        ],
         "properties": {
-          "state": { "type": "string", "enum": ["known", "unknown"] },
-          "reason": { "type": "string" },
-          "routeId": { "type": "string" },
-          "source": { "type": "string", "const": "valhalla_trace_attributes.edge.tunnel" },
-          "routingDataset": { "$ref": "#/components/schemas/RoutingDataset" },
-          "observedAt": { "type": "string", "format": "date-time" },
+          "state": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "routeId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "const": "valhalla_trace_attributes.edge.tunnel"
+          },
+          "routingDataset": {
+            "$ref": "#/components/schemas/RoutingDataset"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "intervals": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["beginShapeIndex", "endShapeIndex", "direction"],
+              "required": [
+                "beginShapeIndex",
+                "endShapeIndex",
+                "direction"
+              ],
               "properties": {
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "direction": { "type": "string", "const": "along_route" }
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "direction": {
+                  "type": "string",
+                  "const": "along_route"
+                }
               }
             }
           }
@@ -30601,7 +31298,17 @@
             "type": "object",
             "additionalProperties": true,
             "description": "SIM route feature properties such as routeId, role, label, warningLevel or segment metadata. Known-closure evidence must match the corresponding route variant.",
-            "properties": { "knownClosures": { "$ref": "#/components/schemas/RoutingKnownClosures" }, "mappedProfileAssessment": { "$ref": "#/components/schemas/RoutingMappedAssessment" }, "arrival": { "$ref": "#/components/schemas/RoutingUserArrival" } }
+            "properties": {
+              "knownClosures": {
+                "$ref": "#/components/schemas/RoutingKnownClosures"
+              },
+              "mappedProfileAssessment": {
+                "$ref": "#/components/schemas/RoutingMappedAssessment"
+              },
+              "arrival": {
+                "$ref": "#/components/schemas/RoutingUserArrival"
+              }
+            }
           }
         }
       },
@@ -30839,8 +31546,15 @@
         "type": "object",
         "additionalProperties": true,
         "properties": {
-          "knownClosures": { "$ref": "#/components/schemas/RoutingKnownClosures" },
-          "mappedProfileAssessment": { "$ref": "#/components/schemas/RoutingMappedAssessment" }, "arrival": { "$ref": "#/components/schemas/RoutingUserArrival" },
+          "knownClosures": {
+            "$ref": "#/components/schemas/RoutingKnownClosures"
+          },
+          "mappedProfileAssessment": {
+            "$ref": "#/components/schemas/RoutingMappedAssessment"
+          },
+          "arrival": {
+            "$ref": "#/components/schemas/RoutingUserArrival"
+          },
           "routeId": {
             "type": "string"
           },
@@ -30992,11 +31706,17 @@
           "warnings"
         ],
         "properties": {
-          "query": { "type": "object", "additionalProperties": true, "description": "Validated normalized SIM query returned when knownClosures evidence is present; hash identity uses canonical JSON. Absence is not evidence of closure enforcement." },
+          "query": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Validated normalized SIM query returned when knownClosures evidence is present; hash identity uses canonical JSON. Absence is not evidence of closure enforcement."
+          },
           "contractVersion": {
             "type": "string"
           },
-          "coverage": { "$ref": "#/components/schemas/RoutingCoverage" },
+          "coverage": {
+            "$ref": "#/components/schemas/RoutingCoverage"
+          },
           "generatedAt": {
             "type": "string",
             "format": "date-time"
@@ -32040,223 +32760,223 @@
         }
       },
       "MobilityServiceAvailability": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "sharedVehicles",
-        "dispatch",
-        "checkedAt"
-      ],
-      "properties": {
-        "sharedVehicles": {
-          "type": "string",
-          "enum": [
-            "ready",
-            "unavailable",
-            "disabled"
-          ]
-        },
-        "dispatch": {
-          "type": "string",
-          "enum": [
-            "ready",
-            "recovering",
-            "unavailable",
-            "disabled"
-          ]
-        },
-        "checkedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      }
-    },
-    "MobilityCapabilities": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "contractVersion": {
-          "type": "string",
-          "enum": [
-            "cop-mobility-capabilities-v1"
-          ]
-        },
-        "sharedVehiclesEnabled": {
-          "type": "boolean"
-        },
-        "dispatchEnabled": {
-          "type": "boolean"
-        },
-        "maxVehicleMembers": {
-          "type": "integer",
-          "const": 5
-        },
-        "maxGroupMembers": {
-          "type": "integer",
-          "const": 200
-        },
-        "registration": {
-          "type": "string",
-          "enum": [
-            "idp_login_page",
-            "unavailable",
-            "unverified"
-          ]
-        },
-        "dispatchTransport": {
-          "type": "string",
-          "enum": [
-            "recipient_encrypted_latest_only"
-          ]
-        },
-        "currencies": {
-          "type": "array",
-          "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sharedVehicles",
+          "dispatch",
+          "checkedAt"
+        ],
+        "properties": {
+          "sharedVehicles": {
             "type": "string",
             "enum": [
-              "CZK",
-              "EUR",
-              "USD"
+              "ready",
+              "unavailable",
+              "disabled"
             ]
           },
-          "maxItems": 3
-        },
-        "serverTimestamp": {
-          "type": "string",
-          "format": "date-time",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
-        },
-        "invitationDelivery": {
-          "type": "string",
-          "enum": [
-            "verified_account_inbox"
-          ]
-        },
-        "serviceAvailability": {
-          "$ref": "#/components/schemas/MobilityServiceAvailability",
-          "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
-        },
-        "recordDetailsVersions": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          }
-        },
-        "recordEnergyUnits": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
+          "dispatch": {
             "type": "string",
             "enum": [
-              "liters",
-              "kWh"
+              "ready",
+              "recovering",
+              "unavailable",
+              "disabled"
             ]
-          }
-        },
-        "supportedRefuelingFuelTypes": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
+          },
+          "checkedAt": {
             "type": "string",
-            "enum": [
-              "natural95",
-              "natural98",
-              "natural100",
-              "diesel",
-              "diesel plus",
-              "lpg",
-              "bioEthanol"
-            ]
+            "format": "date-time"
           }
-        },
-        "odometerSnapshotVersions": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "enum": [
-              1,
-              2
-            ]
-          }
-        },
-        "rideDetailsVersions": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          }
-        },
-        "initialOdometerSupported": {
-          "type": "boolean"
-        },
-        "rideInsertPolicy": {
-          "type": "string",
-          "enum": [
-            "append_only_membership_cas"
-          ]
-        },
-        "sharedRoutingProfileVersions": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "uniqueItems": true
-        },
-        "ownerBindingVersions": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "uniqueItems": true
-        },
-        "recordAuditVersions": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "uniqueItems": true
-        },
-        "activeCareReminderVersions": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "uniqueItems": true
         }
       },
-      "required": [
-        "contractVersion",
-        "sharedVehiclesEnabled",
-        "dispatchEnabled",
-        "maxVehicleMembers",
-        "maxGroupMembers",
-        "registration",
-        "dispatchTransport",
-        "currencies",
-        "serverTimestamp",
-        "invitationDelivery"
-      ]
-    },
+      "MobilityCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobility-capabilities-v1"
+            ]
+          },
+          "sharedVehiclesEnabled": {
+            "type": "boolean"
+          },
+          "dispatchEnabled": {
+            "type": "boolean"
+          },
+          "maxVehicleMembers": {
+            "type": "integer",
+            "const": 5
+          },
+          "maxGroupMembers": {
+            "type": "integer",
+            "const": 200
+          },
+          "registration": {
+            "type": "string",
+            "enum": [
+              "idp_login_page",
+              "unavailable",
+              "unverified"
+            ]
+          },
+          "dispatchTransport": {
+            "type": "string",
+            "enum": [
+              "recipient_encrypted_latest_only"
+            ]
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CZK",
+                "EUR",
+                "USD"
+              ]
+            },
+            "maxItems": 3
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "invitationDelivery": {
+            "type": "string",
+            "enum": [
+              "verified_account_inbox"
+            ]
+          },
+          "serviceAvailability": {
+            "$ref": "#/components/schemas/MobilityServiceAvailability",
+            "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
+          },
+          "recordDetailsVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          },
+          "recordEnergyUnits": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "liters",
+                "kWh"
+              ]
+            }
+          },
+          "supportedRefuelingFuelTypes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "natural95",
+                "natural98",
+                "natural100",
+                "diesel",
+                "diesel plus",
+                "lpg",
+                "bioEthanol"
+              ]
+            }
+          },
+          "odometerSnapshotVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1,
+                2
+              ]
+            }
+          },
+          "rideDetailsVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          },
+          "initialOdometerSupported": {
+            "type": "boolean"
+          },
+          "rideInsertPolicy": {
+            "type": "string",
+            "enum": [
+              "append_only_membership_cas"
+            ]
+          },
+          "sharedRoutingProfileVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "ownerBindingVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "recordAuditVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "activeCareReminderVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "contractVersion",
+          "sharedVehiclesEnabled",
+          "dispatchEnabled",
+          "maxVehicleMembers",
+          "maxGroupMembers",
+          "registration",
+          "dispatchTransport",
+          "currencies",
+          "serverTimestamp",
+          "invitationDelivery"
+        ]
+      },
       "MobilityAccount": {
         "type": "object",
         "additionalProperties": false,
@@ -34585,7 +35305,9 @@
         },
         "oneOf": [
           {
-            "required": ["accountDeletion"],
+            "required": [
+              "accountDeletion"
+            ],
             "properties": {
               "accountDeletion": {
                 "const": false
