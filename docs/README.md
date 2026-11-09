@@ -42,6 +42,9 @@ Messaging device-removal firewall deployment and native recovery boundary:
 COP event-loop pressure, guarded history reuse and release acceptance:
 [7 November performance evidence](deployment/api-pressure-20261107/README.md).
 
+Messaging upstream sequence repair and automatic vehicle-chat release:
+[9 November evidence and native acceptance boundary](deployment/messaging-sequence-20261109/README.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

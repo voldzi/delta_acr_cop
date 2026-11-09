@@ -88,6 +88,15 @@ least these mappings:
 - `device_lists_sequence` → all `device_lists_*` streams and
   `user_signature_stream`
 
+A homeserver startup rejection can also surface as Messaging refusing account-safety
+hydration. Diagnose the concrete upstream exception before changing replay or pin
+state. Before activation, compare `device_inbox_sequence` (including `is_called`,
+increment and cache) with durable `to_device` positions and **both** associated
+table maxima. Empty inbox tables do not make the durable position disposable.
+The [9 November incident](deployment/messaging-sequence-20261109/README.md)
+records one reviewed forward-only repair, not a reusable authorization to reset
+streams. Its helper defaults to read-only and pins the exact observed runtime.
+
 For a repair, stop all Synapse writers, save an audit snapshot of sequences and
 `stream_positions`, and advance each affected PostgreSQL sequence to the
 greatest of its current value, associated table maxima, and the matching live

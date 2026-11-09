@@ -1,0 +1,142 @@
+{
+  "reviewedScriptSha256": "d8d179fdebd9757dc1c1ff7837c544d9c617de035eb65a41e34959896ee6475a",
+  "reviewedPlan": {
+    "plan": {
+      "contractVersion": "cop-synapse-forward-sequence-repair-v1",
+      "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+      "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+      "runtimeSpecSha256": "d5eb6b1ea99847eadfd18a6e3201b15ba97dedc0696f7fde2d8fc7833c9fc0ef",
+      "writerInventory": [
+        {
+          "id": "1b21c94079bfe80a4f00ecc0c0ae3daf1216741e13b8cb0518a7b24398687f30",
+          "name": "/csm-matrix-synapse-rollback-06976bb832c3402db460f20ff4507af6",
+          "image": "sha256:b7f786ac65ec10dfe35739c5df299200a49761563811c6e6b1629dd67c8ddc73",
+          "running": false,
+          "restartPolicy": "no"
+        },
+        {
+          "id": "200492f6be4facb8f10b17efe8afd683ca3b709377384d212ca167557e2c935a",
+          "name": "/csm-matrix-synapse-failed-b42cf080c81241f3ae28a941204f61d0",
+          "image": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+          "running": false,
+          "restartPolicy": "no"
+        },
+        {
+          "id": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+          "name": "/csm-matrix-synapse",
+          "image": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+          "running": true,
+          "restartPolicy": "unless-stopped"
+        }
+      ],
+      "databaseSnapshot": {
+        "lastValue": 630,
+        "isCalled": true,
+        "increment": 1,
+        "cache": 1,
+        "sequenceMax": 9223372036854775807,
+        "positions": [
+          [
+            "master",
+            660
+          ]
+        ],
+        "maxima": {
+          "device_inbox": null,
+          "device_federation_outbox": null
+        },
+        "rowCounts": {
+          "device_inbox": 0,
+          "device_federation_outbox": 0
+        },
+        "database": "csm_synapse",
+        "role": "csm_synapse",
+        "databaseOid": 1237116,
+        "otherSessions": 0
+      },
+      "target": 660,
+      "networkBindings": {
+        "csm-messaging_default": "7a0181a5ec6632c76960f7dc7d3c2e0d6568ebfd361decfafadb8f498c314313"
+      },
+      "sqlSha256": "251df9ac00a6c49b8c22556bf664c39d8199552804043595f84a7799be67c1b6"
+    },
+    "planSha256": "7a125e5d4f289cfb1744b89dad3142b36585d4acbbccb9271730d7f4abc8122e",
+    "productionChanged": false
+  },
+  "applyReceipts": [
+    {
+      "sequenceRepair": {
+        "applied": true,
+        "before": {
+          "lastValue": 630,
+          "isCalled": true,
+          "increment": 1,
+          "cache": 1,
+          "sequenceMax": 9223372036854775807,
+          "positions": [
+            [
+              "master",
+              660
+            ]
+          ],
+          "maxima": {
+            "device_inbox": null,
+            "device_federation_outbox": null
+          },
+          "rowCounts": {
+            "device_inbox": 0,
+            "device_federation_outbox": 0
+          },
+          "database": "csm_synapse",
+          "role": "csm_synapse",
+          "databaseOid": 1237116,
+          "otherSessions": 0
+        },
+        "after": {
+          "lastValue": 660,
+          "isCalled": true,
+          "increment": 1,
+          "cache": 1,
+          "sequenceMax": 9223372036854775807,
+          "positions": [
+            [
+              "master",
+              660
+            ]
+          ],
+          "maxima": {
+            "device_inbox": null,
+            "device_federation_outbox": null
+          },
+          "rowCounts": {
+            "device_inbox": 0,
+            "device_federation_outbox": 0
+          },
+          "database": "csm_synapse",
+          "role": "csm_synapse",
+          "databaseOid": 1237116,
+          "otherSessions": 0
+        },
+        "counterRewindAllowed": false,
+        "tableRowsChanged": false
+      },
+      "sameImage": true,
+      "newAccountOrDataset": false,
+      "replayCalled": false,
+      "pinPublished": false,
+      "rollbackMustPreserveHigherCounter": true
+    },
+    {
+      "sameSynapseContainerStarted": true,
+      "imageChanged": false,
+      "configurationChanged": false
+    }
+  ],
+  "tests": {
+    "bounds": 6,
+    "applyClientFixture": 3
+  },
+  "rootCause": "device_inbox_sequence behind durable to_device stream_positions; origin of drift unproven",
+  "noMessageOrIdentityDeletion": true,
+  "replayOrPinBypass": false
+}

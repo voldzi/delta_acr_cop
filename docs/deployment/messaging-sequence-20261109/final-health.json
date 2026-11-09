@@ -1,0 +1,86 @@
+{
+  "checkedAt": "2026-11-09T11:01:20.148473+00:00",
+  "runtimes": [
+    {
+      "name": "csm-matrix-synapse",
+      "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+      "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+      "health": "healthy",
+      "restartCount": 0,
+      "startedAt": "2026-11-09T10:55:58.038291931Z"
+    },
+    {
+      "name": "csm-messaging-api",
+      "containerId": "5e3a8d51ec820fc929f733ab63f551ceb42f9ffe01c41783d9f6b2c08b6ae497",
+      "imageId": "sha256:16de758aeb4e1e467dfe1bd8eda8f3462769a3df07f5c419ae044025f06ca810",
+      "health": "healthy",
+      "restartCount": 6465,
+      "startedAt": "2026-11-09T10:56:02.135026209Z"
+    }
+  ],
+  "http": [
+    {
+      "url": "https://msg.zeleznalady.cz/health/live",
+      "status": 200
+    },
+    {
+      "url": "https://msg.zeleznalady.cz/health/ready",
+      "status": 200,
+      "checks": [
+        {
+          "id": "matrix_config",
+          "status": "ok"
+        },
+        {
+          "id": "matrix_connectivity",
+          "status": "ok"
+        },
+        {
+          "id": "public_url",
+          "status": "ok"
+        },
+        {
+          "id": "metadata_store",
+          "status": "ok"
+        },
+        {
+          "id": "matrix_identity_store",
+          "status": "ok"
+        },
+        {
+          "id": "device_registry",
+          "status": "ok"
+        },
+        {
+          "id": "device_registration_tickets",
+          "status": "ok"
+        },
+        {
+          "id": "notification_store",
+          "status": "ok"
+        },
+        {
+          "id": "apns",
+          "status": "ok"
+        },
+        {
+          "id": "web_push",
+          "status": "ok"
+        },
+        {
+          "id": "oidc_user_tokens",
+          "status": "ok"
+        },
+        {
+          "id": "server_token",
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "url": "https://cop.zeleznalady.cz/health/ready",
+      "status": 200
+    }
+  ],
+  "productionChanged": false
+}

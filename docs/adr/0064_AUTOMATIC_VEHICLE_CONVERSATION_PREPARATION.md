@@ -1,6 +1,6 @@
 # ADR0064: Automatic preparation of the existing vehicle conversation
 
-Date: 2026-11-09. Status: accepted for implementation; not yet deployed.
+Date: 2026-11-09. Status: deployed on 2026-11-09; native device acceptance remains separate.
 
 ## Decision
 
