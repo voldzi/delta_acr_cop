@@ -1,0 +1,197 @@
+{
+  "status": "Owner build98 reports vehicle unavailable and original direct messages pending; UI/recovery/delivery not accepted",
+  "phoneDiagnosticReportedByJizda": {
+    "timeUTC": "2026-11-09T17:45:23Z",
+    "operationId": "085fed12-3e9a-4958-a485-b2bf29cbf722",
+    "httpStatus": 202,
+    "receiptMatches": true,
+    "workspaceCurrent": true,
+    "vehicleAccessReady": true,
+    "communicationReady": true,
+    "credentialRenewalState": "valid",
+    "stage": "explicit_join",
+    "sdkStage": "explicit_join_required",
+    "issue": "native_join",
+    "nativeCode": "transportChanged"
+  },
+  "copPassive": {
+    "checkedAtUTC": "2026-11-09T17:46:36.272211+00:00",
+    "windowUTC": [
+      "2026-11-09T17:34:45Z",
+      "2026-11-09T17:46:30Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "cop-cop-api-1",
+        "containerId": "2b91e8fe4b303190384a7cd8912e1b59f12b5307af634f15b80fa2a3d11d7e29",
+        "imageId": "sha256:f51cf2c013f5915182c423598d84d4ed4eda36fe7d6b4b4559dc97caafc5e883",
+        "observations": {
+          "identityLookup": {
+            "observedContexts": 4,
+            "httpCounts": {
+              "200": 4
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 498,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true
+  },
+  "messagingPassive": {
+    "checkedAtUTC": "2026-11-09T17:46:45.190947+00:00",
+    "windowUTC": [
+      "2026-11-09T17:34:45Z",
+      "2026-11-09T17:46:30Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "csm-matrix-synapse",
+        "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+        "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+        "observations": {
+          "join": {
+            "observedContexts": 1,
+            "httpCounts": {
+              "200": 1
+            },
+            "errorReasons": {}
+          },
+          "keyBackupVersion": {
+            "observedContexts": 20,
+            "httpCounts": {
+              "200": 20
+            },
+            "errorReasons": {}
+          },
+          "refresh": {
+            "observedContexts": 3,
+            "httpCounts": {
+              "200": 3
+            },
+            "errorReasons": {}
+          },
+          "sync": {
+            "observedContexts": 104,
+            "httpCounts": {
+              "200": 103
+            },
+            "errorReasons": {}
+          },
+          "whoami": {
+            "observedContexts": 10,
+            "httpCounts": {
+              "200": 10
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 8180,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      },
+      {
+        "container": "csm-messaging-api",
+        "containerId": "9cbb644a5651e4d9e40b461265262c2ca64f26ccc692f2ed3d12bef422ce0eea",
+        "imageId": "sha256:78addd837fa62ea3c95f0209ab88acb7e0cb97c96eb965045b794f7f90bfce7b",
+        "observations": {
+          "identityLookup": {
+            "observedContexts": 4,
+            "httpCounts": {
+              "200": 4
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 151,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true
+  },
+  "exactOperationReadOnly": {
+    "operationId": "085fed12-3e9a-4958-a485-b2bf29cbf722",
+    "exactOperationFound": true,
+    "receiptCreatedAt": "2026-11-09T17:44:29.114Z",
+    "receiptExpired": false,
+    "receiptMembershipRevision": 1,
+    "receiptHasVehicle": true,
+    "checkedAt": "2026-11-09T17:48:04.009Z",
+    "memberCount": 1,
+    "membershipRevision": 1,
+    "principals": [
+      {
+        "role": "owner",
+        "currentPrincipal": true,
+        "issuerExpected": true,
+        "identityMatches": true
+      }
+    ],
+    "projection": {
+      "status": "ready",
+      "sourceMembershipRevision": 1,
+      "recipientEpoch": 1,
+      "bindingRevision": 1,
+      "bindingEpoch": 1,
+      "roomGeneration": 1,
+      "hasRoom": true
+    },
+    "readOnly": true,
+    "identitiesAndContentPrinted": false
+  },
+  "nativeCurrentStateReadOnly": {
+    "checkedAt": "2026-11-09T17:48:16.492917+00:00",
+    "policyChecks": {
+      "history": true,
+      "joinRule": true,
+      "guestAccess": true,
+      "encryption": true,
+      "powerLevels": true,
+      "vehicleBinding": true,
+      "creator": true,
+      "federationDisabled": true,
+      "canonicalAlias": true
+    },
+    "metadataStatus": "ready",
+    "membershipRevision": 1,
+    "recipientEpoch": 1,
+    "roomGeneration": 1,
+    "recordMemberCount": 1,
+    "memberFieldNames": [
+      "accountId",
+      "displayName",
+      "grantId",
+      "userId"
+    ],
+    "identityMappedCount": 1,
+    "memberMatrixStates": [
+      "join"
+    ],
+    "activeMatrixStateCounts": {
+      "join": 2
+    },
+    "controllerJoined": true,
+    "readOnly": true,
+    "rawIdentifiersExcluded": true
+  },
+  "conclusions": [
+    "New COP and Messaging lookup route produced4 HTTP200 each; prior missing-route404 no longer observed in this window. These HTTP counts are aggregate, not an attributed user trace.",
+    "Current original mapping of sole managed vehicle member is join, controller join, all room-policy checks pass. This is durable current state, not proof of successful UI return or encrypted delivery.",
+    "No401 or classified token error observed on tracked sync/refresh/whoami contexts in this bounded window. One sync context had no completed status within window.",
+    "No send/sendToDevice request observed in selected logs; missing logs do not prove no attempt.",
+    "Jizda investigating client transport/configuration fence; no further server mutation or firewall change requested."
+  ],
+  "productionChangedByDiagnosis": false,
+  "operationRepeated": false,
+  "identityOrKeysReset": false
+}
