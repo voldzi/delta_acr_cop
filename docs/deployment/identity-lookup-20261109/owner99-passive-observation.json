@@ -1,0 +1,119 @@
+{
+  "ownerBuild": 99,
+  "ownerReportedVehicleChatOpened": true,
+  "ownerReportedOriginalDirectMessagesStillPending": true,
+  "phoneOutboxMetadataReportedByJizda": {
+    "timeUTC": "2026-11-09T17:57:56Z",
+    "pendingCount": 5,
+    "queuedCount": 4,
+    "queuingCount": 1,
+    "queuedWithOriginalTransactionButNoAckCount": 4,
+    "serviceUnavailableCount": 1,
+    "awaitingAcknowledgementCount": 3,
+    "scopeAndRoomMatch": true,
+    "transportReady": true,
+    "configuring": false,
+    "contentIdentifiersAndTokensExcluded": true
+  },
+  "cutoff": {
+    "cutoffUTC": "2026-11-09T17:59:29Z",
+    "preparedSha256": "66f93b720584f6d3082bf96d4ff2af7378e3fc01830f3d4fd8089f87d83b0b34",
+    "actualSha256": "1fe817f7529aa3ce9207cca0a2999613875c3165c517ed275d9fb5a4100a33a2",
+    "oneConfirmedOwnerProbe": true
+  },
+  "copPassive": {
+    "checkedAtUTC": "2026-11-09T17:59:31.556220+00:00",
+    "windowUTC": [
+      "2026-11-09T17:56:45Z",
+      "2026-11-09T17:59:29Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "cop-cop-api-1",
+        "containerId": "2b91e8fe4b303190384a7cd8912e1b59f12b5307af634f15b80fa2a3d11d7e29",
+        "imageId": "sha256:f51cf2c013f5915182c423598d84d4ed4eda36fe7d6b4b4559dc97caafc5e883",
+        "observations": {
+          "identityLookup": {
+            "observedContexts": 4,
+            "httpCounts": {
+              "200": 4
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 139,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true
+  },
+  "messagingPassive": {
+    "checkedAtUTC": "2026-11-09T17:59:42.504121+00:00",
+    "windowUTC": [
+      "2026-11-09T17:56:45Z",
+      "2026-11-09T17:59:29Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "csm-matrix-synapse",
+        "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+        "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+        "observations": {
+          "keyBackupVersion": {
+            "observedContexts": 10,
+            "httpCounts": {
+              "200": 10
+            },
+            "errorReasons": {}
+          },
+          "sync": {
+            "observedContexts": 11,
+            "httpCounts": {
+              "200": 11
+            },
+            "errorReasons": {}
+          },
+          "whoami": {
+            "observedContexts": 4,
+            "httpCounts": {
+              "200": 4
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 9721,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      },
+      {
+        "container": "csm-messaging-api",
+        "containerId": "9cbb644a5651e4d9e40b461265262c2ca64f26ccc692f2ed3d12bef422ce0eea",
+        "imageId": "sha256:78addd837fa62ea3c95f0209ab88acb7e0cb97c96eb965045b794f7f90bfce7b",
+        "observations": {
+          "identityLookup": {
+            "observedContexts": 4,
+            "httpCounts": {
+              "200": 4
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 51,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true
+  },
+  "diagnosisGeneratedRequests": 0,
+  "productionChanged": false,
+  "messagesReplayed": false,
+  "acceptance": "Owner confirms vehicle chat opens. Original direct-message delivery, acknowledgements and recovery not yet accepted. HTTP counts remain aggregate; no send in observed log is not proof of no attempt."
+}
