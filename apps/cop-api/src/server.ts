@@ -1,3 +1,4 @@
+import { currentVehicleConversationMetadata } from "./vehicle-conversation-metadata.js";
 import { HostPusherReconciliation, registerHostPusherReconciliationRoutes } from "./host-pusher-reconciliation.js";
 import { VehicleConversationCoordinator } from "./vehicle-conversation-coordinator.js";
 import { type VehicleConversationProvider, HttpVehicleConversationProvider } from "./vehicle-conversation-provider.js";
@@ -1344,6 +1345,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return handler.call(this, request, reply);
     };
   });
+  const vehicleConversationsEnabled = options.sharedVehicleCommunicationEnabled ?? readBoolean(process.env.COP_SHARED_VEHICLE_COMMUNICATION_ENABLED, false);
   const mobilityService = mobilityRuntimeStore ? new SharedMobilityService(mobilityRuntimeStore, now, async (transaction, actor) => {
     if (!accountErasure) return;
     if (accountErasure.options.store !== mobilityRuntimeStore) throw new MobilityFailure(503, "ERASURE_STORE_UNAVAILABLE", "Ochrana účtu není dostupná.");
@@ -1352,7 +1354,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (error instanceof AccountErasureError) throw new MobilityFailure(error.status, error.code, "Operace účtu není dostupná.");
       throw new MobilityFailure(503, "ERASURE_STORE_UNAVAILABLE", "Ochrana účtu není dostupná.");
     }
-  }) : undefined;
+  }, vehicleConversationsEnabled) : undefined;
   const mobilityOutbox = mobilityRuntimeStore && mobilityService ? new MobilityInvitationOutbox(mobilityRuntimeStore, messagingProvider, now,
     (transaction, accountId) => mobilityService.assertAccountAllowed(transaction, accountId)) : undefined;
   const erasureWorkerAbort = new AbortController();
@@ -1511,7 +1513,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   const vehicleConversation = mobilityService && process.env.COP_OIDC_ISSUER ? new VehicleConversationCoordinator({
     service: mobilityService, now, issuer: process.env.COP_OIDC_ISSUER,
-    enabled: options.sharedVehicleCommunicationEnabled ?? readBoolean(process.env.COP_SHARED_VEHICLE_COMMUNICATION_ENABLED, false),
+    enabled: vehicleConversationsEnabled,
     provider: options.vehicleConversationProvider ?? new HttpVehicleConversationProvider(messagingProvider.config, now, process.env.COP_OIDC_ISSUER),
     peerBindings: messagingPeerBindings,
     asActor: (actor, run) => runWithProjectionActor({ issuer: actor.issuer!, subjectId: actor.subjectId }, run)
@@ -6196,7 +6198,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return reply;
       }
 
-      const result = await messagingProvider.fetchConversations(actor, now());
+      const provided = await messagingProvider.fetchConversations(actor, now());
+      const current = await currentVehicleConversationMetadata(mobilityService, actor, provided.conversations);
+      const result = { ...provided, conversations: current.conversations, count: current.conversations.length,
+        ...(current.unavailable ? { status: "degraded" as const, warnings: [...provided.warnings, "Shared vehicle metadata authority is unavailable."] } : {}) };
       const conversations: MessagingConversationSummary[] = [];
       for (let index = 0; index < result.conversations.length; index += 8) {
         conversations.push(...await Promise.all(

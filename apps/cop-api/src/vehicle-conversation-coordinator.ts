@@ -3,7 +3,7 @@ import type { AuthenticatedActor } from "./security.js";
 import type { MessagingPeerBindings } from "./messaging-peer-bindings.js";
 import type { SharedMobilityService } from "./mobility-invitations.js";
 import type { MobilityAccount } from "./mobility-types.js";
-import { mobilityDigest, requireMobility, type PrincipalAccount, type VehicleState } from "./mobility-service.js";
+import { MobilityFailure, mobilityDigest, requireMobility, type PrincipalAccount, type VehicleState } from "./mobility-service.js";
 import type { MobilityTransaction } from "./mobility-store.js";
 import { queueVehicleConversationProjection } from "./vehicle-conversation-projection.js";
 import { assertVehicleConversationEnforcement, type SharedVehicleConversationReceipt,
@@ -20,6 +20,7 @@ export class VehicleConversationCoordinator {
   private timer?: NodeJS.Timeout;
   private readonly active = new Map<string, Promise<Enforcement | undefined>>();
   private stopped = false;
+  private nextBackfillAt = 0;
   constructor(readonly options: {
     service: SharedMobilityService; provider: VehicleConversationProvider; issuer: string; enabled: boolean; now: () => Date;
     asActor?: <T>(actor: AuthenticatedActor, run: () => Promise<T>) => Promise<T>;
@@ -94,10 +95,47 @@ export class VehicleConversationCoordinator {
   }
   private async resume(): Promise<void> {
     if (this.stopped || this.active.size >= 4) return;
+    if (this.options.now().getTime() >= this.nextBackfillAt) {
+      const prepared = await this.prepareExisting();
+      this.nextBackfillAt = this.options.now().getTime() + (prepared === 4 ? 1000 : 30_000);
+    }
     const pending = await this.options.service.store.transact([], async tx =>
       (await tx.scan<VehicleState>("vehicle:")).filter(entry => entry.value.conversationProjection?.status === "pending")
         .slice(0, 4).map(entry => entry.value.vehicle.vehicleId));
     await Promise.allSettled(pending.map(id => this.drain(id)));
+  }
+
+  /** Bounded source-only backfill. Uses the same authority/fences as ordinary
+   * projection work; never creates a vehicle, joins a user or replaces intent.
+   */
+  async prepareExisting(): Promise<number> {
+    if (!this.options.enabled || this.stopped) return 0;
+    const { service } = this.options;
+    return service.store.transact([], async tx => {
+      let prepared = 0;
+      for (const entry of await tx.scan<VehicleState>("vehicle:")) {
+        if (prepared >= 4) break;
+        const state = entry.value;
+        if (state.vehicle.deleted || state.conversationProjection) continue;
+        try {
+          requireMobility(entry.key === `vehicle:${state.vehicle.vehicleId}` &&
+            Number.isSafeInteger(state.vehicle.membershipRevision) && state.vehicle.membershipRevision > 0 &&
+            state.vehicle.members.length > 0 && state.vehicle.members.length <= 5 &&
+            new Set(state.vehicle.members.map(member => member.accountId)).size === state.vehicle.members.length &&
+            state.vehicle.members.filter(member => member.role === "owner").length === 1,
+          503, "VEHICLE_COMMUNICATION_SOURCE_UNPROVEN", "Členství komunikace není potvrzené.");
+          await this.members(tx, state);
+          queueVehicleConversationProjection(state, true);
+          await tx.set(entry.key, state);
+          prepared++;
+        } catch (error) {
+          // Invalid/fenced legacy sources cannot starve eligible cars. Database
+          // or unknown failures still abort the source transaction.
+          if (!(error instanceof MobilityFailure)) throw error;
+        }
+      }
+      return prepared;
+    });
   }
 
   private async run(vehicleId: string): Promise<Enforcement | undefined> {

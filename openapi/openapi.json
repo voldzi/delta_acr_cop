@@ -5107,7 +5107,7 @@
           "Messaging"
         ],
         "summary": "List CSM Messaging conversation metadata for the authenticated user.",
-        "description": "Server-side metadata bridge to CSM Messaging. It returns conversation metadata only; no plaintext message content is stored or proxied by COP.\n",
+        "description": "Server-side metadata bridge to CSM Messaging; no plaintext message content is stored or proxied by COP. Managed vehicle rows are checked against current COP identity, accepted readVehicle membership and source projection. Their title uses the already shared current vehicle name. Prepared or room_bound metadata does not prove Matrix join; use the existing typed vehicle conversation endpoint before explicit join and selection. If vehicle authority is unavailable, managed rows are omitted and the existing list status is degraded; ordinary conversations remain available.",
         "operationId": "listMessagingConversations",
         "responses": {
           "200": {

@@ -82,7 +82,8 @@ export class MobilityService {
   constructor(
     readonly store: MobilityStore,
     readonly now: () => Date = () => new Date(),
-    readonly transactionGuard?: MobilityTransactionGuard
+    readonly transactionGuard?: MobilityTransactionGuard,
+    readonly prepareVehicleConversations = false
   ) {}
   async pruneRetainedData(): Promise<void> {
     const cutoff = this.now().getTime() - 30 * 86400000;
@@ -245,7 +246,8 @@ export class MobilityService {
       "VEHICLE_HISTORY_LIMIT",
       "Evidence dosáhla limitu; kontaktujte správce."
     );
-    queueVehicleConversationProjection(state);
+    queueVehicleConversationProjection(state, this.prepareVehicleConversations && !state.vehicle.deleted &&
+      (type === "vehicle" || type === "membership"));
     await tx.set(`vehicle:${state.vehicle.vehicleId}`, state);
   }
   vehicleReceipt(state: VehicleState, operationId: string, recordId?: string): Wire.SharedVehicleReceipt {

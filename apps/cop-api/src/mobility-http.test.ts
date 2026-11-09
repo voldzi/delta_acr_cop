@@ -1,6 +1,6 @@
 import type { VehicleConversationProvider } from "./vehicle-conversation-provider.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
-import {describe,it,expect,afterEach,beforeEach} from "vitest";
+import {describe,it,expect,afterEach,beforeEach,vi} from "vitest";
 import {createSign,generateKeyPairSync,randomUUID} from "node:crypto";
 import {createServer,type Server} from "node:http";
 import {buildServer} from "./server.js";
@@ -63,6 +63,10 @@ describe("actual signed OIDC shared mobility HTTP",()=>{
    const accountB = (await call("GET", "/api/v1/mobility/v1/account", b)).json();
    const created = (await call("POST", "/api/v1/shared-vehicles/v1/vehicles", a, {operationId:randomUUID(),details:{name:"Synthetic chat vehicle"}})).json();
    const id = created.vehicle.vehicleId, path = `/api/v1/shared-vehicles/v1/vehicles/${id}/conversation`;
+   // Creation confirms the vehicle, while native preparation is asynchronous.
+   // The existing cutover fence intentionally blocks overlapping audience work.
+   await vi.waitFor(async () => expect((await store.transact([], tx =>
+    tx.get<import("./mobility-service.js").VehicleState>(`vehicle:${id}`)))?.conversationProjection?.status).toBe("ready"), { timeout: 2500 });
    const invitation = (await call("POST", `/api/v1/shared-vehicles/v1/vehicles/${id}/invitations`, a,
     {operationId:randomUUID(),expectedMembershipRevision:1,email:`${bSub}@example.test`,capabilities:["readVehicle"]})).json();
    expect((await call("POST", "/api/v1/shared-vehicles/v1/invitations/accept", b,

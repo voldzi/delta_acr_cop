@@ -16,7 +16,7 @@ type Options = { vehicleConversation?: VehicleConversationCoordinator; messaging
   /** The same guarded instances are shared with the account erasure owner. */
   service?: SharedMobilityService; invitationOutbox?: MobilityInvitationOutbox };
 export function registerMobilityRoutes(app: FastifyInstance, options: Options): () => { name: string; status: "ok" | "unavailable" | "disabled"; detail: string } {
-  const service = options.service ?? (options.store ? new SharedMobilityService(options.store, options.now) : undefined);
+  const service = options.service ?? (options.store ? new SharedMobilityService(options.store, options.now, undefined, options.vehicleConversation?.options.enabled === true) : undefined);
   if (service && service.store !== options.store) throw new Error("Mobility routes and erasure must share the exact store.");
   if (options.enabled && !service) throw new Error("Shared mobility requires durable storage.");
   if (options.dispatchEnabled && !options.enabled) throw new Error("Private Dispatch requires shared mobility.");

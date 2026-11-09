@@ -92,3 +92,5 @@ published paths are preserved for integration references.
 - [0062: Global vehicle chat admission](0062_GLOBAL_VEHICLE_CHAT_ADMISSION.md) — separate one-time enable authority and persistent membership-based admission.
 
 - [0063 Fresh native session without crypto reset](0063_FRESH_NATIVE_SESSION_WITHOUT_CRYPTO_RESET.md)
+
+- [0064: Automatic vehicle conversation preparation](0064_AUTOMATIC_VEHICLE_CONVERSATION_PREPARATION.md).

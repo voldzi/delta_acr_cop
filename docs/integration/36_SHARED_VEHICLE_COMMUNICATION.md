@@ -186,3 +186,27 @@ writer that can overwrite pending state; never clear a pending intent to obtain
 success. Retain source binding/operation evidence needed for denied late
 handoff. Already delivered text, keys, SDK transactions and APNs cannot be recalled.
 Personal messages/direct calls and independent GPS consent remain unchanged.
+
+## Automatic preparation update, 9 November 2026
+
+[ADR0064](../adr/0064_AUTOMATIC_VEHICLE_CONVERSATION_PREPARATION.md) records the
+new candidate: source create/membership enrollment plus bounded eligibility-
+checked backfill using the existing admission flag. This is not deployed until
+exact image and live dependency acceptance are recorded. A vehicle receipt
+continues to confirm vehicle state, not Matrix membership. Initial native work
+is asynchronous; existing pending-cutover conflicts and202 semantics remain.
+
+Prepared conversations are discoverable through the existing Messaging list as
+managed groups, including invited roster members. Safe metadata source is
+cop.shared_vehicle and externalId the vehicle UUID. List room_bound does not
+mean joined. The existing typed /conversation202join_required path and current
+vehicle/account/lease checks still precede explicit join and selection. No SDK
+model extension or new public endpoint is required for this behavior.
+
+The candidate COP metadata list additionally verifies the current canonical
+identity/account and readVehicle membership against the source vehicle and
+projection, then uses its already-shared current vehicle name as the title.
+It never renames a Matrix room or promotes room_bound to joined. Inconsistent,
+removed/deleted/foreign rows are omitted. Source authority outage returns only
+ordinary conversations with existing degraded status, not an invented empty
+successful vehicle roster. The client must retain its scoped degraded-state rules.

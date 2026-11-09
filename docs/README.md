@@ -222,3 +222,5 @@ Exact routing image-pair release/reversion: [operator runbook](runbooks/29_ROUTI
 Native fresh-SSO recovery: [contract, limits, activation and return](integration/messaging-recovery/20261106_CURRENT_SESSION_RECOVERY.md).
 
 Native recovery decision: [ADR0063](adr/0063_FRESH_NATIVE_SESSION_WITHOUT_CRYPTO_RESET.md).
+
+- [ADR0064: Automatic vehicle chat preparation](adr/0064_AUTOMATIC_VEHICLE_CONVERSATION_PREPARATION.md) — source enrollment and bounded backfill candidate; prepared is distinct from joined.

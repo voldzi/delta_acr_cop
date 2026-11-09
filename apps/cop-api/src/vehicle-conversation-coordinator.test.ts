@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { mobilityAccountFenceKey } from "./mobility-erasure-guard.js";
 import { VehicleConversationCoordinator } from "./vehicle-conversation-coordinator.js";
 import { MemoryMobilityStore } from "./mobility-store.js";
 import { SharedMobilityService } from "./mobility-invitations.js";
@@ -45,6 +46,19 @@ async function fixture() {
   return { now, store, service, provider, coordinator, aActor, bActor, cActor, a, b, c, id: vehicle.vehicleId, request,
     state: () => store.transact([], tx => tx.get<VehicleState>(`vehicle:${vehicle.vehicleId}`)) };
 }
+async function automaticFixture() {
+  const now = () => new Date("2026-11-09T10:00:00Z"), store = new MemoryMobilityStore();
+  const service = new SharedMobilityService(store, now, undefined, true), provider = new Provider();
+  provider.joined = false;
+  const aActor = actor(randomUUID()), bActor = actor(randomUUID());
+  const a = await service.account(aActor), b = await service.account(bActor);
+  const input = { operationId: randomUUID(), details: { name: "Synthetic automatic" } };
+  const vehicle = await service.createVehicle(a, input);
+  const coordinator = new VehicleConversationCoordinator({ service, provider, issuer, enabled: true, now, peerBindings: async () => undefined });
+  const state = () => store.transact([], tx => tx.get<VehicleState>(`vehicle:${vehicle.vehicleId}`));
+  return { now, store, service, provider, aActor, bActor, a, b, input, vehicle, coordinator, state };
+}
+
 describe("source/native vehicle conversation coordinator", () => {
   it("commits pending before native work and never holds source SQL transaction during the network call", async () => {
     const f = await fixture();
@@ -133,6 +147,93 @@ describe("source/native vehicle conversation coordinator", () => {
     expect((await f.state())!.conversationProjection!.lease).toBeUndefined();
     expect(f.provider.calls.every(call => call.plan.operationId === intent.operationId)).toBe(true);
     await replacement.close();
+  });
+
+  it("atomically queues one automatic create intent without joining or duplicating the vehicle", async () => {
+    const f = await automaticFixture(), before = (await f.state())!.conversationProjection!;
+    expect(before.status).toBe("pending"); expect(f.provider.calls).toHaveLength(0);
+    expect((await f.service.createVehicle(f.a, f.input)).vehicleId).toBe(f.vehicle.vehicleId);
+    expect((await f.state())!.conversationProjection).toEqual(before);
+    await Promise.all([f.coordinator.drain(f.vehicle.vehicleId), f.coordinator.drain(f.vehicle.vehicleId)]);
+    expect(f.provider.calls).toHaveLength(1);
+    expect((await f.state())!.conversationProjection!.binding?.conversationId).toBe(`conv_vehicle_${f.vehicle.vehicleId}`);
+    expect(await f.coordinator.open(f.aActor, f.a, f.vehicle.vehicleId,
+      { operationId: randomUUID(), expectedMembershipRevision: 1 })).toMatchObject({ confirmed: false, state: "join_required" });
+    expect((await f.service.listVehicles(f.a)).items).toHaveLength(1);
+  });
+  it("queues accepted membership at a new epoch in the same logical room and retains outage intent", async () => {
+    const f = await automaticFixture(); await f.coordinator.drain(f.vehicle.vehicleId);
+    const invitation = await f.service.createInvitation(f.a, "vehicle", f.vehicle.vehicleId,
+      { operationId: randomUUID(), expectedMembershipRevision: 1, email: f.b.email!, capabilities: ["readVehicle"] });
+    const input = { operationId: randomUUID(), invitationId: invitation.invitationId };
+    await f.service.acceptInvitation(f.b, "vehicle", input);
+    const pending = (await f.state())!.conversationProjection!;
+    expect(pending).toMatchObject({ status: "pending", sourceMembershipRevision: 2, recipientEpoch: 2 });
+    f.provider.unavailable = true; await f.coordinator.drain(f.vehicle.vehicleId);
+    expect((await f.state())!.conversationProjection!.intent).toEqual(pending.intent);
+    await f.service.acceptInvitation(f.b, "vehicle", input);
+    expect((await f.state())!.conversationProjection!.intent).toEqual(pending.intent);
+    f.provider.unavailable = false; await f.coordinator.drain(f.vehicle.vehicleId);
+    expect((await f.state())!.conversationProjection!.binding?.roomId).toBe(pending.binding?.roomId);
+    expect(f.provider.calls.at(-1)!.members).toHaveLength(2);
+  });
+  it("backfills at most four eligible existing cars and preserves exact prior intents", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 5; i++) await f.service.createVehicle(f.a, { operationId: randomUUID(), details: { name: "Synthetic legacy" } });
+    expect(await f.coordinator.prepareExisting()).toBe(4);
+    const before = await f.state();
+    expect(await f.coordinator.prepareExisting()).toBe(2);
+    expect((await f.state())!.conversationProjection).toEqual(before!.conversationProjection);
+    expect(await f.coordinator.prepareExisting()).toBe(0);
+    expect(f.provider.calls).toHaveLength(0);
+  });
+  it("does not backfill deleted, foreign-issuer or unproven existing sources", async () => {
+    const f = await fixture();
+    const deleted = await f.service.createVehicle(f.a, { operationId: randomUUID(), details: { name: "Synthetic deleted" } });
+    await f.service.deleteVehicle(f.a, deleted.vehicleId, { operationId: randomUUID(), expectedDataRevision: 1, expectedMembershipRevision: 1, reason: "Synthetic deletion" });
+    await f.store.transact([], async tx => {
+      const principal = await tx.get<Record<string, unknown>>(`account:${f.b.accountId}`);
+      await tx.set(`account:${f.b.accountId}`, { ...principal, issuer: "https://foreign.synthetic.test" });
+    });
+    expect(await f.coordinator.prepareExisting()).toBe(0);
+    expect((await f.state())!.conversationProjection).toBeUndefined();
+    expect(f.provider.calls).toHaveLength(0);
+  });
+  it("disabled admission does not enroll new cars but preserves already committed cutover work", async () => {
+    const f = await automaticFixture();
+    const disabled = new VehicleConversationCoordinator({ ...f.coordinator.options, enabled: false });
+    const legacy = await fixture();
+    const legacyDisabled = new VehicleConversationCoordinator({ ...legacy.coordinator.options, enabled: false });
+    expect(await legacyDisabled.prepareExisting()).toBe(0);
+    expect((await legacy.state())!.conversationProjection).toBeUndefined();
+    expect(legacy.provider.calls).toHaveLength(0);
+    expect(await disabled.prepareExisting()).toBe(0);
+    await disabled.drain(f.vehicle.vehicleId);
+    expect(f.provider.calls).toHaveLength(1);
+    expect((await f.state())!.conversationProjection!.status).toBe("ready");
+    await disabled.close();
+  });
+
+  it("does not backfill an account under erasure and never replaces an enrolled binding", async () => {
+    const f = await fixture();
+    await f.store.transact([], tx => tx.set(mobilityAccountFenceKey(f.b.accountId), { operationId: randomUUID() }));
+    expect(await f.coordinator.prepareExisting()).toBe(0);
+    expect((await f.state())!.conversationProjection).toBeUndefined();
+    const g = await automaticFixture(); await g.coordinator.drain(g.vehicle.vehicleId);
+    const before = await g.state();
+    expect(await g.coordinator.prepareExisting()).toBe(0);
+    expect(await g.state()).toEqual(before);
+  });
+  it("concurrent backfill and a replacement worker retain the original single intent", async () => {
+    const f = await fixture();
+    expect((await Promise.all([f.coordinator.prepareExisting(), f.coordinator.prepareExisting()])).sort()).toEqual([0, 1]);
+    const intent = structuredClone((await f.state())!.conversationProjection!.intent);
+    const replacement = new VehicleConversationCoordinator(f.coordinator.options);
+    f.provider.unavailable = true; await replacement.drain(f.id);
+    expect((await f.state())!.conversationProjection!.intent).toEqual(intent);
+    f.provider.unavailable = false; await replacement.drain(f.id);
+    expect((await f.state())!.conversationProjection!.intent).toEqual(intent);
+    expect((await f.state())!.conversationProjection!.status).toBe("ready");
   });
 
 });
