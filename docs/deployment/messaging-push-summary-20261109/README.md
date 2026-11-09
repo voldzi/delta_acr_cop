@@ -124,3 +124,21 @@ before attempting the same fenced credential/transport restoration used by other
 operations. Its repair remains a separate native candidate requiring acceptance;
 this server observation does not authorize resetting identities, keys or stores.
 The four other missing background helper rows remain unchanged.
+
+## Exact401 classification and existing renewal path
+
+[Further classification of the same historical window](expired-sync-token-classification.json)
+identified all126401 responses as GETv3sync with the fixed reason
+`expiredAccessToken`. No token values were read and device attribution remains
+unproven. The prior record's unknown reason is retained as the earlier observation.
+
+Source review of the installed Messagingb859 path proves ordinary MatrixBootstrap
+can log in the existing mapped identity using the caller's explicit stable device
+ID. Account/app binding is checked; returned user/device must match. Provisioning
+uses`logout_devices=false`. COP forwards the new accessToken and expiresAt, but
+currently does not forward Messaging's refreshToken/expiresInMs fields in ordinary
+bootstrap. A client must not assume a refresh token is available on that surface.
+Existing fenced ordinary bootstrap renewal with the **same** device is supported;
+a different identity/device/homeserver response must fail closed and must not
+replace the existing encrypted store. The isolated-new-device flow is not the
+renewal path. This is source evidence, not an agent-executed login or acceptance.

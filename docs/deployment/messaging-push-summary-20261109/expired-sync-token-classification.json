@@ -1,0 +1,27 @@
+{
+  "windowUTC": [
+    "2026-11-09T12:48:00Z",
+    "2026-11-09T12:56:00Z"
+  ],
+  "classifications": [
+    {
+      "pathClass": "sync",
+      "version": "v3",
+      "method": "GET",
+      "reason": "expiredAccessToken",
+      "count": 126
+    }
+  ],
+  "credentialValuesRead": false,
+  "deviceAttribution": "unproven",
+  "rawReasonTokenAndIdentifiersExported": false,
+  "sourceOnlyRenewalReview": {
+    "ordinaryBootstrapCanLoginSameExistingIdentityAndRequestedDevice": true,
+    "provisionLogoutDevices": false,
+    "providerReturnsRefreshTokenAndExpiresInMs": true,
+    "copOrdinaryBootstrapForwardsRefreshToken": false,
+    "copOrdinaryBootstrapForwardsExpiresAt": true,
+    "newIsolatedDeviceFlowRequired": false,
+    "liveAuthTestPerformed": false
+  }
+}
