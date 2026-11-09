@@ -1,0 +1,137 @@
+{
+  "ownerBuild": 100,
+  "ownerReport": "Communication tab present, only original direct chat missing; user could not open it. No new message or manual replay was performed.",
+  "copPassive": {
+    "checkedAtUTC": "2026-11-09T18:11:03.634881+00:00",
+    "windowUTC": [
+      "2026-11-09T18:08:00Z",
+      "2026-11-09T18:11:01Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "cop-cop-api-1",
+        "containerId": "2b91e8fe4b303190384a7cd8912e1b59f12b5307af634f15b80fa2a3d11d7e29",
+        "imageId": "sha256:f51cf2c013f5915182c423598d84d4ed4eda36fe7d6b4b4559dc97caafc5e883",
+        "observations": {
+          "conversationList": {
+            "observedContexts": 1,
+            "httpCounts": {
+              "200": 1
+            },
+            "errorReasons": {}
+          },
+          "identityLookup": {
+            "observedContexts": 2,
+            "httpCounts": {
+              "200": 2
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 148,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true,
+    "responseBodyNotRead": true,
+    "providerSelectionNotProvenByHttpStatus": true
+  },
+  "messagingPassive": {
+    "checkedAtUTC": "2026-11-09T18:11:14.256682+00:00",
+    "windowUTC": [
+      "2026-11-09T18:08:00Z",
+      "2026-11-09T18:11:01Z"
+    ],
+    "productionChanged": false,
+    "generatedRequests": 0,
+    "ownerActionAttribution": "not established by aggregate counts",
+    "components": [
+      {
+        "container": "csm-matrix-synapse",
+        "containerId": "6b6edd6e50dac87a39ede98bbfacca0b250953b7e9fd50b9cf0fd258178a239c",
+        "imageId": "sha256:b2a34f5a1b963e50446e0ea389e214d196e72a2536faca090209b15d5a5a4888",
+        "observations": {
+          "keyBackupVersion": {
+            "observedContexts": 8,
+            "httpCounts": {
+              "200": 8
+            },
+            "errorReasons": {}
+          },
+          "refresh": {
+            "observedContexts": 1,
+            "httpCounts": {
+              "200": 1
+            },
+            "errorReasons": {}
+          },
+          "sync": {
+            "observedContexts": 10,
+            "httpCounts": {
+              "200": 9
+            },
+            "errorReasons": {}
+          },
+          "whoami": {
+            "observedContexts": 3,
+            "httpCounts": {
+              "200": 3
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 5857,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      },
+      {
+        "container": "csm-messaging-api",
+        "containerId": "9cbb644a5651e4d9e40b461265262c2ca64f26ccc692f2ed3d12bef422ce0eea",
+        "imageId": "sha256:78addd837fa62ea3c95f0209ab88acb7e0cb97c96eb965045b794f7f90bfce7b",
+        "observations": {
+          "conversationList": {
+            "observedContexts": 1,
+            "httpCounts": {
+              "200": 1
+            },
+            "errorReasons": {}
+          },
+          "identityLookup": {
+            "observedContexts": 2,
+            "httpCounts": {
+              "200": 2
+            },
+            "errorReasons": {}
+          }
+        },
+        "lineCount": 47,
+        "lineCapReached": false,
+        "missingLogsDoNotProveNoOperation": true
+      }
+    ],
+    "rawContentTokensAndIdentitiesExcluded": true,
+    "responseBodyNotRead": true,
+    "providerSelectionNotProvenByHttpStatus": true
+  },
+  "scope": {
+    "endUTC": "2026-11-09T18:11:01Z",
+    "scriptSha256": "10e117dca93e8424efaa4cdc65f423a2adcb58765ee158986d6d1e8f062aa748",
+    "onlyNewClassifier": "exact GET conversation list and bootstrap routes; fixed error-code allowlist",
+    "execution": "one confirmed startup/list action; no new chat or message"
+  },
+  "listBodyAndProviderSelection": "not captured by passive HTTP status logs; direct record inclusion/visibility unproven",
+  "sourceReview": {
+    "upstreamList": "Exact membership, updatedAt descending, limit default50 maximum250; no q-filter in handle_call:list.",
+    "copNormalization": "Drops only non-record or missing nonempty ID/title or type outside direct/group; missing peer/mapping alone does not drop list entry.",
+    "sourceChanged": false
+  },
+  "generatedRequests": 0,
+  "serverChanged": false,
+  "chatCreated": false,
+  "identitiesProvisioned": false,
+  "messagesReplayedByDiagnosis": false
+}
