@@ -1,0 +1,46 @@
+{
+  "checkedAtUTC": "2026-11-09T12:56:56.460628+00:00",
+  "windowUTC": [
+    "2026-11-09T12:48:00Z",
+    "2026-11-09T12:56:00Z"
+  ],
+  "clientProbe": {
+    "build": 96,
+    "timeUTC": "2026-11-09T12:54:21Z",
+    "operationId": "f43e3367-b902-4f66-88b0-f810b59d865f",
+    "http": 202,
+    "sdkStage": "explicit_join_required",
+    "receiptMatches": true,
+    "appStage": "explicit_join",
+    "issue": "native_join",
+    "nativeCode": "transportNotReady",
+    "nativeJoinInvoked": false
+  },
+  "synapse": {
+    "healthy": true,
+    "restartCount": 0,
+    "observedSyncContexts": 159,
+    "syncHttpCounts": {
+      "200": 33,
+      "401": 126
+    },
+    "sync404": 0,
+    "membershipReadHttp200": 5,
+    "observedSendContexts": 0,
+    "observedJoinContexts": 0
+  },
+  "messaging": {
+    "healthy": true,
+    "restartCount": 6465
+  },
+  "limitations": [
+    "Counts are aggregate; the126sync401 responses have not been attributed to a particular device.",
+    "Exact401 reason not yet classified; these responses were observed in Synapse, not merely at the firewall.",
+    "No send/join in this window is not proof that no request existed outside the logged surface.",
+    "Other missing singleton background errors remain separate work.",
+    "No end-to-end joining or message delivery acceptance."
+  ],
+  "productionChanged": false,
+  "agentGeneratedRequests": 0,
+  "messageContentTokensAndIdentitiesExported": false
+}

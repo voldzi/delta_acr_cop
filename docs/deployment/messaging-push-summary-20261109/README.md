@@ -108,3 +108,19 @@ No further runtime request, reset or live helper change is authorized by this
 receipt. After a future restore or deliberate data reset, verify native helper
 cardinality in addition to stream sequences; do not equate generic health200 with
 working sync. The cause/date of loss of these helper rows is not established here.
+
+## Subsequent single owner probe96
+
+[The13:54:21CET owner probe and one passive comparison](owner-probe96-passive-observation.json)
+confirmed HTTP202/valid invitation, followed by client`transportNotReady` before
+any native join was invoked. Existing logs13:48–13:56CET contain33sync200 and
+126sync401 responses, with no observed sync404. The401s are observed in Synapse
+itself; the particular device/reason is not yet identified. They cannot be
+described as proven WAF denials. Five membership reads returned200; no send/join
+context was observed on this logging surface. This does not establish delivery.
+
+Jízda found that explicit invitation acceptance refused an unready live client
+before attempting the same fenced credential/transport restoration used by other
+operations. Its repair remains a separate native candidate requiring acceptance;
+this server observation does not authorize resetting identities, keys or stores.
+The four other missing background helper rows remain unchanged.
