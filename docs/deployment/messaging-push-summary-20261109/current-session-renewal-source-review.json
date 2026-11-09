@@ -1,0 +1,20 @@
+{
+  "scope": "CSMIOS.S host current-session issuance, not ordinary bootstrap",
+  "copSourcePath": "apps/cop-api/src/host-pusher-reconciliation.ts",
+  "copSourceSha256": "41171563d6e3e5dbfa9044b64b2b13a8a619e4c11e09c2a78b92ec0e5e5c926b",
+  "providerSourceRevision": "b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e",
+  "providerSourcePath": "lib/csm_messaging/current_chat_session.ex",
+  "refreshTokenAndExpiresInMsForwarded": true,
+  "fieldsRequiredNullableInOpenApi": true,
+  "contractTests": {
+    "file": "apps/cop-api/src/host-pusher-reconciliation.test.ts",
+    "passed": 16,
+    "failed": 0,
+    "syntheticOnly": true
+  },
+  "liveCredentialValuesRead": false,
+  "liveAuthRequestPerformed": false,
+  "productionChanged": false,
+  "serverPatchNeededForFieldPropagation": false,
+  "nativeRenewalOwner": "committed HostCurrentSessionJournal; owner-bound refresh of existing selected session; no silent switch to ordinary bootstrap/new session"
+}
