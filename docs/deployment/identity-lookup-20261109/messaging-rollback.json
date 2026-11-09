@@ -1,0 +1,12 @@
+{
+  "status": "available; not executed",
+  "currentContainer": "9cbb644a5651e4d9e40b461265262c2ca64f26ccc692f2ed3d12bef422ce0eea",
+  "currentImage": "sha256:78addd837fa62ea3c95f0209ab88acb7e0cb97c96eb965045b794f7f90bfce7b",
+  "currentPinSha256": "66074bb2d22b80a5c385e07228a267f6dc314413f72d7b9cf06b66b376bab809",
+  "targetImageRetained": "sha256:16de758aeb4e1e467dfe1bd8eda8f3462769a3df07f5c419ae044025f06ca810",
+  "originalPin": "/srv/csm-messaging/account-safety/vehicle-image-release-c0def3ac5b054ec19a7c30d9565226bc/original.compose.json",
+  "originalPinSha256": "fe8745194c6d158b656cb006a2f53bd0c777d91c5cc761e5e62d3eaf71015529",
+  "schemaSafe": true,
+  "accountOrDeviceChangesRequired": false,
+  "procedure": "Acquire existing product release lock. Fresh exact current CID/image/pin CAS and health/config readback; preserve full immediate inspect privately before any action. Restore only services.api.image to retained16de using original root-held pin, same six Compose inputs, no deps/build/pull. Verify current state, env, all mount values/modes, network IDs and peer identities, health. Preserve Binds order differences separately; never fabricate raw parity. Do not execute without reviewed case."
+}

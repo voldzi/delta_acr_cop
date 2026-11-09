@@ -1,0 +1,12 @@
+{
+  "file": "/private/tmp/release-messaging-lookup-20261109.py",
+  "sha256": "bc30fd23ac857199c8229e008a3cae6b274764fe1f1001ad98dd794dfc55f15d",
+  "parent": "scripts/self-deploy/release-messaging-50e590c.py",
+  "changes": "Exact old/new image, config/rootfs/revision/pin constants; additional exact baseline CID check. No other guard change.",
+  "beforeCid": "5e3a8d51ec820fc929f733ab63f551ceb42f9ffe01c41783d9f6b2c08b6ae497",
+  "standardChecksPreserved": true,
+  "transportImageId": "sha256:78addd837fa62ea3c95f0209ab88acb7e0cb97c96eb965045b794f7f90bfce7b",
+  "testedBuildImageId": "sha256:833e811399027b5f157ae851a995c19394308764d8f3bd542b42656dc9f3b2d6",
+  "identicalConfigSha256": "6cc2e6fd4680526045872902dc286c49541e67a8bafda58ae33f8078e51833df",
+  "allRootFsLayersMatch": true
+}

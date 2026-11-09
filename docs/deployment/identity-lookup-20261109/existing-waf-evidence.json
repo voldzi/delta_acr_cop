@@ -1,0 +1,21 @@
+{
+  "scope": "Already applied and independently read back by Jizda; no additional WAF change in lookup release",
+  "methodsApply": {
+    "afterSHA256": "689394d4cd490f660c3d04c56cf46b489b34d1f78a9eb43a3fb1acf6fd9cb0c8",
+    "nativeCases": 25,
+    "liveNginxSyntax": true,
+    "reloaded": true
+  },
+  "subsequentLabelApply": {
+    "afterSHA256": "35494c4592bfc96f701c1ba1176d70375b07e2f80b6218a95a809451fb8704a5",
+    "nativeCases": 12,
+    "liveNginxSyntax": true,
+    "reloaded": true
+  },
+  "readbackAt": "2026-11-09T15:38:53.044605+00:00",
+  "currentMethodsConfigSha256": "35494c4592bfc96f701c1ba1176d70375b07e2f80b6218a95a809451fb8704a5",
+  "allConfigReadbackMatched": true,
+  "nginxActive": "active",
+  "sourceEvidenceDirectory": "/Users/voldzi/Developer/18 2026/Jizda/docs/diagnostics/waf-20261109",
+  "physicalEncryptedSendOrRecoveryAcceptance": false
+}

@@ -1,0 +1,19 @@
+{
+  "copSource": "e4244eb7f66fd24e3ba7acedd08410f0ac87b0fd",
+  "messagingSource": "d75124733fab8d3c2e575ee24d955104f9c1b07b",
+  "copPatchSha256": "54b9d7fdb3f3622a1059526e17bdb5dbe0e8ebf9a42dbee4bb6b641ae6a962b1",
+  "messagingPatchSha256": "0b630040be1c1935c0f7c84bfc4a866d4b27a198cae4fd4d22d3770c2b28763c",
+  "approvedRuntimeSha256": {
+    "apps/cop-api/src/messaging-identity-lookup.ts": "5bc3f4496bb876eb44b7975672eed83793eb204bb3407cbb6c12949951f643f2",
+    "apps/cop-api/src/messaging-provider.ts": "b4e19346613d159fddd4dbf24080272a11e15e036e597bba681932d8b6a32354"
+  },
+  "builderIdentityTransition": {
+    "originalCid": "c29dbdadfc98c99b6435dc6d3831867aebd52e8c2cc8322e2b77b598c79fe966",
+    "currentCid": "88591bdc88904700e7688695cc9d13f73467491aefacbcead0d639b252fe2a80",
+    "sameImage": "sha256:27933730df224df80c41f4e5a9b33fa78831a79fd31903df3bb7deb49363422f",
+    "volume": "buildx_buildkit_cop-x50_state",
+    "onlyTemporaryClientCidChanged": true,
+    "originalHelperUnmodified": true,
+    "builderConfigurationChanged": false
+  }
+}

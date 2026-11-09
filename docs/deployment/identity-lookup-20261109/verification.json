@@ -1,5 +1,5 @@
 {
-  "status": "reviewed candidate; not yet deployed",
+  "status": "Historical source review receipt; runtime deployment and limits are recorded separately in README.md and final-runtime.json",
   "messagingBase": "b8595d98d090bd8b7fedf74d3d9f64f1c8ea646e",
   "messagingCandidate": "d75124733fab8d3c2e575ee24d955104f9c1b07b",
   "copLiveBase": "c7efa00417e51d57b26ad4c6087abe0aae778f54",

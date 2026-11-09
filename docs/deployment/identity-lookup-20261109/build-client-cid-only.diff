@@ -1,0 +1,11 @@
+--- versioned-build-client
++++ current-CID-only-build-client
+@@ -5,7 +5,7 @@
+ import argparse,fcntl,hashlib,json,os,re,socket,stat,subprocess,tarfile
+ from pathlib import Path
+ UUID='2f93f595-b61b-4eea-9054-7afa9b275b5b'
+-BUILDER='cop-x5';BUILDER_CID='c29dbdadfc98c99b6435dc6d3831867aebd52e8c2cc8322e2b77b598c79fe966'
++BUILDER='cop-x5';BUILDER_CID='88591bdc88904700e7688695cc9d13f73467491aefacbcead0d639b252fe2a80'
+ BUILDER_IMAGE='sha256:27933730df224df80c41f4e5a9b33fa78831a79fd31903df3bb7deb49363422f'
+ BASE='hexpm/elixir@sha256:62ae81995bbb198bd72d721deb8e81c49f9718984d8764f6dc061a6e2545cc85'
+ RUNNER='alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'

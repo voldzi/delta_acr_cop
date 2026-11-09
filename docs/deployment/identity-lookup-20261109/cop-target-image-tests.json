@@ -1,0 +1,14 @@
+{
+  "image": "sha256:f51cf2c013f5915182c423598d84d4ed4eda36fe7d6b4b4559dc97caafc5e883",
+  "sourceRevision": "e4244eb7f66fd24e3ba7acedd08410f0ac87b0fd",
+  "passed": 46,
+  "failed": 0,
+  "pending": 0,
+  "success": true,
+  "network": "none",
+  "readOnlyRoot": true,
+  "reportInTmpfs": true,
+  "fixture": "ActualPhoenixRouterSyntheticFixture",
+  "productionDataAccessed": false,
+  "earlierHarnessReportPathFailure": "Initial reporter attempted /app/.vitest/json on read-only root; not successful. Corrected outputFile=/tmp, same image/source/tests."
+}
