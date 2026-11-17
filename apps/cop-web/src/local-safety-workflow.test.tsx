@@ -32,12 +32,24 @@ describe("local alert workflow", () => {
   it("does not present an empty unavailable source as an absence of alerts", () => {
     render(<SafetyAlertBoard features={[]} evidenceState="unavailable" onSelectFeature={() => {}} />);
     expect(screen.getByRole("status").textContent).toContain("nelze spolehlivě ověřit");
-    expect(screen.queryByText(/Žádné aktivní/)).toBeNull();
+    expect(screen.queryByText(/Nalezeno do 30 km/)).toBeNull();
+    expect(screen.queryByText("Kritické")).toBeNull();
+    expect(screen.queryByText("Varování")).toBeNull();
+  });
+  it("shows the verified state, check time and local count only for current evidence", () => {
+    const { container } = render(
+      <SafetyAlertBoard features={[hazard]} evidenceState="current" checkedAt={now} onSelectFeature={() => {}} />
+    );
+    expect(screen.getByRole("status").textContent).toContain("Aktuálnost dostupných výstrah je ověřena");
+    expect(container.querySelector("time")?.dateTime).toBe(new Date(now).toISOString());
+    expect(screen.getByText("Nalezeno do 30 km: 1")).toBeTruthy();
   });
   it("opens details using a human-readable action and keeps stale evidence labelled", () => {
     const select = vi.fn();
     render(<SafetyAlertBoard features={[hazard]} evidenceState="limited" onSelectFeature={select} />);
     expect(screen.getByRole("status").textContent).toContain("nelze spolehlivě ověřit");
+    expect(screen.getByText("Aktuálnost neověřena")).toBeTruthy();
+    expect(screen.queryByText(/Nalezeno do 30 km/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Zobrazit detail výstrahy" }));
     expect(select).toHaveBeenCalledWith("fire-near");
   });

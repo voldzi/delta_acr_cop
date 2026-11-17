@@ -1,7 +1,7 @@
 import React from "react";
 import { MediaNewsPanel } from "./media-news";
 import { SafetyNotificationSettings, setSafetyNotificationConsent } from "./safety-notification-settings";
-import { localSafetyEmptyCopy, useLocalSafetyFeed } from "./local-safety-feed";
+import { localSafetyEmptyCopy, useLocalSafetyFeed, type LocalSafetyState } from "./local-safety-feed";
 import { featureNavigationTarget } from "./feature-navigation";
 import { appendBoundedStreamMessage, streamReconnectDelayMs } from "./stream-reconnect";
 import {
@@ -677,7 +677,7 @@ interface PriorityAlertSummary {
   total: number;
 }
 
-type MobileSheet = "layers" | "detail" | null;
+type MobileSheet = "layers" | "detail" | "safety-detail" | null;
 const MOBILE_SHEET_MEDIA_QUERY = "(max-width: 860px)";
 
 interface EmergencyRouteTarget {
@@ -992,6 +992,20 @@ export function App() {
   const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
   const initialMapFocus = React.useMemo(() => decodeCopMapFocusSearch(window.location.search), []);
   const initialSharedMap = React.useMemo(() => decodeCopMapShareSearch(window.location.search), []);
+  const [linkedSafetyLocation, setLinkedSafetyLocation] = React.useState(() => {
+    const focus = initialMapFocus;
+    if (
+      initialSharedMap ||
+      !focus?.label ||
+      focus.action === "route" ||
+      focus.featureId ||
+      focus.layerId ||
+      focus.featureKind
+    ) {
+      return null;
+    }
+    return { label: focus.label, lat: focus.lat, lon: focus.lon };
+  });
   const initialChatReportDraft = React.useMemo(() => decodeCopReportDraftSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
     normalizeWorkspaceModule(
@@ -1028,6 +1042,7 @@ export function App() {
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [mobileSheet, setMobileSheet] = React.useState<MobileSheet>(null);
+  const [mobileSafetyAlertId, setMobileSafetyAlertId] = React.useState<string | null>(null);
   const [mobileSheetViewport, setMobileSheetViewport] = React.useState(() => isMobileSheetViewport());
   const [mobileSketchOpen, setMobileSketchOpen] = React.useState(false);
   const shellRef = React.useRef<HTMLElement | null>(null);
@@ -4087,8 +4102,10 @@ export function App() {
     () => (mapCatalog ? safetyAreaAlertCatalogLayerIds(mapCatalog) : []),
     [mapCatalog]
   );
-  const localSafetyLocation = watchedSafetyLocation ?? userLocation;
-  const localSafetyFeed = useLocalSafetyFeed({
+  const defaultSafetyLocation = watchedSafetyLocation ?? userLocation;
+  const localSafetyLocation = linkedSafetyLocation ?? defaultSafetyLocation;
+  const safetyLocationLabel = linkedSafetyLocation?.label ?? watchedSafetyLocation?.label;
+  const localSafetyOptions = {
     apiBase,
     token: authToken,
     enabled: dataAccessReady,
@@ -4096,9 +4113,12 @@ export function App() {
     visible: documentVisible,
     autoRefresh,
     layerIds: localSafetyLayerIds,
-    location: localSafetyLocation,
     staleAfterSeconds: safetyConfig?.config.staleAfterSeconds
-  });
+  };
+  const localSafetyFeed = useLocalSafetyFeed({ ...localSafetyOptions, location: localSafetyLocation });
+  // The temporary public view must not move an operator's existing area notifications.
+  const operatorSafetyLocation = linkedSafetyLocation && aoiRules.length > 0 ? defaultSafetyLocation : null;
+  const operatorSafetyFeed = useLocalSafetyFeed({ ...localSafetyOptions, location: operatorSafetyLocation });
   const localSafetyFeatures = React.useMemo(
     () =>
       filterLocalSafetyFeatures(
@@ -4145,8 +4165,15 @@ export function App() {
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
+  const selectedLocalSafetyFeature = localSafetyFeatures.find(
+    (feature) => feature.properties.featureId === selectedSituationFeatureId
+  );
+  const mobileSafetyAlert =
+    mobileSheet === "safety-detail"
+      ? localSafetyFeatures.find((feature) => feature.properties.featureId === mobileSafetyAlertId)
+      : undefined;
   const selectedSituationFeature =
-    localSafetyFeatures.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ??
+    selectedLocalSafetyFeature ??
     liveSelectedSituationFeature ??
     (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedTransitFeature : null);
   const selectedTransitRouteRequest = React.useMemo(() => {
@@ -4387,10 +4414,23 @@ export function App() {
     ]
   );
   const publicSafetyAlertFeatures = localSafetyFeatures;
-  const safetyAreaSourceFeatures = React.useMemo(
-    () => deduplicateSituationFeatures([...publicSafetyAlertFeatures, ...watchedAreaSafetyFeatures]),
-    [publicSafetyAlertFeatures, watchedAreaSafetyFeatures]
-  );
+  const safetyAreaSourceFeatures = React.useMemo(() => {
+    const usualLocalFeatures = linkedSafetyLocation
+      ? filterLocalSafetyFeatures(
+          (operatorSafetyFeed.collection?.features ?? []).map(safetyFeatureToSituationFeature),
+          operatorSafetyLocation,
+          operatorSafetyFeed.evaluatedAt
+        )
+      : publicSafetyAlertFeatures;
+    return deduplicateSituationFeatures([...usualLocalFeatures, ...watchedAreaSafetyFeatures]);
+  }, [
+    linkedSafetyLocation,
+    operatorSafetyFeed.collection,
+    operatorSafetyFeed.evaluatedAt,
+    operatorSafetyLocation,
+    publicSafetyAlertFeatures,
+    watchedAreaSafetyFeatures
+  ]);
   const safetyAreaAlerts = React.useMemo(
     () => buildSafetyAreaAlertMatches(safetyAreaSourceFeatures, aoiRules),
     [aoiRules, safetyAreaSourceFeatures]
@@ -4409,14 +4449,14 @@ export function App() {
         mapView,
         objects: visibleObjects,
         proximityAlerts,
-        userLocation
+        userLocation: localSafetyLocation
       }),
     [
       mapView,
       proximityAlerts,
       localSafetyFeatures,
       serverAlerts,
-      userLocation,
+      localSafetyLocation,
       visibleObjects,
       localSafetyFeed.evaluatedAt
     ]
@@ -5107,6 +5147,7 @@ export function App() {
       return;
     }
     if (
+      selectedLocalSafetyFeature ||
       findSelectedSituationFeature(
         combinedSituationFeatures,
         selectedSituationFeatureId,
@@ -5129,7 +5170,12 @@ export function App() {
       setSelectedSituationFeatureId(null);
       setSelectedSituationFeatureStableKey(null);
     }
-  }, [combinedSituationFeatures, selectedSituationFeatureId, selectedSituationFeatureStableKey]);
+  }, [
+    combinedSituationFeatures,
+    selectedLocalSafetyFeature,
+    selectedSituationFeatureId,
+    selectedSituationFeatureStableKey
+  ]);
 
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -5151,6 +5197,13 @@ export function App() {
       setMobileSheet(null);
     }
   }, [mobileSheet, mobileSheetViewport]);
+
+  React.useEffect(() => {
+    if (mobileSheet === "safety-detail" && !mobileSafetyAlert) {
+      setMobileSheet(null);
+      setMobileSafetyAlertId(null);
+    }
+  }, [mobileSafetyAlert, mobileSheet]);
 
   React.useEffect(() => {
     if (
@@ -7446,14 +7499,16 @@ export function App() {
 
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
-  const priorityAlert = priorityAlertSummary.primary;
+  const safetyDataCurrent = localSafetyFeed.state === "current";
+  const priorityAlert = safetyDataCurrent ? priorityAlertSummary.primary : null;
   const emptySafetyCopy = localSafetyEmptyCopy(localSafetyFeed.state);
-  const operationTitle = priorityAlert
-    ? `${priorityAlert.title}${localSafetyFeed.state !== "current" ? " · aktuálnost neověřena" : ""}`
-    : emptySafetyCopy.title;
-  const operationBadge = priorityAlert?.badge ?? emptySafetyCopy.badge;
+  const operationTitle = priorityAlert?.title ?? emptySafetyCopy.badge;
+  const operationBadge = priorityAlert ? "Ověřeno" : emptySafetyCopy.badge;
   const priorityAlertAdditionalLabel =
-    priorityAlertSummary.additionalCount > 0 ? `+${priorityAlertSummary.additionalCount} dalších` : "";
+    safetyDataCurrent && priorityAlertSummary.additionalCount > 0
+      ? `+${priorityAlertSummary.additionalCount} dalších · `
+      : "";
+  const alertScopeTitle = safetyLocationLabel ? `Výstrahy · ${safetyLocationLabel}` : "Výstrahy v okolí";
   const effectiveOperatorProfile = React.useMemo(
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
@@ -7787,19 +7842,22 @@ export function App() {
         </div>
         <button
           className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? emptySafetyCopy.tone)}
-          aria-label={`Zobrazit výstrahy v okolí. ${operationBadge}. ${operationTitle}`}
+          aria-label={`Zobrazit výstrahy v okolí. ${alertScopeTitle}. ${operationBadge}${priorityAlert ? `. ${operationTitle}` : ""}`}
           type="button"
           onClick={() => {
             setActiveWorkspace("alerts");
             setMobileSheet(null);
           }}
-          title={`${operationBadge}: ${operationTitle}${localSafetyFeed.checkedAt ? ` Kontrola ${new Date(localSafetyFeed.checkedAt).toLocaleTimeString("cs-CZ")}.` : ""}`}
+          title={`${alertScopeTitle} · ${operationBadge}${priorityAlert ? ` · ${operationTitle}` : ""}`}
         >
           <span>{operationBadge}</span>
-          <strong aria-live="polite">{operationTitle}</strong>
-          <small>
-            {priorityAlertAdditionalLabel ? `${priorityAlertAdditionalLabel} · Podrobnosti` : "Podrobnosti"}
-          </small>
+          <strong className="alert-strip-text" aria-live="polite">
+            <span className="alert-strip-area">{alertScopeTitle}</span>
+            <span className="alert-strip-status">
+              {priorityAlert ? `${operationBadge} · ${operationTitle}` : operationTitle}
+            </span>
+          </strong>
+          <small>{priorityAlertAdditionalLabel}Podrobnosti</small>
         </button>
         <div className="topbar-actions">
           <button
@@ -8081,19 +8139,19 @@ export function App() {
                     <div className="workspace-module-card">
                       <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
                       <ReadinessRow
-                        label="SIM safety výstrahy"
-                        value={String(alertSummary.total)}
-                        tone={alertSummary.total > 0 ? "warn" : "neutral"}
+                        label="Výstrahy v oblasti"
+                        value={safetyDataCurrent ? String(alertSummary.total) : "neověřeno"}
+                        tone={safetyDataCurrent && alertSummary.total > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Kritické"
-                        value={String(alertSummary.critical)}
-                        tone={alertSummary.critical > 0 ? "warn" : "neutral"}
+                        value={safetyDataCurrent ? String(alertSummary.critical) : "—"}
+                        tone={safetyDataCurrent && alertSummary.critical > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Varování"
-                        value={String(alertSummary.warning)}
-                        tone={alertSummary.warning > 0 ? "warn" : "neutral"}
+                        value={safetyDataCurrent ? String(alertSummary.warning) : "—"}
+                        tone={safetyDataCurrent && alertSummary.warning > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Zapnuté vrstvy"
@@ -8540,13 +8598,17 @@ export function App() {
                   apiBase={apiBase}
                   token={authToken}
                   language={language}
+                  linkedLocationLabel={linkedSafetyLocation?.label}
                   watchedLocation={watchedSafetyLocation}
                   deviceLocationAvailable={Boolean(userLocation)}
+                  onLeaveLinkedLocation={() => setLinkedSafetyLocation(null)}
                   onSelectLocation={(location) => {
+                    setLinkedSafetyLocation(null);
                     setWatchedSafetyLocation(location);
                     writeWatchedSafetyLocation(location, userStorageScope);
                   }}
                   onUseDeviceLocation={() => {
+                    setLinkedSafetyLocation(null);
                     setWatchedSafetyLocation(null);
                     writeWatchedSafetyLocation(null, userStorageScope);
                     if (!userLocation) locateUser();
@@ -8555,7 +8617,13 @@ export function App() {
                 <SafetyAlertBoard
                   features={publicSafetyAlertFeatures}
                   evidenceState={localSafetyFeed.state}
+                  checkedAt={localSafetyFeed.checkedAt}
                   onSelectFeature={(featureId) => {
+                    if (mobileSheetViewport) {
+                      setMobileSafetyAlertId(featureId);
+                      setMobileSheet("safety-detail");
+                      return;
+                    }
                     const isSelected = selectedSituationFeatureId === featureId;
                     setSelectedSituationFeatureId(isSelected ? null : featureId);
                     setSelectedSituationFeatureStableKey(
@@ -8568,7 +8636,6 @@ export function App() {
                     );
                     setSelectedObjectId(null);
                     setSelectedEmergencyRouteInfo(null);
-                    setMobileSheet(mobileDetailSheetForSelection(isSelected));
                   }}
                 />
                 <MediaNewsPanel
@@ -8913,6 +8980,30 @@ export function App() {
         </MobileSheetSurface>
       ) : null}
 
+      {mobileSafetyAlert ? (
+        <MobileSheetSurface
+          focusOnOpen
+          title="Detail výstrahy"
+          subtitle="Výstrahy"
+          onClose={() => {
+            setMobileSheet(null);
+            setMobileSafetyAlertId(null);
+          }}
+        >
+          {localSafetyFeed.state !== "current" ? (
+            <p className="empty-state" role="status">
+              Aktuálnost této výstrahy nelze ověřit.
+            </p>
+          ) : null}
+          <SituationFeatureDetail
+            apiBase={apiBase}
+            authToken={authToken}
+            feature={mobileSafetyAlert}
+            onNavigateToTarget={openNavigationProfileDialog}
+          />
+        </MobileSheetSurface>
+      ) : null}
+
       {mobileSheet === "detail" ? (
         <MobileSheetSurface
           title={
@@ -9092,7 +9183,7 @@ export function App() {
           ) : null}
           <span className={streamStatusTone(streamStatus)}>
             <Activity size={15} />
-            Datový stream {streamStatusLabel(streamStatus)}
+            Spojení pracovní plochy {streamStatusLabel(streamStatus)}
           </span>
           <span className={operatingModeTone(operatingMode)}>
             <Wifi size={15} />
@@ -10948,16 +11039,20 @@ function SafetyLocationPicker({
   apiBase,
   token,
   language,
+  linkedLocationLabel,
   watchedLocation,
   deviceLocationAvailable,
+  onLeaveLinkedLocation,
   onSelectLocation,
   onUseDeviceLocation
 }: {
   apiBase: string;
   token?: string;
   language: AppLanguage;
+  linkedLocationLabel?: string;
   watchedLocation: WatchedSafetyLocation | null;
   deviceLocationAvailable: boolean;
+  onLeaveLinkedLocation: () => void;
   onSelectLocation: (location: WatchedSafetyLocation) => void;
   onUseDeviceLocation: () => void;
 }) {
@@ -11001,16 +11096,24 @@ function SafetyLocationPicker({
         <div>
           <span>Sledovaná oblast</span>
           <strong>
-            {watchedLocation
-              ? `${watchedLocation.label} · vybrané místo`
-              : deviceLocationAvailable
-                ? "Okolí aktuální polohy zařízení"
-                : "Poloha zatím není určená"}
+            {linkedLocationLabel
+              ? `${linkedLocationLabel} · místo z odkazu`
+              : watchedLocation
+                ? `${watchedLocation.label} · vybrané místo`
+                : deviceLocationAvailable
+                  ? "Okolí aktuální polohy zařízení"
+                  : "Poloha zatím není určená"}
           </strong>
         </div>
-        <button className="mini-button" onClick={onUseDeviceLocation} type="button">
-          <Crosshair size={14} /> Moje poloha
-        </button>
+        {linkedLocationLabel ? (
+          <button className="mini-button" onClick={onLeaveLinkedLocation} type="button">
+            Běžná oblast
+          </button>
+        ) : (
+          <button className="mini-button" onClick={onUseDeviceLocation} type="button">
+            <Crosshair size={14} /> Moje poloha
+          </button>
+        )}
       </div>
       <form className="safety-location-search" onSubmit={(event) => void searchPlaces(event)}>
         <label>
@@ -11058,7 +11161,11 @@ function SafetyLocationPicker({
           {error}
         </div>
       ) : null}
-      <small>Výběr zůstává uložený a neposouvání mapy jej nemění.</small>
+      <small>
+        {linkedLocationLabel
+          ? "Zobrazuje se oblast z odkazu. Uloženou oblast otevřete tlačítkem Běžná oblast."
+          : "Vybraná obec zůstane uložená. Posun mapy oblast výstrah nezmění."}
+      </small>
     </div>
   );
 }
@@ -11066,33 +11173,49 @@ function SafetyLocationPicker({
 export function SafetyAlertBoard({
   features,
   evidenceState,
+  checkedAt,
   onSelectFeature
 }: {
   features: SituationFeature[];
-  evidenceState: import("./local-safety-feed").LocalSafetyState;
+  evidenceState: LocalSafetyState;
+  checkedAt?: number | null;
   onSelectFeature: (featureId: string) => void;
 }) {
   const summary = summarizeSafetyAlerts(features);
+  const current = evidenceState === "current";
+  const statusText =
+    current && features.length > 0
+      ? "Aktuálnost dostupných výstrah je ověřena."
+      : localSafetyEmptyCopy(evidenceState).title;
   return (
     <div className="alert-center-board">
       <div className="deck-header">
         <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
-        <span>{features.length} nalezených do 30 km</span>
+        {current ? <span>Nalezeno do 30 km: {features.length}</span> : null}
       </div>
-      <div className="alert-summary-grid">
-        <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "neutral"} />
-        <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "neutral"} />
-      </div>
-      <div className="alert-list">
-        {features.length === 0 || evidenceState !== "current" ? (
-          <div className="empty-mini" role="status">
-            {localSafetyEmptyCopy(evidenceState).title}
-          </div>
+      <div className={clsx("alert-evidence-status", !current && "unverified")} role="status">
+        <strong>{statusText}</strong>
+        {checkedAt ? (
+          <span>
+            Poslední dostupná kontrola{" "}
+            <time dateTime={new Date(checkedAt).toISOString()}>
+              {new Date(checkedAt).toLocaleString("cs-CZ", { dateStyle: "short", timeStyle: "short" })}
+            </time>
+          </span>
         ) : null}
+        {!current && features.length > 0 ? <span>Výpis může být neúplný nebo neaktuální.</span> : null}
+      </div>
+      {current && features.length > 0 ? (
+        <div className="alert-summary-grid">
+          <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "neutral"} />
+          <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "neutral"} />
+        </div>
+      ) : null}
+      <div className="alert-list">
         {features.map((feature) => {
           const severityRank = priorityFeatureSeverityRank(feature);
           const status = situationFeatureStatusModel(feature);
-          const rowTone = severityRank >= 3 ? "critical" : severityRank >= 2 ? "warning" : "info";
+          const rowTone = !current ? "info" : severityRank >= 3 ? "critical" : severityRank >= 2 ? "warning" : "info";
           const observedAt = latestTimestamp([
             feature.properties.observedAt,
             feature.properties.effectiveAt,
@@ -11106,20 +11229,26 @@ export function SafetyAlertBoard({
               <div className="alert-row-body">
                 <div className="alert-row-heading">
                   <strong>{priorityFeatureTitle(feature)}</strong>
-                  <span>{status.label}</span>
+                  <span>{current ? status.label : "Aktuálnost neověřena"}</span>
                 </div>
-                <p>
-                  {feature.properties.description ??
-                    feature.properties.recommendedAction ??
-                    "Oficiální safety vrstva ze SIM."}
-                </p>
+                {feature.properties.recommendedAction ? (
+                  <p>
+                    <strong>Doporučení zdroje</strong> {feature.properties.recommendedAction}
+                  </p>
+                ) : null}
+                {feature.properties.description && feature.properties.description !== feature.properties.recommendedAction ? (
+                  <p>{feature.properties.description}</p>
+                ) : null}
                 <div className="alert-row-meta">
                   <button type="button" onClick={() => onSelectFeature(feature.properties.featureId)}>
                     Zobrazit detail výstrahy
                   </button>
                   <span>{priorityFeatureBadge(feature)}</span>
                   <span>{sourceDisplayName(feature.properties.sourceId)}</span>
-                  <span>{formatShortDateTime(observedAt)}</span>
+                  {observedAt ? <span>Čas záznamu {formatShortDateTime(observedAt)}</span> : null}
+                  {feature.properties.validUntil ? (
+                    <span>Platí do {formatShortDateTime(feature.properties.validUntil)}</span>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -14032,11 +14161,13 @@ function MobileBottomNav({
 
 function MobileSheetSurface({
   children,
+  focusOnOpen,
   onClose,
   subtitle,
   title
 }: {
   children: React.ReactNode;
+  focusOnOpen?: boolean;
   onClose: () => void;
   subtitle?: string;
   title: string;
@@ -14044,6 +14175,20 @@ function MobileSheetSurface({
   const [dragOffset, setDragOffset] = React.useState(0);
   const startYRef = React.useRef<number | null>(null);
   const activePointerIdRef = React.useRef<number | null>(null);
+  const closeButtonRef = React.useRef<HTMLButtonElement | null>(null);
+
+  React.useEffect(() => {
+    if (!focusOnOpen) {
+      return;
+    }
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (trigger?.isConnected) {
+        trigger.focus({ preventScroll: true });
+      }
+    };
+  }, [focusOnOpen]);
 
   const stopSheetEvent = React.useCallback((event: React.SyntheticEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -14137,7 +14282,7 @@ function MobileSheetSurface({
             <span>{subtitle ?? "Panel"}</span>
             <strong>{title}</strong>
           </div>
-          <button aria-label="Zavřít panel" onClick={onClose} type="button">
+          <button ref={closeButtonRef} aria-label="Zavřít panel" onClick={onClose} type="button">
             <X size={18} />
             <span>Zavřít</span>
           </button>
@@ -20673,7 +20818,7 @@ interface PriorityAlertInput {
   mapView: MapViewState | undefined;
   objects: CopObject[];
   proximityAlerts: ProximityAlert[];
-  userLocation: UserLocation | null;
+  userLocation: UserLocation | Pick<UserLocation, "lat" | "lon"> | null;
 }
 
 export function buildPriorityAlertSummary({
@@ -20705,7 +20850,7 @@ export function buildPriorityAlertSummary({
 }
 
 function priorityAlertReference(
-  userLocation: UserLocation | null,
+  userLocation: Pick<UserLocation, "lat" | "lon"> | null,
   mapView: MapViewState | undefined
 ): PriorityAlertSummary["reference"] {
   if (userLocation) {

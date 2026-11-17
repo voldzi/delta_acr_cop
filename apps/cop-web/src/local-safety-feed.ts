@@ -57,13 +57,13 @@ export function localSafetyEmptyCopy(state: LocalSafetyState): {
 } {
   switch (state) {
     case "location-required":
-      return { badge: "Poloha neurčena", title: "Pro výstrahy v okolí určete svou polohu.", tone: "neutral" };
+      return { badge: "Poloha neurčena", title: "Vyberte obec nebo použijte polohu zařízení.", tone: "neutral" };
     case "loading":
       return { badge: "Ověřuji výstrahy", title: "Místní výstrahy se načítají.", tone: "neutral" };
     case "current":
       return {
         badge: "Bez nalezené výstrahy",
-        title: "V dostupných zdrojích do 30 km od vaší polohy. Nejde o potvrzení bezpečí.",
+        title: "V dostupných zdrojích do 30 km od sledovaného místa nebyla nalezena výstraha. Nejde o potvrzení bezpečí.",
         tone: "neutral"
       };
     default:

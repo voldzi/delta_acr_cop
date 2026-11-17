@@ -20,6 +20,19 @@ Dokončená první sada oprav není potvrzením připravenosti pro celou ČR.
 | 3D přehled              | Samostatný `/globe` používá Cesium až po explicitním otevření, COP API, omezené objekty/historii, capability fallback, verzované sdílení a viditelné observed/estimated/stale stavy.                      | Velký volitelný engine; fotorealistické komerční zdroje nejsou součástí.                                                            |
 | Výkon a kontrola vydání | Místní dotazy mají timeout/rušení; shell a těžké moduly mají bundle budgets; měří se LCP/INP/CLS; reconnect používá jitter a fronty i SSE backpressure jsou omezené. Lokálně prošlo 2 000 SSE na jedné instanci. | Národní RUM baseline a víceinstanční test v řízeném prostředí zůstávají release branou.                                             |
 
+## Místní výstrahy z odkazu na obec
+
+Odkaz s pojmenovaným místem otevře mapu a dočasně vybere toto místo pro veřejné
+výstrahy. Souhrn i seznam používají stejnou oblast do 30 km. Přechod přes tlačítko
+**Běžná oblast** vrátí uloženou obec nebo aktuální polohu zařízení. Samotné
+otevření odkazu nepřepisuje uloženou obec ani pravidla sledování oblastí operátora.
+
+Výstrahy zobrazují stav ověření a čas poslední dostupné kontroly. Při omezených
+datech ukazují dostupné položky s upozorněním na jejich neověřenou aktuálnost a
+skrývají souhrnné počty. Stav spojení pracovní plochy je uveden zvlášť.
+Na telefonu se detail otevírá přímo z veřejného seznamu i při vypnuté vrstvě
+výstrahy. Výběr obce ani zobrazení detailu nevyžaduje přihlášení.
+
 ## Ověření a vydání
 
 - Web: cílené regresní testy pro aktuálnost, výpadky, změnu polohy, timeout,

@@ -30,6 +30,7 @@ import {
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 import { defaultMapCenter } from "./user-preferences";
+import { readWatchedSafetyLocation, writeWatchedSafetyLocation } from "./watched-safety-location";
 
 const initialMatchMedia = window.matchMedia;
 const initialGeolocation = navigator.geolocation;
@@ -2817,6 +2818,134 @@ describe("COP web dashboard", () => {
       await waitFor(() => expect(screen.getByTitle("COP Chat")).toBeTruthy());
       expect(screen.queryByText("Integrovaný COP Chat")).toBeNull();
       expect(screen.queryByTitle("Zavřít chat")).toBeNull();
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it("shows Košík warnings from a link, reopens their mobile detail and preserves the usual area", async () => {
+    const restoreMatchMedia = installMatchMedia(true);
+    const linkedPlace = { lat: 50.318253, lon: 15.13405 };
+    const usualPlace = { label: "Brno", lat: 49.1951, lon: 16.6068, source: "place" } as const;
+    window.history.replaceState(null, "", "/?copLat=50.318253&copLon=15.134050&copZoom=13&copLabel=Ko%C5%A1%C3%ADk");
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: undefined });
+    writeWatchedSafetyLocation(usualPlace, "anonymous");
+    writeWatchedSafetyLocation(usualPlace, "lab");
+    const safetyQueryCenters: Array<[number, number]> = [];
+    const generatedAt = new Date().toISOString();
+    const warning = {
+      geometry: { coordinates: [linkedPlace.lon, linkedPlace.lat], type: "Point" },
+      properties: {
+        category: "weather",
+        featureId: "local-warning-not-on-map",
+        headline: "Modelová výstraha před větrem",
+        layer: "weather_alerts",
+        observedAt: generatedAt,
+        recommendedAction: "Nevstupujte do lesa.",
+        severity: "severe",
+        sourceId: "chmi_alerts"
+      },
+      type: "Feature"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/v1/map/catalog")) {
+          const catalog = testMapCatalogResponse() as { layers: unknown[] };
+          return jsonResponse({
+            ...catalog,
+            layers: [
+              ...catalog.layers,
+              {
+                audience: "public",
+                defaultVisible: false,
+                geometryTypes: ["Point"],
+                groupId: "risks.weather",
+                kind: "vector_features",
+                label: "Meteorologické výstrahy",
+                layerId: "public.safety.weather_alerts",
+                query: { mode: "bbox", providerId: "sim.safety-data", providerLayerIds: ["weather_alerts"] },
+                role: "reference",
+                selectable: true,
+                styleProfile: "safety-weather-alert-v1"
+              }
+            ]
+          });
+        }
+        if (url.includes("/api/v1/map/query")) {
+          const request = JSON.parse(String(init?.body ?? "{}")) as {
+            bbox?: [number, number, number, number];
+            layerIds?: string[];
+            limit?: number;
+          };
+          const response = emptyMapQueryResponse(request.layerIds ?? []) as Record<string, unknown>;
+          if (request.limit === 1000 && request.bbox && request.layerIds?.includes("public.safety.weather_alerts")) {
+            const [west, south, east, north] = request.bbox;
+            safetyQueryCenters.push([(west + east) / 2, (south + north) / 2]);
+            return jsonResponse({
+              ...response,
+              safety: {
+                contractVersion: "cop-safety-source-v1",
+                features: [warning],
+                generatedAt,
+                query: { layers: ["weather_alerts"], limit: 1000 },
+                source: { sourceId: "safety-data-api", sourceType: "PUBLIC_SAFETY_AGGREGATE" },
+                sourceHealth: { evaluatedAt: generatedAt, health: "ONLINE" },
+                sources: [{ enabled: true, sourceId: "chmi_alerts" }],
+                summary: {
+                  advisoryCount: 0,
+                  criticalCount: 0,
+                  featureCount: 1,
+                  sourceCount: 1,
+                  staleFeatureCount: 0,
+                  warningCount: 1
+                },
+                type: "FeatureCollection",
+                warnings: []
+              }
+            });
+          }
+          return jsonResponse(response);
+        }
+        if (url.includes("/health/ready")) return jsonResponse({ status: "ok", timestamp: generatedAt });
+        return jsonResponse({ items: [] });
+      })
+    );
+
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /Zobrazit výstrahy v okolí.*Košík/u }));
+      const openDetail = await screen.findByRole("button", { name: /Zobrazit detail výstrahy/u });
+      expect(screen.getByText("Košík · místo z odkazu")).toBeTruthy();
+      expect(safetyQueryCenters[0]?.[0]).toBeCloseTo(linkedPlace.lon, 2);
+      expect(safetyQueryCenters[0]?.[1]).toBeCloseTo(linkedPlace.lat, 2);
+      expect(screen.queryByTestId("map-situation-feature-local-warning-not-on-map")).toBeNull();
+      openDetail.focus();
+      fireEvent.click(openDetail);
+
+      const detail = await screen.findByRole("dialog", { name: "Detail výstrahy" });
+      expect(within(detail).getByText(warning.properties.headline, { selector: "strong" })).toBeTruthy();
+      expect(within(detail).getAllByText(warning.properties.recommendedAction).length).toBeGreaterThan(0);
+      expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("true");
+      const closeDetail = within(detail).getByRole("button", { name: "Zavřít panel" });
+      expect(document.activeElement).toBe(closeDetail);
+      fireEvent.keyDown(closeDetail, { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Detail výstrahy" })).toBeNull();
+      expect(document.activeElement).toBe(openDetail);
+      fireEvent.click(openDetail);
+      const reopened = await screen.findByRole("dialog", { name: "Detail výstrahy" });
+      fireEvent.click(within(reopened).getByRole("button", { name: "Zavřít panel" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "Běžná oblast" }));
+      expect(await screen.findByText("Brno · vybrané místo")).toBeTruthy();
+      await waitFor(() => {
+        expect(safetyQueryCenters.at(-1)?.[0]).toBeCloseTo(usualPlace.lon, 2);
+        expect(safetyQueryCenters.at(-1)?.[1]).toBeCloseTo(usualPlace.lat, 2);
+      });
+      expect(screen.queryByRole("button", { name: /Zobrazit detail výstrahy/u })).toBeNull();
+      expect(readWatchedSafetyLocation("anonymous")).toEqual(usualPlace);
+      expect(readWatchedSafetyLocation("lab")).toEqual(usualPlace);
     } finally {
       restoreMatchMedia();
     }

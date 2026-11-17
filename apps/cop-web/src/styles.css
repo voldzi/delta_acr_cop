@@ -2451,6 +2451,26 @@ h1 {
   font-weight: 900;
 }
 
+.shell.app-shell-v2 .priority-alert-strip .alert-strip-text {
+  display: grid;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.shell.app-shell-v2 .alert-strip-text span {
+  overflow: hidden;
+  color: inherit;
+  font-size: inherit;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.shell.app-shell-v2 .alert-strip-text .alert-strip-status {
+  color: var(--muted);
+  font-weight: 650;
+}
+
 .shell.app-shell-v2 .mission-strip small {
   color: var(--muted);
 }
@@ -8436,6 +8456,23 @@ h1 {
 
 .alert-summary-grid .metric-tile strong {
   font-size: 18px;
+}
+
+.alert-evidence-status {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(142, 157, 170, 0.3);
+  font-size: 12px;
+}
+
+.alert-evidence-status.unverified {
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fce0a0;
+}
+
+.alert-evidence-status span {
+  color: var(--muted);
 }
 
 .alert-list {
