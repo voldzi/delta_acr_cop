@@ -330,6 +330,7 @@ class ManagedTakGatewayCache<T> {
   values(): T[] { return [...this.entries.values()].map(entry => entry.value); }
 
   stats(): TakGatewayCacheStats {
+    this.evictExpired(Date.now());
     return {
       entries: this.entries.size,
       inflight: this.inflight.size,
@@ -339,6 +340,7 @@ class ManagedTakGatewayCache<T> {
 
   private store(key: string, value: T, ttlMs: number): void {
     const now = Date.now();
+    this.evictExpired(now);
     this.entries.set(key, {
       expiresAtMs: now + Math.max(0, ttlMs),
       lastAccessedAtMs: now,
@@ -346,6 +348,15 @@ class ManagedTakGatewayCache<T> {
       value: prepareProviderCacheCopy(value)
     });
     this.evictIfNeeded();
+  }
+
+  private evictExpired(now: number): void {
+    for (const [key, entry] of this.entries) {
+      if (entry.staleUntilMs <= now) {
+        this.entries.delete(key);
+        this.counters.evictions += 1;
+      }
+    }
   }
 
   private evictIfNeeded(): void {

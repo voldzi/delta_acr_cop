@@ -15,6 +15,14 @@ export interface ProviderCacheStats {
 
 export interface CopPrometheusMetricsInput {
   currentObjectCount: number;
+  processMemory?: NodeJS.MemoryUsage;
+  memoryState?: {
+    events: number;
+    objects: number;
+    historyPoints: number;
+    idempotencyKeys: number;
+    auditEvents: number;
+  };
   eventCount: number;
   persistedCurrentTrackCount: number;
   safetyCache?: ProviderCacheStats;
@@ -44,6 +52,7 @@ export function buildCopPrometheusMetrics(input: CopPrometheusMetricsInput): str
     "# HELP cop_track_history_points_total Retained temporal track history points.",
     "# TYPE cop_track_history_points_total gauge",
     `cop_track_history_points_total ${input.trackHistoryPointCount}`,
+    ...memoryMetricLines(input),
     "# HELP cop_stream_clients_total Connected COP live stream clients.",
     "# TYPE cop_stream_clients_total gauge",
     `cop_stream_clients_total ${input.streamMetrics.clientCount}`,
@@ -99,6 +108,25 @@ export function buildCopPrometheusMetrics(input: CopPrometheusMetricsInput): str
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function memoryMetricLines({ processMemory, memoryState }: CopPrometheusMetricsInput): string[] {
+  const lines: string[] = [];
+  if (processMemory) {
+    lines.push(
+      "# HELP cop_process_memory_bytes Node.js process memory by allocation type.",
+      "# TYPE cop_process_memory_bytes gauge",
+      ...Object.entries(processMemory).map(([kind, bytes]) => `cop_process_memory_bytes{kind="${kind}"} ${bytes}`)
+    );
+  }
+  if (memoryState) {
+    lines.push(
+      "# HELP cop_memory_state_entries Entries currently held in process state, including expired objects.",
+      "# TYPE cop_memory_state_entries gauge",
+      ...Object.entries(memoryState).map(([kind, count]) => `cop_memory_state_entries{kind="${kind}"} ${count}`)
+    );
+  }
+  return lines;
 }
 
 function providerCacheMetricLines(input: {

@@ -18,11 +18,19 @@ export function appendTrackHistory(
   event: CanonicalEventEnvelope,
   object: ObservedObject
 ): TrackHistoryPoint | undefined {
-  if (!hasPosition(object)) {
-    return undefined;
-  }
+  const point = createTrackHistoryPoint(event, object);
+  if (!point) return undefined;
+  const current = state.trackHistory.get(object.objectId) ?? [];
+  state.trackHistory.set(object.objectId, [...current, point].slice(-maxStoredPointsPerTrack));
+  return point;
+}
 
-  const point: TrackHistoryPoint = {
+export function createTrackHistoryPoint(
+  event: CanonicalEventEnvelope,
+  object: ObservedObject
+): TrackHistoryPoint | undefined {
+  if (!hasPosition(object)) return undefined;
+  return {
     affiliation: object.affiliation,
     confidence: object.confidence,
     eventId: event.eventId,
@@ -38,9 +46,6 @@ export function appendTrackHistory(
     timestamp: object.lastUpdatedAt ?? event.ingestTimestamp ?? event.producerTimestamp
   };
 
-  const current = state.trackHistory.get(object.objectId) ?? [];
-  state.trackHistory.set(object.objectId, [...current, point].slice(-maxStoredPointsPerTrack));
-  return point;
 }
 
 export function queryTrackHistory(

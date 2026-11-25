@@ -33,7 +33,7 @@ export interface ObjectConflictEvidence {
 
 const lowConfidenceThreshold = 0.5;
 const sourceDistanceConflictKm = 2;
-const recentHistoryLimit = 12;
+export const recentConflictHistoryLimit = 12;
 
 export function buildConflictEvidenceIndex({
   evaluatedAt,
@@ -75,7 +75,7 @@ export function buildObjectConflictEvidence({
   const linkedSourceHealth = provenance?.sourceSystemId
     ? sourceHealth.find((item) => item.sourceSystemId === provenance.sourceSystemId)
     : undefined;
-  const recentPoints = historyPoints.slice(-recentHistoryLimit);
+  const recentPoints = historyPoints.slice(-recentConflictHistoryLimit);
   const signals = [
     ...stateSignals(object, provenance?.sourceSystemId),
     ...confidenceSignals(object, provenance?.sourceSystemId),

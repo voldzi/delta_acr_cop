@@ -158,7 +158,7 @@ import {
 } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
-import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
+import { buildConflictEvidenceIndex, recentConflictHistoryLimit, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import {
   createFlightDataSourceFromEnv,
   emptyFlightReferenceFeatureCollection,
@@ -268,7 +268,7 @@ import {
 } from "./notification-decision.js";
 import { createPlaceGeocoderFromEnv, type PlaceGeocodeResult, type PlaceGeocoder } from "./place-geocoder.js";
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
-import { withEventProvenance } from "./provenance.js";
+import { readObjectProvenance, withEventProvenance } from "./provenance.js";
 import { registerCommunityGroupRoutes, registerCommunityReportRoutes } from "./routes/community-routes.js";
 import { registerDriverMeasurementRoutes } from "./routes/driver-measurement-routes.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
@@ -288,6 +288,7 @@ import {
   verifyOidcToken,
   type AuthenticatedActor
 } from "./security.js";
+import { flightArchiveBatchSize, isArchivableFlightEvent, releaseArchivedFlightEvents, selectFlightArchiveBatch, type FlightArchiveSummary } from "./flight-event-archive.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
   buildSituationDataHealth,
@@ -424,6 +425,7 @@ export interface BuildServerOptions {
   driverMeasurementSource?: DriverMeasurementSource;
   aiGateway?: AiGateway;
   flightDataSource?: FlightDataSource;
+  flightArchiveHotLimit?: number;
   communityReportStore?: CommunityReportStore;
   incidentStore?: IncidentStore;
   federationRuntimeStore?: FederationRuntimeStore;
@@ -991,6 +993,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     : undefined;
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
+  const flightArchive = trackHistoryStore?.flightArchive;
+  const flightArchiveWritesEnabled = process.env.COP_PUBLIC_FLIGHT_ARCHIVE_WRITES_ENABLED !== "false";
+  const archivableFlightEvents = new WeakSet<CanonicalEventEnvelope>();
+  const confirmedFlightEvents = new WeakSet<CanonicalEventEnvelope>();
+  const archivedResidentIds = new Set<string>();
+  let flightArchiveSummaries: FlightArchiveSummary[] = [];
+  let flightArchiveReady = false;
+  let flightArchiveVersion = 0;
+  function readSourceHealthItems(requestNow: Date) {
+    return buildSourceHealthItems(state, requestNow, trackLifecycle, flightArchiveSummaries, archivedResidentIds);
+  }
+
   const federationRuntimeStore = options.federationRuntimeStore ?? createFederationRuntimeStoreFromEnv();
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   const streamBus = options.streamBus ?? createCopStreamBusFromEnv();
@@ -1761,7 +1775,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (trackHistoryStore) {
       try {
         await trackHistoryStore.init();
+        if (flightArchive) {
+          flightArchiveSummaries = await flightArchive.summaries();
+          flightArchiveReady = true;
+        }
         restoredCurrentTrackCount = await restoreCurrentState();
+        await restoreArchivedCurrentProofs();
         trackHistoryStoreStatus = "ok";
         trackHistoryStoreDetail = `${trackHistoryStore.name}: ready; restored ${restoredCurrentTrackCount} current tracks`;
       } catch (error) {
@@ -1825,6 +1844,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       let deadline: ReturnType<typeof setTimeout> | undefined;
       try { await Promise.race([flightDataRefreshInFlight.catch(() => undefined), new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
       finally { if (deadline) clearTimeout(deadline); }
+    }
+    if (!flightDataRefreshInFlight) {
+      await persistAndReleaseFlightEvents(true).catch(error => {
+        app.log.warn({ component: "flight-data", reasonCode: copPgErrorCode(error) }, "Incomplete flight archive could not be drained during shutdown.");
+      });
     }
     if (accountSafetyStore && accountSafetyStore !== mobilityRuntimeStore) await accountSafetyStore.close();
     await safetyNotificationWorker?.stop();
@@ -1969,7 +1993,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply.type("text/plain").send(
         buildCopPrometheusMetrics({
           currentObjectCount: currentObjects.length,
-          eventCount: state.events.size,
+          eventCount: state.events.size - [...archivedResidentIds].filter(id => state.events.has(id)).length + flightArchiveSummaries.reduce((sum, item) => sum + item.count, 0),
+          processMemory: process.memoryUsage(),
+          memoryState: {
+            events: state.events.size,
+            objects: state.objects.size,
+            historyPoints: Array.from(state.trackHistory.values()).reduce((sum, points) => sum + points.length, 0),
+            idempotencyKeys: state.idempotency.size,
+            auditEvents: state.auditEvents.length
+          },
           persistedCurrentTrackCount,
           safetyCache: safetyDataSource?.cacheStats?.(),
           situationCache: situationDataSource?.cacheStats?.(),
@@ -2317,6 +2349,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return objects.length;
   }
 
+  async function restoreArchivedCurrentProofs(): Promise<void> {
+    if (!flightArchiveReady || flightArchiveSummaries.length === 0) return;
+    let ids: string[] = [];
+    const restoreBatch = async () => {
+      const { events } = await findKnownEvents(ids);
+      for (const event of events.values()) {
+        if (state.events.has(event.eventId) || !isArchivableFlightEvent(event)) continue;
+        state.events.set(event.eventId, event);
+        const stored = state.events.get(event.eventId);
+        if (stored) {
+          confirmedFlightEvents.add(stored);
+          archivedResidentIds.add(stored.eventId);
+        }
+      }
+      ids = [];
+    };
+    for (const object of state.objects.values()) {
+      const provenance = readObjectProvenance(object);
+      if (provenance?.adapterId !== "flight-data-source-adapter" || !provenance.eventId) continue;
+      ids.push(provenance.eventId);
+      if (ids.length >= flightArchiveBatchSize) await restoreBatch();
+    }
+    if (ids.length) await restoreBatch();
+  }
+
   function markTrackHistoryStoreDegraded(error: unknown): void {
     if (accountErasure) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (!trackHistoryStore) {
@@ -2645,6 +2702,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const requestNow = now();
     try {
+      // Retry any incomplete archive writes before growing the producer state.
+      const recovered = await persistAndReleaseFlightEvents();
+      if (flightDataClosing) return;
+      if (recovered.length) await publishCurrentTracks(recovered);
       const result = await flightDataSource.poll(requestNow);
       if (flightDataClosing) return;
       await accountErasure?.refreshCachedGuard();
@@ -2654,15 +2715,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         withFlightDataHealth(activeFlightDataSourceSystem(), result.health)
       );
       const acceptedObjects: ObservedObject[] = [];
+      const { events: archived } = await findKnownEvents(result.events.map(event => event.eventId));
+      if (flightDataClosing) return;
       const completed = await forEachCooperatively(result.events, event => {
-        if (state.events.has(event.eventId)) {
+        if (state.events.has(event.eventId) || archived.has(event.eventId)) {
           return;
         }
         const accepted = acceptEvent(state, event);
-        queueTrackPersistence(accepted.object, accepted.accepted, accepted.historyPoint);
+        const stored = state.events.get(event.eventId);
+        if (flightArchiveReady && flightArchiveWritesEnabled && stored && isArchivableFlightEvent(stored)) {
+          archivableFlightEvents.add(stored);
+        } else {
+          queueTrackPersistence(accepted.object, accepted.accepted, accepted.historyPoint);
+        }
         acceptedObjects.push(accepted.object);
       }, { checkpoint: async () => { await accountErasure?.refreshCachedGuard(); }, cancelled: () => flightDataClosing });
       if (!completed) return;
+      await persistAndReleaseFlightEvents();
+      if (flightDataClosing) return;
       if (acceptedObjects.length > 0) {
         await publishCurrentTracks(acceptedObjects);
       }
@@ -2799,7 +2869,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }> {
     const subject = defaultSystemSubject();
     const simSearchMapFeatures = await readSimSearchMapFeaturesForAiIndex(requestNow);
-    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const sourceHealth = readSourceHealthItems(requestNow);
     const readableObjects = prioritizeObjectsForAi(
       selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) =>
         canReadObject(subject, object)
@@ -5345,35 +5415,171 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  /** Resolve existing identity before accepting or reading any event. The
+   * archive grows only after a durable write; capture resident events as well
+   * so an eviction during a database await cannot turn an old ID into a new one. */
+  async function findKnownEvents(eventIds: readonly string[]): Promise<{ events: Map<string, CanonicalEventEnvelope>; version: number }> {
+    const result = new Map<string, CanonicalEventEnvelope>();
+    const ids = [...new Set(eventIds)];
+    // Resident references are the existing admitted immutable records.
+    for (const id of ids) {
+      const event = state.events.get(id);
+      if (event) result.set(id, event);
+    }
+    if (!flightArchive || !flightArchiveReady || flightArchiveSummaries.length === 0)
+      return { events: result, version: flightArchiveVersion };
+    return retainProjectionFlight((async () => {
+      let generation: number;
+      do {
+        generation = flightArchiveVersion;
+        const missing = ids.filter(id => !result.has(id));
+        for (let offset = 0; offset < missing.length; offset += flightArchiveBatchSize) {
+          const batch = missing.slice(offset, offset + flightArchiveBatchSize);
+          const records = await flightArchive.read(batch);
+          for (const [id, event] of records) result.set(id, event);
+          for (const id of batch) {
+            const current = state.events.get(id);
+            if (current) result.set(id, current);
+          }
+        }
+        await accountErasure?.refreshCachedGuard();
+        for (const id of ids) {
+          const current = state.events.get(id);
+          if (current) result.set(id, current);
+        }
+      } while (generation !== flightArchiveVersion);
+      for (const event of result.values()) stateProjectionOwner?.assertWriteAllowed(event);
+      return { events: result, version: generation };
+    })());
+  }
+
+  async function persistAndReleaseFlightEvents(drain = false): Promise<ObservedObject[]> {
+    const recovered = new Map<string, ObservedObject>();
+    if (!flightArchive || !flightArchiveReady || !flightArchiveWritesEnabled) return [];
+    // No extra strong-reference queue: any pending producer event remains in
+    // the existing guarded state until the entire archive transaction succeeds.
+    while (!flightDataClosing || drain) {
+      const candidates: CanonicalEventEnvelope[] = [];
+      for (const event of state.events.values()) {
+        if (!archivableFlightEvents.has(event) || confirmedFlightEvents.has(event)) continue;
+        candidates.push(event);
+        if (candidates.length >= flightArchiveBatchSize) break;
+      }
+      if (!candidates.length) break;
+      await retainProjectionFlight((async () => {
+        await accountErasure?.refreshCachedGuard();
+        for (const event of candidates) stateProjectionOwner?.assertWriteAllowed(event);
+        await flightArchive.append(candidates);
+        const totals = await flightArchive.summaries();
+        await accountErasure?.refreshCachedGuard();
+        for (const event of candidates) stateProjectionOwner?.assertWriteAllowed(event);
+        for (const event of candidates) {
+          if (state.events.get(event.eventId) === event) {
+            confirmedFlightEvents.add(event);
+            archivedResidentIds.add(event.eventId);
+            const object = state.objects.get(event.payload.objectId);
+            if (object && readObjectProvenance(object)?.eventId === event.eventId)
+              recovered.set(object.objectId, object);
+          }
+        }
+        flightArchiveSummaries = totals;
+        flightArchiveVersion++;
+      })());
+    }
+    // Drop only committed records. Latest current-object evidence stays in RAM.
+    while (!flightDataClosing) {
+      const candidates = selectFlightArchiveBatch(state, confirmedFlightEvents, options.flightArchiveHotLimit);
+      if (!candidates.length) break;
+      releaseArchivedFlightEvents(state, candidates);
+      for (const event of candidates) {
+        if (!state.events.has(event.eventId)) archivedResidentIds.delete(event.eventId);
+      }
+      flightArchiveVersion++;
+    }
+    for (const id of archivedResidentIds) if (!state.events.has(id)) archivedResidentIds.delete(id);
+    return [...recovered.values()];
+  }
+
   async function readTrackHistory(
     query: ReturnType<typeof parseTrackHistoryQuery>,
-    requestNow: Date
+    requestNow: Date,
+    subject = defaultSystemSubject()
   ): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
     await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
         const items = await trackHistoryStore.query(query, requestNow);
-        return readableHistoryItems(items, requestNow);
+        return await readableHistoryItems(items, requestNow, subject);
       } catch (error) {
         markTrackHistoryStoreDegraded(error);
       }
     }
-    return readableHistoryItems(queryTrackHistory(state, query, requestNow), requestNow);
+    // Once archived data is in use, a database outage is not an authoritative empty history.
+    if (flightArchiveReady) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+    return readableHistoryItems(queryTrackHistory(state, query, requestNow), requestNow, subject);
   }
 
-  function readableHistoryItems(items: Array<{ objectId: string; points: TrackHistoryPoint[] }>, requestNow: Date) {
-    return items.map((item) => ({
-      ...item,
-      points: item.points.filter((point) => canReadCanonicalHistoryPoint(defaultSystemSubject(), point, state.events, requestNow))
-    })).filter((item) => item.points.length > 0);
+  async function readableHistoryItems(
+    items: Array<{ objectId: string; points: TrackHistoryPoint[] }>,
+    requestNow: Date,
+    subject = defaultSystemSubject(),
+    recentLimit?: number
+  ) {
+    await accountErasure?.refreshCachedGuard();
+    const fenceGeneration = accountErasure?.cachedFenceGeneration();
+    const result = items.map(item => ({ ...item, points: [] as TrackHistoryPoint[] }));
+    let batch: Array<{ itemIndex: number; point: TrackHistoryPoint }> = [];
+    const flush = async () => {
+      const { events } = await findKnownEvents(batch.map(({ point }) => point.eventId));
+      for (const { itemIndex, point } of batch) {
+        const resident = state.events.get(point.eventId);
+        if (resident) events.set(point.eventId, resident);
+        if (canReadCanonicalHistoryPoint(subject, point, events, requestNow)) {
+          result[itemIndex]!.points.push(point);
+        }
+      }
+      batch = [];
+    };
+    if (recentLimit === undefined) {
+      for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        for (const point of items[itemIndex]!.points) {
+          batch.push({ itemIndex, point });
+          if (batch.length >= flightArchiveBatchSize) await flush();
+        }
+      }
+      if (batch.length) await flush();
+    } else {
+      // Conflict evidence consumes only the latest N readable points. Walk
+      // backwards and fetch older evidence only when a newer point was rejected.
+      const offsets = items.map(item => item.points.length);
+      let unfinished: boolean;
+      do {
+        unfinished = false;
+        for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+          const needed = recentLimit - result[itemIndex]!.points.length;
+          const take = Math.min(needed, offsets[itemIndex]!);
+          if (!take) continue;
+          unfinished = true;
+          for (let index = 0; index < take; index++) {
+            offsets[itemIndex]!--;
+            batch.push({ itemIndex, point: items[itemIndex]!.points[offsets[itemIndex]!]! });
+            if (batch.length >= flightArchiveBatchSize) await flush();
+          }
+        }
+        if (batch.length) await flush();
+      } while (unfinished);
+      for (const item of result) item.points.reverse();
+    }
+    await accountErasure?.refreshCachedGuard();
+    // A later batch may have awaited the database while a fence was committed.
+    if (fenceGeneration !== accountErasure?.cachedFenceGeneration())
+      throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+    for (const item of result) stateProjectionOwner?.assertWriteAllowed(item.points);
+    return result.filter(item => item.points.length > 0);
   }
 
   function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
     return canReadCanonicalObject(subject, object, state.events, now());
-  }
-
-  function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
-    return canReadCanonicalHistoryPoint(subject, point, state.events, now());
   }
 
   async function buildConflictEvidenceForObjects(
@@ -5418,7 +5624,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         evaluatedAt: requestNow.toISOString(),
         historyItems,
         objects,
-        sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+        sourceHealth: readSourceHealthItems(requestNow)
       });
     })());
     conflictEvidenceCache.set(cacheKey, {
@@ -5470,7 +5676,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       aoiRules: profile?.alertPreferences.aoiRules ?? [],
       evaluatedAt: requestNow.toISOString(),
       objects: objectsWithEvidence,
-      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+      sourceHealth: readSourceHealthItems(requestNow)
     });
     const preferredAlerts = filterAlertsByPreferences(alerts, profile?.alertPreferences ?? {});
     return includeAcknowledged ? preferredAlerts : preferredAlerts.filter((alert) => alert.status === "ACTIVE");
@@ -5489,13 +5695,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       query.historyQuery.objectIds && query.historyQuery.objectIds.length > 0
         ? query.historyQuery.objectIds
         : decoratedObjects.map((object) => object.objectId);
-    const historyItems = (await readTrackHistory({ ...query.historyQuery, objectIds }, requestNow))
-      .map((item) => ({
-        ...item,
-        points: item.points.filter((point) => canReadHistoryPoint(subject, point))
-      }))
-      .filter((item) => item.points.length > 0);
-    const sourceHealthItems = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const historyItems = await readTrackHistory({ ...query.historyQuery, objectIds }, requestNow, subject);
+    const sourceHealthItems = readSourceHealthItems(requestNow);
     const alerts = await buildAlertItems({
       actor,
       includeAcknowledged: query.includeAcknowledged,
@@ -5650,16 +5851,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
-    const historyItems = readableHistoryItems(objects.map((object) => ({
-      objectId: object.objectId,
-      points: state.trackHistory.get(object.objectId) ?? []
-    })), requestNow);
+  async function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): Promise<ObservedObject[]> {
+    const objectIds = new Set(objects.map(object => object.objectId));
+    const historyItems = await readableHistoryItems([...objectIds].map(objectId => ({
+      objectId,
+      points: state.trackHistory.get(objectId) ?? []
+    })), requestNow, defaultSystemSubject(), recentConflictHistoryLimit);
     const evidenceIndex = buildConflictEvidenceIndex({
       evaluatedAt: requestNow.toISOString(),
       historyItems,
       objects,
-      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+      sourceHealth: readSourceHealthItems(requestNow)
     });
     return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
   }
@@ -8886,7 +9088,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/sources/health", async () => {
     const requestNow = now();
     return {
-      items: buildSourceHealthItems(state, requestNow, trackLifecycle),
+      items: readSourceHealthItems(requestNow),
       serverTimestamp: requestNow.toISOString()
     };
   });
@@ -10744,7 +10946,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       correlationId,
       queueTrackPersistence,
       publishCurrentTracks,
-      now()
+      now(),
+      findKnownEvents,
+      () => flightArchiveVersion
     );
   });
 
@@ -10798,9 +11002,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       validatedEvents.push(validation.data);
       items.push({ eventId: validation.data.eventId, status: "QUEUED" });
     }
-    // Validate every item's source/security boundary before mutating any state.
+    let lookup: Awaited<ReturnType<typeof findKnownEvents>>;
+    do { lookup = await findKnownEvents(validatedEvents.map(event => event.eventId)); }
+    while (lookup.version !== flightArchiveVersion);
+    const priorEvents = lookup.events;
+    // After the final await, validate the entire batch again before any mutation.
     for (const event of validatedEvents) {
-      if (state.events.has(event.eventId)) continue;
+      const existing = state.events.get(event.eventId) ?? priorEvents.get(event.eventId);
+      if (existing && !sameCanonicalEventIdentity(existing, event))
+        return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+    }
+    for (const event of validatedEvents) {
+      if (state.events.has(event.eventId) || priorEvents.has(event.eventId)) continue;
       const result = acceptEvent(state, event, requestNow.toISOString());
       queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
@@ -10928,12 +11141,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const query = parseTrackHistoryQuery(request.query as Record<string, unknown>);
     const requestNow = now();
     const subject = defaultSystemSubject();
-    const items = (await readTrackHistory(query, requestNow))
-      .map((item) => ({
-        ...item,
-        points: item.points.filter((point) => canReadHistoryPoint(subject, point))
-      }))
-      .filter((item) => item.points.length > 0);
+    const items = await readTrackHistory(query, requestNow, subject);
     return {
       items,
       nextCursor: null,
@@ -11182,7 +11390,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       )
     ).slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
-    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const sourceHealth = readSourceHealthItems(requestNow);
     const alerts = includeAlerts
       ? (
           await buildAlertItems({
@@ -11707,7 +11915,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       )
     ).slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
-    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const sourceHealth = readSourceHealthItems(requestNow);
     const alerts = (
       await buildAlertItems({
         actor,
@@ -12074,7 +12282,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const requestNow = now();
     const body = isRecord(request.body) ? request.body : {};
-    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const sourceHealth = readSourceHealthItems(requestNow);
     const summarizedSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
     const aiRequest: AiCopQuery = {
       requestId: aiRequestId(body.requestId),
@@ -12464,7 +12672,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "UNAVAILABLE",
       "WAITING"
     ]);
-    const items = buildSourceHealthItems(state, requestNow, trackLifecycle)
+    const items = readSourceHealthItems(requestNow)
       .filter((item) => includeDisabled || item.health !== "DISABLED")
       .filter((item) => !healthFilter || item.health === healthFilter)
       .sort(compareSourceHealthItems);
@@ -13370,7 +13578,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   async function publishCurrentTracks(objects: ObservedObject[]): Promise<void> {
     const subject = defaultSystemSubject();
     const requestNow = now();
-    const readableObjects = decorateObjectsWithInMemoryConflictEvidence(
+    const readableObjects = await decorateObjectsWithInMemoryConflictEvidence(
       objects.filter((object) => canReadObject(subject, object)),
       requestNow
     );
@@ -13397,7 +13605,9 @@ async function handleIngestEvent(
     historyPoint: TrackHistoryPoint | undefined
   ) => void,
   publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>,
-  requestNow: Date
+  requestNow: Date,
+  findKnownEvents: (ids: readonly string[]) => Promise<{ events: Map<string, CanonicalEventEnvelope>; version: number }>,
+  archiveVersion: () => number
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -13421,7 +13631,10 @@ async function handleIngestEvent(
     return sendError(reply, 400, "IDEMPOTENCY_KEY_REQUIRED", "X-Idempotency-Key header is required.", correlationId);
   }
 
-  const existingEvent = state.events.get(event.eventId);
+  let lookup: Awaited<ReturnType<typeof findKnownEvents>>;
+  do { lookup = await findKnownEvents([event.eventId]); }
+  while (lookup.version !== archiveVersion());
+  const existingEvent = state.events.get(event.eventId) ?? lookup.events.get(event.eventId);
   if (existingEvent && !sameCanonicalEventIdentity(existingEvent, event)) {
     return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
   }

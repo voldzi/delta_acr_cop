@@ -20,7 +20,7 @@ CREATE DATABASE cop OWNER cop_app;
 GRANT CONNECT ON DATABASE cop TO cop_app;
 ```
 
-Aplikace si při startu vytvoří tabulky a indexy sama. Pokud nechceš dát aplikačnímu uživateli `CREATE` právo ve schématu, vytvoř tabulky předem administrátorem podle SQL v `apps/cop-api/src/track-history-store.ts` a aplikačnímu uživateli uděl `SELECT`, `INSERT`, `UPDATE` na `cop_track_history` a `cop_current_tracks`.
+Aplikace si při startu vytvoří tabulky a indexy sama. Pokud nechceš dát aplikačnímu uživateli `CREATE` právo ve schématu, vytvoř tabulky předem administrátorem podle SQL v `apps/cop-api/src/track-history-store.ts` a aplikačnímu uživateli uděl `SELECT`, `INSERT`, `UPDATE` na `cop_track_history`, `cop_current_tracks`, `cop_public_flight_event_archive` a `cop_public_flight_event_totals`. Smazání uživatelských projekcí musí nadále procházet existující kontrolou oprávnění a ochranných záznamů.
 
 ## Nastavení `/srv/cop/.env`
 
@@ -28,6 +28,7 @@ Na `docker.home.cz` uprav `/srv/cop/.env`:
 
 ```bash
 COP_TRACK_HISTORY_STORE=postgres
+COP_PUBLIC_FLIGHT_ARCHIVE_WRITES_ENABLED=true
 COP_DATABASE_URL=postgresql://cop_app:<nahodne-dlouhe-tajne-heslo>@haproxy.home.cz:5000/cop
 COP_DATABASE_SSL=false
 COP_DATABASE_POOL_MAX=5
@@ -84,3 +85,33 @@ LIMIT 20;
 - API pořád drží aktuální stav v paměti kvůli rychlému čtení, ale při každém ingestu ukládá poslední snapshot do PostgreSQL.
 - Při startu API se `objects` obnoví z `cop_current_tracks`; lifecycle logika pak podle stáří označí objekty jako active, stale nebo expired.
 - Další krok je doplnit retenci historie, stránkování dlouhých tras a skutečný realtime stream.
+
+
+## Akceptace a návrat archivu leteckých událostí
+
+- Před vydáním ověřit dostupnou kapacitu PostgreSQL a aktuální oprávnění
+  aplikace k vytvoření dvou nových tabulek. Migrace nepřepisuje existující
+  tabulku historie ani nemaže její řádky.
+- Po startu ověřit zdraví API, aktuální letový feed a soulad
+  `cop_events_total`, `cop_memory_state_entries{kind="events"}`,
+  velikosti archivu a `cop_process_memory_bytes`. RSS se měří opakovaně
+  za srovnatelné zátěže, nejen bezprostředně po restartu.
+- Nově přijatá událost je uvolněna z RAM až po potvrzeném atomickém zápisu
+  plného důkazu, aktuálního objektu a polohového bodu. Při nedostupnosti
+  archivu se pokus opakuje před dalším příjmem.
+- Zálohy databáze musí pokrýt obě nové tabulky společně s dosavadními
+  tabulkami. Kontrola mazání účtu prohledává i úplný obsah archivu.
+  Nejasná shoda s identitou či chráněným zdrojem nedovoluje potvrdit
+  dokončené mazání; samotný původ z leteckého feedu nelze použít k odvození
+  vlastnictví.
+- Nouzové pozastavení nových zápisů: `COP_PUBLIC_FLIGHT_ARCHIVE_WRITES_ENABLED=false`.
+  Čtení již archivovaných důkazů a kontroly mazání zůstávají aktivní.
+  Po vzniku archivních řádků lze používat pouze revize, které tyto
+  tabulky zahrnují do kontroly mazání. Návrat na původní nekompatibilní
+  obraz je bezpečný výhradně při ověřeně prázdném archivu.
+- Při prvním restartu staré události, držené výhradně v RAM běžící
+  původní verze, ztratí původní úplný důkaz. Již uložené polohové body
+  se nemažou, ale jejich zobrazení bez důkazu musí být odmítnuto.
+  Výchozí produktový API nemá export plných historických kanonických
+  událostí; tento limit je nutné vyřešit nebo výslovně přijmout před
+  prvním produkčním přepnutím.

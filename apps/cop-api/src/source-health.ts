@@ -2,6 +2,7 @@ import type { CanonicalEventEnvelope, EventType, ObservedObject, SourceSystem } 
 import { readObjectProvenance } from "./provenance.js";
 import { resolveTrackLifecycle, type TrackLifecycleConfig } from "./track-lifecycle.js";
 import type { CopState, SourceHealthOverride } from "./types.js";
+import type { FlightArchiveSummary } from "./flight-event-archive.js";
 
 export type SourceHealthStatus = "DEGRADED" | "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "UNAVAILABLE" | "WAITING";
 
@@ -31,14 +32,58 @@ export interface SourceHealthItem {
   totalTracks: number;
 }
 
+interface SourceEventSummary {
+  count: number;
+  eventTypeCounts: Partial<Record<EventType, number>>;
+  latencySum: number;
+  latencyCount: number;
+  latestEventAt?: string;
+  latestLatencyMs?: number;
+  latestTimestampMs: number;
+}
+
+function emptyEventSummary(): SourceEventSummary {
+  return { count: 0, eventTypeCounts: {}, latencySum: 0, latencyCount: 0, latestTimestampMs: Number.NaN };
+}
+
+function summarizeEvent(summary: SourceEventSummary, event: CanonicalEventEnvelope): void {
+  summary.count += 1;
+  summary.eventTypeCounts[event.eventType] = (summary.eventTypeCounts[event.eventType] ?? 0) + 1;
+  const latency = eventLatencyMs(event);
+  if (latency !== undefined) {
+    summary.latencySum += latency;
+    summary.latencyCount += 1;
+  }
+  const timestampMs = Date.parse(eventTimestamp(event));
+  if (!summary.latestEventAt || timestampMs > summary.latestTimestampMs) {
+    summary.latestEventAt = eventTimestamp(event);
+    summary.latestLatencyMs = latency;
+    summary.latestTimestampMs = timestampMs;
+  }
+}
+
 export function buildSourceHealthItems(
   state: CopState,
   now: Date,
-  lifecycle: TrackLifecycleConfig
+  lifecycle: TrackLifecycleConfig,
+  archivedFlight: readonly FlightArchiveSummary[] = [],
+  archivedResidentIds: ReadonlySet<string> = new Set()
 ): SourceHealthItem[] {
-  const eventsBySource = new Map<string, CanonicalEventEnvelope[]>();
+  const eventsBySource = new Map<string, SourceEventSummary>();
+  for (const item of archivedFlight) {
+    eventsBySource.set(item.sourceSystemId, {
+      count: item.count, eventTypeCounts: { "track.updated": item.count },
+      latencySum: item.latencySumMs, latencyCount: item.count,
+      latestEventAt: item.latestEventAt, latestLatencyMs: item.latestLatencyMs,
+      latestTimestampMs: Date.parse(item.latestEventAt)
+    });
+  }
   for (const event of state.events.values()) {
-    appendGrouped(eventsBySource, event.source.sourceSystemId, event);
+    if (archivedResidentIds.has(event.eventId)) continue;
+    const sourceId = event.source.sourceSystemId;
+    const summary = eventsBySource.get(sourceId) ?? emptyEventSummary();
+    summarizeEvent(summary, event);
+    eventsBySource.set(sourceId, summary);
   }
 
   const objectsBySource = new Map<string, ObservedObject[]>();
@@ -52,7 +97,7 @@ export function buildSourceHealthItems(
   return Array.from(state.sources.values()).map((source) =>
     buildSourceHealthItem(
       source,
-      eventsBySource.get(source.sourceSystemId) ?? [],
+      eventsBySource.get(source.sourceSystemId) ?? emptyEventSummary(),
       objectsBySource.get(source.sourceSystemId) ?? [],
       now,
       lifecycle
@@ -62,16 +107,14 @@ export function buildSourceHealthItems(
 
 function buildSourceHealthItem(
   source: SourceSystem,
-  events: CanonicalEventEnvelope[],
+  events: SourceEventSummary,
   sourceObjects: ObservedObject[],
   now: Date,
   lifecycle: TrackLifecycleConfig
 ): SourceHealthItem {
   const lifecycleStates = sourceObjects.map((object) => resolveTrackLifecycle(object, now, lifecycle));
   const currentTracks = lifecycleStates.filter((track) => !track.expired).length;
-  const latencies = events.map(eventLatencyMs).filter((value): value is number => value !== undefined);
-  const lastEvent = latestEvent(events);
-  const lastEventAt = lastEvent ? eventTimestamp(lastEvent) : undefined;
+  const lastEventAt = events.latestEventAt;
   const override = readSourceHealthOverride(source);
   const lastObservationAt = latestIso([
     override?.lastSuccessAt,
@@ -87,18 +130,18 @@ function buildSourceHealthItem(
     .filter((value): value is number => typeof value === "number");
 
   return {
-    acceptedEvents: events.length,
+    acceptedEvents: events.count,
     ...(confidences.length > 0 ? { avgConfidence: average(confidences) } : {}),
     ...(override?.detail ? { detail: override.detail } : {}),
-    ...(latencies.length > 0 ? { avgLatencyMs: Math.round(average(latencies)) } : {}),
+    ...(events.latencyCount > 0 ? { avgLatencyMs: Math.round(events.latencySum / events.latencyCount) } : {}),
     currentTracks,
     displayName: source.displayName,
-    eventTypeCounts: eventCounts(events),
+    eventTypeCounts: events.eventTypeCounts,
     expiredTracks: lifecycleStates.filter((track) => track.expired).length,
     health: override?.health ?? resolveSourceHealth(source, lastObservationAgeSeconds, lifecycle),
     ...(lastEventAt ? { lastEventAt } : {}),
     ...(override?.lastError ? { lastError: override.lastError } : {}),
-    ...(lastEvent ? latencyField(lastEvent) : {}),
+    ...(events.latestLatencyMs === undefined ? {} : { lastLatencyMs: events.latestLatencyMs }),
     ...(lastObservationAgeSeconds === undefined ? {} : { lastObservationAgeSeconds }),
     ...(lastObservationAt ? { lastObservationAt } : {}),
     lowConfidenceTracks: sourceObjects.filter((object) => (object.confidence ?? 0) < 0.5).length,
@@ -195,15 +238,6 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-function latestEvent(events: CanonicalEventEnvelope[]): CanonicalEventEnvelope | undefined {
-  return events.reduce<CanonicalEventEnvelope | undefined>((latest, event) => {
-    if (!latest) {
-      return event;
-    }
-    return Date.parse(eventTimestamp(event)) > Date.parse(eventTimestamp(latest)) ? event : latest;
-  }, undefined);
-}
-
 function eventTimestamp(event: CanonicalEventEnvelope): string {
   return event.ingestTimestamp ?? event.producerTimestamp;
 }
@@ -219,14 +253,6 @@ function latestIso(values: Array<string | undefined>): string | undefined {
     }, undefined);
 }
 
-function eventCounts(events: CanonicalEventEnvelope[]): Partial<Record<EventType, number>> {
-  const counts: Partial<Record<EventType, number>> = {};
-  for (const event of events) {
-    counts[event.eventType] = (counts[event.eventType] ?? 0) + 1;
-  }
-  return counts;
-}
-
 function eventLatencyMs(event: CanonicalEventEnvelope): number | undefined {
   const ingestTimestamp = event.ingestTimestamp;
   if (!ingestTimestamp) {
@@ -235,11 +261,6 @@ function eventLatencyMs(event: CanonicalEventEnvelope): number | undefined {
   const producerMs = Date.parse(event.producerTimestamp);
   const ingestMs = Date.parse(ingestTimestamp);
   return Number.isFinite(producerMs) && Number.isFinite(ingestMs) ? Math.max(0, ingestMs - producerMs) : undefined;
-}
-
-function latencyField(event: CanonicalEventEnvelope): { lastLatencyMs?: number } {
-  const latencyMs = eventLatencyMs(event);
-  return latencyMs === undefined ? {} : { lastLatencyMs: latencyMs };
 }
 
 function average(values: number[]): number {

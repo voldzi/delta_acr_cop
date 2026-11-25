@@ -91,6 +91,9 @@ describe("TakGatewaySourceAdapter", () => {
     expect(fresh.cache?.status).toBe("miss");
     expect(stale.cache?.status).toBe("stale");
     expect(stale.warnings).toContain("COP served stale TAK Gateway cache because SIM refresh failed.");
+    expect(adapter.cacheStats().entries).toBe(1);
+    vi.setSystemTime(new Date("2026-05-21T06:01:01Z"));
+    expect(adapter.cacheStats()).toMatchObject({ entries: 0, evictions: 1 });
   });
 
   it("reports token rejection as a configuration problem", async () => {

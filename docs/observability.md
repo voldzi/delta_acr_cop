@@ -21,6 +21,18 @@ and audit documentation remains in:
 - [Running Main COP](runbooks/04_RUNNING_MAIN_COP.md)
 - [Environment configuration](runbooks/03_ENVIRONMENT_CONFIGURATION.md)
 
+The API memory diagnostics add `cop_process_memory_bytes` (RSS, V8 heap used and
+allocated, external allocations and array buffers) and `cop_memory_state_entries`
+(resident canonical events, objects including expired ones, in-memory history points, idempotency keys and
+audit entries). These are aggregate gauges. `cop_events_total` reports the retained
+event count including durable archived events; `cop_memory_state_entries{kind="events"}`
+reports only the resident event records, while `cop_track_history_points_total` can include persistent database
+history. External and array-buffer memory overlap; do not sum all memory categories.
+Source health aggregates events without allocating arrays proportional to event count.
+The situation, safety and TAK feature caches release entries after their existing
+freshness and stale-on-error windows end, during refresh or metrics collection.
+Eviction counters include those releases; the stale-on-error windows are unchanged.
+
 Current runtime observability surfaces:
 
 - `/health/live`
